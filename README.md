@@ -42,6 +42,8 @@ result = ReIDEvaluator(model).evaluate(query, gallery)
 print(result.metrics)
 ```
 
+To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-domain checkpoints, cosine vs Euclidean), run [`notebooks/eval_reid.ipynb`](notebooks/eval_reid.ipynb) — Colab-friendly, pins this PR branch while under review.
+
 ## Weight cache
 
 Google Drive downloads (`gd://...`) are cached under `~/.cache/trackers/weights/` for behavioral parity with Trackers. Hugging Face weights use the standard Hugging Face Hub cache.
