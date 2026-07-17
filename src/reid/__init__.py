@@ -13,13 +13,21 @@ __all__ = [
     "FASTREID_MOT17_SBS50",
     "KeyReport",
     "ModelCard",
+    "ReIDEncoder",
+    "ReIDEvaluator",
+    "ReIDMetrics",
     "ReIDModel",
     "ReIDPreprocessing",
+    "ReIDResult",
+    "ReIDSplit",
     "build_architecture",
     "checkpoint_remap_for_architecture",
+    "compute_reid_metrics",
     "default_preprocessing_for_architecture",
     "list_architectures",
+    "load_market1501",
     "load_model_config",
+    "load_msmt17",
     "load_state_dict_for_architecture",
     "load_state_dict_into",
     "resolve_model_card",
@@ -45,6 +53,16 @@ _REID_OPTIONAL_ROOTS = frozenset(
 
 # NumPy-only symbols — safe to import without torch/timm/HF.
 from reid.architectures import build_architecture, checkpoint_remap_for_architecture, list_architectures
+from reid.encoder import ReIDEncoder
+from reid.eval import (
+    ReIDEvaluator,
+    ReIDMetrics,
+    ReIDResult,
+    ReIDSplit,
+    compute_reid_metrics,
+    load_market1501,
+    load_msmt17,
+)
 from reid.models import (
     DEFAULT_MODEL,
     FASTREID_MOT17_SBS50,

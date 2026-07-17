@@ -1,6 +1,6 @@
 # re-ID
 
-Re-identification model stack for extracting appearance embeddings from detections and image crops. This package ports the model loading, preprocessing, and inference stack from [Roboflow Trackers](https://github.com/roboflow/trackers) as a standalone library.
+Re-identification models and gallery evaluation for appearance embeddings. This package ports the model loading, preprocessing, inference, and Market/MSMT evaluation stack from [Roboflow Trackers](https://github.com/roboflow/trackers) as a standalone library.
 
 ## Install
 
@@ -30,6 +30,17 @@ print(embeddings.shape)  # (1, 512)
 ```
 
 Curated aliases such as `osnet_x1_0_msmt17_combineall` and `fastreid_mot17_sbs50` are also supported via `ReIDModel.from_pretrained(source=...)`.
+
+## Gallery eval
+
+```python
+from reid import ReIDEvaluator, ReIDModel, load_market1501
+
+model = ReIDModel.from_pretrained()
+query, gallery = load_market1501("/path/to/Market-1501")
+result = ReIDEvaluator(model).evaluate(query, gallery)
+print(result.metrics)
+```
 
 ## Weight cache
 
