@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+jobs:
+  test:
+    name: Pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install package
+        run: uv sync --all-extras
+
+      - name: Verify no trackers imports
+        run: |
+          if rg "from trackers|import trackers" src/reid; then
+            echo "FAIL: trackers imports found under src/reid"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: uv run pytest tests/ -q --tb=short -m "not slow"
