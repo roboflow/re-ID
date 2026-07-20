@@ -24,12 +24,21 @@ class ReIDEncoder(Protocol):
     protocol without depending on the full model stack.
     """
 
-    def extract_features(self, detections: sv.Detections, frame: np.ndarray) -> np.ndarray:
+    def extract_features(
+        self,
+        detections: sv.Detections,
+        frame: np.ndarray,
+        *,
+        batch_size: int = 32,
+        normalize: bool | None = None,
+    ) -> np.ndarray:
         """Return appearance embeddings for each detection box.
 
         Args:
             detections: Boxes to embed (``xyxy``).
             frame: BGR frame the detections were produced on.
+            batch_size: Crops per forward pass.
+            normalize: L2-normalise override; ``None`` defers to preprocessing.
 
         Returns:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
@@ -40,15 +49,15 @@ class ReIDEncoder(Protocol):
         self,
         image_paths: Sequence[str],
         *,
-        batch_size: int = 64,
-        normalize: bool = False,
+        batch_size: int = 32,
+        normalize: bool | None = None,
     ) -> np.ndarray:
         """Embed images read from disk.
 
         Args:
             image_paths: Paths to crop images.
             batch_size: Images per forward pass.
-            normalize: L2-normalise embeddings when ``True``.
+            normalize: L2-normalise override; ``None`` defers to preprocessing.
 
         Returns:
             Float32 array of shape ``(N, D)``.
