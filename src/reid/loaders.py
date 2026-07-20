@@ -23,7 +23,6 @@ from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError
 from safetensors.torch import load_file
 
 if TYPE_CHECKING:
-    from reid.catalog import ModelCard
     from reid.preprocessing import ReIDPreprocessing
 
 __all__ = [
@@ -162,92 +161,6 @@ def _resolve_preprocessing(
     )
 
 
-def _resolve_architecture_from_card(
-    card_architecture: str,
-    override: str | nn.Module | None,
-    source: str,
-) -> tuple[str | nn.Module, bool]:
-    """Return architecture from a model card, honoring an explicit override."""
-    if override is not None and override != card_architecture:
-        warnings.warn(
-            f"Overriding architecture {card_architecture!r} resolved for "
-            f"{source!r} with {override!r}. The card's weights and "
-            "preprocessing are still used — ensure they are compatible with "
-            "the overridden architecture.",
-            UserWarning,
-            stacklevel=4,
-        )
-        return override, True
-    return card_architecture, False
-
-
-def _required_match_fraction(source: str | None, *, arch_overridden: bool) -> float | None:
-    """Curated aliases require a full weight match unless architecture was overridden."""
-    from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50
-
-    if arch_overridden:
-        return None
-    if source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
-        return 1.0
-    return None
-
-
-def _load_plan_from_card(
-    source: str,
-    card: ModelCard,
-    config_preprocessing: ReIDPreprocessing | None,
-    architecture: str | nn.Module | None,
-    preprocessing: ReIDPreprocessing | None,
-) -> LoadPlan:
-    resolved_arch, arch_overridden = _resolve_architecture_from_card(
-        card.architecture, architecture, source
-    )
-    return LoadPlan(
-        resolved_arch,
-        card.weights,
-        _resolve_preprocessing(preprocessing, config_preprocessing, card.architecture),
-        card.domain_warning,
-        _required_match_fraction(source, arch_overridden=arch_overridden),
-    )
-
-
-def _load_plan_architecture_only(
-    architecture: str | nn.Module | None,
-    preprocessing: ReIDPreprocessing | None,
-) -> LoadPlan:
-    if architecture is None:
-        raise ValueError("architecture is required when source is None")
-    return LoadPlan(
-        architecture,
-        None,
-        _resolve_preprocessing(preprocessing, None, architecture),
-        None,
-        None,
-    )
-
-
-def _load_plan_bare_weights(
-    source: str,
-    architecture: str | nn.Module | None,
-    preprocessing: ReIDPreprocessing | None,
-) -> LoadPlan:
-    if architecture is None:
-        raise ValueError(
-            f"Cannot load {source!r}: it appears to be a bare weights "
-            "file but no `architecture` was provided. Pass e.g. "
-            "architecture='osnet_x1_0' to specify the model "
-            "architecture, or point to a directory produced by "
-            "save_pretrained() for a self-describing checkpoint."
-        )
-    return LoadPlan(
-        architecture,
-        source,
-        _resolve_preprocessing(preprocessing, None, architecture),
-        None,
-        None,
-    )
-
-
 def resolve_load_plan(
     source: str | None,
     architecture: str | nn.Module | None,
@@ -279,7 +192,7 @@ def resolve_load_plan(
         ValueError: For an architecture-only request without ``architecture``,
             or a bare weights file without ``architecture``.
     """
-    from reid.catalog import DEFAULT_MODEL, resolve_model_card
+    from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50, resolve_model_card
 
     if source is None and architecture is None:
         source = DEFAULT_MODEL
@@ -287,12 +200,57 @@ def resolve_load_plan(
     resolved = resolve_model_card(source) if source is not None else None
     if resolved is not None:
         card, config_preprocessing = resolved
-        return _load_plan_from_card(source, card, config_preprocessing, architecture, preprocessing)
+        arch_overridden = False
+        if architecture is not None and architecture != card.architecture:
+            arch_overridden = True
+            warnings.warn(
+                f"Overriding architecture {card.architecture!r} resolved for "
+                f"{source!r} with {architecture!r}. The card's weights and "
+                "preprocessing are still used — ensure they are compatible with "
+                "the overridden architecture.",
+                UserWarning,
+                stacklevel=3,
+            )
+            resolved_arch: str | nn.Module = architecture
+        else:
+            resolved_arch = card.architecture
+        required_fraction = None
+        if not arch_overridden and source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
+            required_fraction = 1.0
+        return LoadPlan(
+            resolved_arch,
+            card.weights,
+            _resolve_preprocessing(preprocessing, config_preprocessing, card.architecture),
+            card.domain_warning,
+            required_fraction,
+        )
 
     if source is None:
-        return _load_plan_architecture_only(architecture, preprocessing)
+        if architecture is None:
+            raise ValueError("architecture is required when source is None")
+        return LoadPlan(
+            architecture,
+            None,
+            _resolve_preprocessing(preprocessing, None, architecture),
+            None,
+            None,
+        )
 
-    return _load_plan_bare_weights(source, architecture, preprocessing)
+    if architecture is None:
+        raise ValueError(
+            f"Cannot load {source!r}: it appears to be a bare weights "
+            "file but no `architecture` was provided. Pass e.g. "
+            "architecture='osnet_x1_0' to specify the model "
+            "architecture, or point to a directory produced by "
+            "save_pretrained() for a self-describing checkpoint."
+        )
+    return LoadPlan(
+        architecture,
+        source,
+        _resolve_preprocessing(preprocessing, None, architecture),
+        None,
+        None,
+    )
 
 
 # ---------------------------------------------------------------------------
