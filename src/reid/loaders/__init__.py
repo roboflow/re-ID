@@ -7,7 +7,6 @@
 """Checkpoint loading helpers: weight resolution, state-dict loading, load plans."""
 
 from reid.loaders.io import (
-    KeyReport,
     LoadPlan,
     load_state_dict_for_architecture,
     load_state_dict_into,
@@ -16,7 +15,6 @@ from reid.loaders.io import (
 )
 
 __all__ = [
-    "KeyReport",
     "LoadPlan",
     "load_state_dict_for_architecture",
     "load_state_dict_into",

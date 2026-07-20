@@ -8,12 +8,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import pickle
 import tempfile
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
@@ -24,6 +25,8 @@ from safetensors.torch import load_file
 
 if TYPE_CHECKING:
     from reid.preprocessing import ReIDPreprocessing
+
+logger = logging.getLogger(__name__)
 
 _HF_PREFIX = "hf://"
 _GD_PREFIX = "gd://"
@@ -43,27 +46,6 @@ def _cache_root() -> str:
 def _weights_cache_dir() -> str:
     """Return the directory used to cache downloaded weight files."""
     return os.path.join(_cache_root(), "weights")
-
-
-@dataclass
-class KeyReport:
-    """Summary of a state-dict load (matched/missing/unexpected keys)."""
-
-    matched: int
-    total: int
-    missing: list[str] = field(default_factory=list)
-    unexpected: list[str] = field(default_factory=list)
-
-    @property
-    def matched_fraction(self) -> float:
-        return self.matched / self.total if self.total else 0.0
-
-    def summary(self) -> str:
-        return (
-            f"loaded {self.matched}/{self.total} params "
-            f"({self.matched_fraction:.0%}); "
-            f"{len(self.missing)} missing, {len(self.unexpected)} unused"
-        )
 
 
 def resolve_weights(source: str) -> str:
@@ -272,30 +254,27 @@ def load_state_dict_for_architecture(
     *,
     warn_threshold: float = 0.5,
     required_match_fraction: float | None = None,
-) -> KeyReport:
+) -> None:
     """Load ``path`` into ``module``, remapping keys for ``architecture`` itself.
 
     The checkpoint key remap is resolved from ``architecture`` via
     :func:`reid.architectures.checkpoint_remap_for_architecture`; callers do not
-    pass a remap.
+    pass a remap. Matched fraction, missing, and unexpected keys are logged; a
+    partial load warns; and an unmet ``required_match_fraction`` raises. Nothing
+    is returned.
     """
     from reid.architectures import checkpoint_remap_for_architecture
 
     remap = checkpoint_remap_for_architecture(architecture) if architecture else None
-    report = load_state_dict_into(
+    load_state_dict_into(
         module,
         path,
         device,
         remap=remap,
         warn_threshold=warn_threshold,
+        required_match_fraction=required_match_fraction,
+        label=architecture or None,
     )
-    if required_match_fraction is not None and report.matched_fraction < required_match_fraction:
-        raise ValueError(
-            f"Checkpoint {path!r} matched only {report.matched_fraction:.0%} of "
-            f"{architecture!r} parameters (required >= {required_match_fraction:.0%}). "
-            f"{report.summary()}"
-        )
-    return report
 
 
 def _strip_common_prefixes(key: str) -> str:
@@ -345,8 +324,29 @@ def load_state_dict_into(
     drop_prefixes: tuple[str, ...] = _DEFAULT_DROP_PREFIXES,
     remap: Callable[[dict], dict] | None = None,
     warn_threshold: float = 0.5,
-) -> KeyReport:
-    """Load ``path`` into ``module`` by name and shape (classifier keys skipped)."""
+    required_match_fraction: float | None = None,
+    label: str | None = None,
+) -> None:
+    """Load ``path`` into ``module`` by name and shape (classifier keys skipped).
+
+    The matched fraction and the missing/unexpected key lists are logged. A
+    partial load (missing or unexpected keys) emits a ``UserWarning``. When
+    ``required_match_fraction`` is set and the matched fraction falls short, a
+    ``ValueError`` is raised. Nothing is returned.
+
+    Args:
+        module: Target module to load weights into (updated in place).
+        path: Checkpoint file (``.pth`` or ``.safetensors``).
+        device: Device to map the checkpoint onto.
+        drop_prefixes: Key prefixes to skip (e.g. classifier heads).
+        remap: Optional key remapper applied instead of the default prefix rules.
+        warn_threshold: Below this matched fraction the warning treats the load
+            as a likely architecture mismatch rather than an expected partial.
+        required_match_fraction: If set, raise when the matched fraction is below
+            this value.
+        label: Optional human-readable name (e.g. architecture) used in the
+            unmet-``required_match_fraction`` error message.
+    """
     state_dict = _read_state_dict(path, device)
 
     cleaned: dict
@@ -373,28 +373,42 @@ def load_state_dict_into(
     module.load_state_dict(target)
 
     missing = [k for k in target if k not in matched]
-    report = KeyReport(
-        matched=len(matched),
-        total=len(target),
-        missing=missing,
-        unexpected=unexpected,
+    total = len(target)
+    matched_fraction = len(matched) / total if total else 0.0
+    summary = (
+        f"loaded {len(matched)}/{total} params ({matched_fraction:.0%}); "
+        f"{len(missing)} missing, {len(unexpected)} unused"
     )
 
-    if report.missing or report.unexpected:
-        if report.matched_fraction < warn_threshold:
+    logger.info(
+        "State-dict load from %r: %s; missing=%s; unexpected=%s",
+        path,
+        summary,
+        missing,
+        unexpected,
+    )
+
+    if missing or unexpected:
+        if matched_fraction < warn_threshold:
             warnings.warn(
-                f"Only {report.summary()} from {path!r}. The weights likely do not "
+                f"Only {summary} from {path!r}. The weights likely do not "
                 f"match this architecture — check the model/weights pairing.",
                 UserWarning,
                 stacklevel=2,
             )
         else:
             warnings.warn(
-                f"Partial load from {path!r}: {report.summary()}. Missing "
+                f"Partial load from {path!r}: {summary}. Missing "
                 "parameters keep their initialised values; unused checkpoint "
                 "keys were ignored.",
                 UserWarning,
                 stacklevel=2,
             )
 
-    return report
+    if required_match_fraction is not None and matched_fraction < required_match_fraction:
+        target_name = f"{label!r} " if label else ""
+        raise ValueError(
+            f"Checkpoint {path!r} matched only {matched_fraction:.0%} of "
+            f"{target_name}parameters (required >= {required_match_fraction:.0%}). "
+            f"{summary}"
+        )

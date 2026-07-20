@@ -13,6 +13,7 @@ Curated weight downloads live in the ``@pytest.mark.slow`` test below.
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from typing import Any, cast
@@ -155,7 +156,7 @@ class TestLoaders:
         with pytest.raises(ValueError, match="hf://"):
             _resolve_hf("hf://only_one_part")
 
-    def test_load_state_dict_full_match(self) -> None:
+    def test_load_state_dict_full_match(self, caplog: pytest.LogCaptureFixture) -> None:
         import torch
         import torch.nn as nn
 
@@ -166,9 +167,10 @@ class TestLoaders:
             tmp_path = f.name
         try:
             torch.save(model.state_dict(), tmp_path)
-            report = load_state_dict_into(model, tmp_path, torch.device("cpu"))
-            assert report.matched == report.total
-            assert report.matched_fraction == 1.0
+            with caplog.at_level(logging.INFO, logger="reid.loaders"):
+                load_state_dict_into(model, tmp_path, torch.device("cpu"))
+            assert "100%" in caplog.text
+            assert "0 missing, 0 unused" in caplog.text
         finally:
             os.unlink(tmp_path)
 
@@ -189,7 +191,7 @@ class TestLoaders:
         finally:
             os.unlink(tmp_path)
 
-    def test_partial_load_in_high_band_warns(self) -> None:
+    def test_partial_load_in_high_band_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         """A 50–99% match (missing keys, not a full mismatch) still warns."""
         import torch
         import torch.nn as nn
@@ -213,14 +215,15 @@ class TestLoaders:
             tmp_path = f.name
         try:
             torch.save(partial, tmp_path)
-            with pytest.warns(UserWarning, match="Partial load"):
-                report = load_state_dict_into(target, tmp_path, torch.device("cpu"))
-            assert 0.5 <= report.matched_fraction < 1.0
-            assert report.missing == ["b.bias"]
+            with caplog.at_level(logging.INFO, logger="reid.loaders"):
+                with pytest.warns(UserWarning, match="Partial load"):
+                    load_state_dict_into(target, tmp_path, torch.device("cpu"))
+            assert "75%" in caplog.text
+            assert "b.bias" in caplog.text
         finally:
             os.unlink(tmp_path)
 
-    def test_generic_loader_preserves_backbone_prefix(self) -> None:
+    def test_generic_loader_preserves_backbone_prefix(self, caplog: pytest.LogCaptureFixture) -> None:
         import torch
         import torch.nn as nn
 
@@ -240,13 +243,14 @@ class TestLoaders:
             tmp_path = f.name
         try:
             torch.save(wrapped, tmp_path)
-            report = load_state_dict_into(model, tmp_path, torch.device("cpu"))
-            assert report.matched == report.total
-            assert report.matched_fraction == 1.0
+            with caplog.at_level(logging.INFO, logger="reid.loaders"):
+                load_state_dict_into(model, tmp_path, torch.device("cpu"))
+            assert "100%" in caplog.text
+            assert "0 missing, 0 unused" in caplog.text
         finally:
             os.unlink(tmp_path)
 
-    def test_osnet_backbone_loads_with_full_match(self, tmp_path) -> None:
+    def test_osnet_backbone_loads_with_full_match(self, tmp_path, caplog: pytest.LogCaptureFixture) -> None:
         """Inference OSNet has no classifier, so strict checkpoint loads succeed."""
         import torch
 
@@ -260,14 +264,15 @@ class TestLoaders:
         torch.save(source.state_dict(), path)
 
         target = build_architecture("osnet_x0_25")
-        report = load_state_dict_for_architecture(
-            target,
-            str(path),
-            torch.device("cpu"),
-            "osnet_x0_25",
-            required_match_fraction=1.0,
-        )
-        assert report.matched_fraction == 1.0
+        with caplog.at_level(logging.INFO, logger="reid.loaders"):
+            load_state_dict_for_architecture(
+                target,
+                str(path),
+                torch.device("cpu"),
+                "osnet_x0_25",
+                required_match_fraction=1.0,
+            )
+        assert "100%" in caplog.text
 
     def test_remap_fastreid_sbs_keys(self) -> None:
         import torch
@@ -286,7 +291,7 @@ class TestLoaders:
         assert "bottleneck.weight" in mapped
         assert "heads.weight" not in mapped
 
-    def test_load_fastreid_sbs_from_synthetic_checkpoint(self) -> None:
+    def test_load_fastreid_sbs_from_synthetic_checkpoint(self, caplog: pytest.LogCaptureFixture) -> None:
         import torch
 
         from reid.architectures import build_architecture
@@ -308,14 +313,15 @@ class TestLoaders:
             tmp_path = f.name
         try:
             torch.save(wrapped, tmp_path)
-            report = load_state_dict_for_architecture(
-                model,
-                tmp_path,
-                torch.device("cpu"),
-                FASTREID_SBS_ARCHITECTURE,
-            )
-            assert report.matched == report.total
-            assert report.matched_fraction == 1.0
+            with caplog.at_level(logging.INFO, logger="reid.loaders"):
+                load_state_dict_for_architecture(
+                    model,
+                    tmp_path,
+                    torch.device("cpu"),
+                    FASTREID_SBS_ARCHITECTURE,
+                )
+            assert "100%" in caplog.text
+            assert "0 missing, 0 unused" in caplog.text
         finally:
             os.unlink(tmp_path)
 
@@ -346,13 +352,12 @@ class TestLoaders:
             tmp_path = f.name
         try:
             torch.save(wrapped, tmp_path)
-            report = load_state_dict_for_architecture(
+            load_state_dict_for_architecture(
                 model,
                 tmp_path,
                 torch.device("cpu"),
                 FASTREID_SBS_ARCHITECTURE,
             )
-            assert report.matched == report.total
             assert model.pool.p.item() == pytest.approx(mot17_gem_p)
         finally:
             os.unlink(tmp_path)

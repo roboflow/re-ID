@@ -160,14 +160,14 @@ class ReIDModel:
         if plan.weights is not None:
             local_path = resolve_weights(plan.weights)
             arch_name = plan.architecture if isinstance(plan.architecture, str) else ""
-            report = load_state_dict_for_architecture(
+            logger.info("ReIDModel loading weights (%s)", plan.weights)
+            load_state_dict_for_architecture(
                 backbone,
                 local_path,
                 resolved_device,
                 arch_name,
                 required_match_fraction=plan.required_match_fraction,
             )
-            logger.info("ReIDModel weights (%s): %s", plan.weights, report.summary())
 
         backbone.to(resolved_device)
 
