@@ -23,6 +23,7 @@ from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError
 from safetensors.torch import load_file
 
 if TYPE_CHECKING:
+    from reid.catalog import ModelCard
     from reid.preprocessing import ReIDPreprocessing
 
 __all__ = [
@@ -144,6 +145,109 @@ class LoadPlan(NamedTuple):
     required_match_fraction: float | None
 
 
+def _resolve_preprocessing(
+    explicit: ReIDPreprocessing | None,
+    config: ReIDPreprocessing | None,
+    architecture_for_default: str | nn.Module | None,
+) -> ReIDPreprocessing:
+    """Pick preprocessing: explicit override, then config, then architecture default."""
+    from reid.architectures import default_preprocessing_for_architecture
+
+    if explicit is not None:
+        return explicit
+    if config is not None:
+        return config
+    return default_preprocessing_for_architecture(
+        architecture_for_default if isinstance(architecture_for_default, str) else None
+    )
+
+
+def _resolve_architecture_from_card(
+    card_architecture: str,
+    override: str | nn.Module | None,
+    source: str,
+) -> tuple[str | nn.Module, bool]:
+    """Return architecture from a model card, honoring an explicit override."""
+    if override is not None and override != card_architecture:
+        warnings.warn(
+            f"Overriding architecture {card_architecture!r} resolved for "
+            f"{source!r} with {override!r}. The card's weights and "
+            "preprocessing are still used — ensure they are compatible with "
+            "the overridden architecture.",
+            UserWarning,
+            stacklevel=4,
+        )
+        return override, True
+    return card_architecture, False
+
+
+def _required_match_fraction(source: str | None, *, arch_overridden: bool) -> float | None:
+    """Curated aliases require a full weight match unless architecture was overridden."""
+    from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50
+
+    if arch_overridden:
+        return None
+    if source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
+        return 1.0
+    return None
+
+
+def _load_plan_from_card(
+    source: str,
+    card: ModelCard,
+    config_preprocessing: ReIDPreprocessing | None,
+    architecture: str | nn.Module | None,
+    preprocessing: ReIDPreprocessing | None,
+) -> LoadPlan:
+    resolved_arch, arch_overridden = _resolve_architecture_from_card(
+        card.architecture, architecture, source
+    )
+    return LoadPlan(
+        resolved_arch,
+        card.weights,
+        _resolve_preprocessing(preprocessing, config_preprocessing, card.architecture),
+        card.domain_warning,
+        _required_match_fraction(source, arch_overridden=arch_overridden),
+    )
+
+
+def _load_plan_architecture_only(
+    architecture: str | nn.Module | None,
+    preprocessing: ReIDPreprocessing | None,
+) -> LoadPlan:
+    if architecture is None:
+        raise ValueError("architecture is required when source is None")
+    return LoadPlan(
+        architecture,
+        None,
+        _resolve_preprocessing(preprocessing, None, architecture),
+        None,
+        None,
+    )
+
+
+def _load_plan_bare_weights(
+    source: str,
+    architecture: str | nn.Module | None,
+    preprocessing: ReIDPreprocessing | None,
+) -> LoadPlan:
+    if architecture is None:
+        raise ValueError(
+            f"Cannot load {source!r}: it appears to be a bare weights "
+            "file but no `architecture` was provided. Pass e.g. "
+            "architecture='osnet_x1_0' to specify the model "
+            "architecture, or point to a directory produced by "
+            "save_pretrained() for a self-describing checkpoint."
+        )
+    return LoadPlan(
+        architecture,
+        source,
+        _resolve_preprocessing(preprocessing, None, architecture),
+        None,
+        None,
+    )
+
+
 def resolve_load_plan(
     source: str | None,
     architecture: str | nn.Module | None,
@@ -151,106 +255,44 @@ def resolve_load_plan(
 ) -> LoadPlan:
     """Resolve a ``from_pretrained`` request into the values it needs.
 
-    Handles the four load forms: default alias, curated alias / config directory
-    or repo, bare weights file, and architecture-only build. When a curated card
-    is resolved *and* ``architecture`` is explicitly overridden, the override
-    wins (with a warning); the card's weights and preprocessing are retained.
+    Resolution follows four load forms (in order):
+
+    1. **Default curated alias** — both ``source`` and ``architecture`` omitted;
+       ``DEFAULT_MODEL`` is used.
+    2. **Curated alias or config directory** — ``source`` resolves via
+       :func:`reid.catalog.resolve_model_card` (alias, ``save_pretrained``
+       directory, or HF repo). When ``architecture`` is explicitly overridden,
+       the override wins (with a warning); the card's weights and preprocessing
+       are retained.
+    3. **Architecture-only build** — ``source`` is ``None``; ``architecture`` is
+       required. Random init, no weight downloads.
+    4. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://``
+       URL that does not resolve to a model card; ``architecture`` is required.
 
     Returns:
-        A ``(architecture, weights, preprocessing, domain_warning,
-        required_match_fraction)`` tuple. Callers build the architecture, load
-        ``weights`` when present, and enforce ``required_match_fraction`` if set.
+        A ``LoadPlan`` with architecture, weights, preprocessing, an optional
+        domain warning, and an optional strict-load fraction for curated aliases.
+        Callers build the architecture, load ``weights`` when present, and enforce
+        ``required_match_fraction`` when set.
 
     Raises:
         ValueError: For an architecture-only request without ``architecture``,
             or a bare weights file without ``architecture``.
     """
-    from reid.architectures import default_preprocessing_for_architecture
-    from reid.catalog import (
-        DEFAULT_MODEL,
-        FASTREID_MOT17_SBS50,
-        resolve_model_card,
-    )
+    from reid.catalog import DEFAULT_MODEL, resolve_model_card
 
-    # No source and no architecture → use the default curated alias.
     if source is None and architecture is None:
         source = DEFAULT_MODEL
 
     resolved = resolve_model_card(source) if source is not None else None
-
-    arch_overridden = False
     if resolved is not None:
         card, config_preprocessing = resolved
-        if architecture is not None and architecture != card.architecture:
-            arch_overridden = True
-            warnings.warn(
-                f"Overriding architecture {card.architecture!r} resolved for "
-                f"{source!r} with {architecture!r}. The card's weights and "
-                "preprocessing are still used — ensure they are compatible with "
-                "the overridden architecture.",
-                UserWarning,
-                stacklevel=3,
-            )
-            resolved_arch: str | nn.Module = architecture
-        else:
-            resolved_arch = card.architecture
-        resolved_weights = card.weights
-        if preprocessing is not None:
-            resolved_preprocessing = preprocessing
-        elif config_preprocessing is not None:
-            resolved_preprocessing = config_preprocessing
-        else:
-            resolved_preprocessing = default_preprocessing_for_architecture(
-                card.architecture if isinstance(card.architecture, str) else None
-            )
-        resolved_warning = card.domain_warning
+        return _load_plan_from_card(source, card, config_preprocessing, architecture, preprocessing)
 
-    elif source is None:
-        # Architecture-only build: random init, no network downloads.
-        if architecture is None:
-            raise ValueError("architecture is required when source is None")
-        resolved_arch = architecture
-        resolved_weights = None
-        resolved_preprocessing = (
-            preprocessing
-            if preprocessing is not None
-            else default_preprocessing_for_architecture(architecture if isinstance(architecture, str) else None)
-        )
-        resolved_warning = None
+    if source is None:
+        return _load_plan_architecture_only(architecture, preprocessing)
 
-    else:
-        # Bare weights file — architecture is required.
-        if architecture is None:
-            raise ValueError(
-                f"Cannot load {source!r}: it appears to be a bare weights "
-                "file but no `architecture` was provided. Pass e.g. "
-                "architecture='osnet_x1_0' to specify the model "
-                "architecture, or point to a directory produced by "
-                "save_pretrained() for a self-describing checkpoint."
-            )
-        resolved_arch = architecture
-        resolved_weights = source
-        resolved_preprocessing = (
-            preprocessing
-            if preprocessing is not None
-            else default_preprocessing_for_architecture(architecture if isinstance(architecture, str) else None)
-        )
-        resolved_warning = None
-
-    # Curated aliases ship a known-good architecture+weights pairing, so require
-    # a full match — unless the caller overrode the architecture, which voids
-    # that guarantee and makes a partial load expected.
-    required_fraction = None
-    if not arch_overridden and source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
-        required_fraction = 1.0
-
-    return LoadPlan(
-        resolved_arch,
-        resolved_weights,
-        resolved_preprocessing,
-        resolved_warning,
-        required_fraction,
-    )
+    return _load_plan_bare_weights(source, architecture, preprocessing)
 
 
 # ---------------------------------------------------------------------------
