@@ -35,28 +35,11 @@ __all__ = [
     "FASTREID_SBS_ARCHITECTURE",
     "FastReIDSBSResNeSt50",
     "build_fastreid_sbs_resnest50",
-    "default_preprocessing",
     "remap_fastreid_sbs_state_dict",
 ]
 
 FASTREID_SBS_ARCHITECTURE = "fastreid_sbs_resnest50"
 FASTREID_SBS_EMBED_DIM = 2048
-
-
-def default_preprocessing() -> ReIDPreprocessing:
-    """Default crop/tensor recipe for FastReID SBS (BoT-SORT FastReIDInterface).
-
-    Config (aligned with BoT-SORT / FastReID MOT17 SBS inference):
-    - input size: 384x128 (H, W)
-    - resize: stretch (cv2.resize, no letterbox)
-    - colour: BGR crops converted to RGB
-    - normalize: ImageNet mean/std
-    """
-    return ReIDPreprocessing(
-        input_size=(384, 128),
-        resize_mode="stretch",
-        to_rgb=True,
-    )
 
 
 def _patch_resnest50d_for_fastreid_last_stride(backbone: nn.Module) -> nn.Module:
@@ -103,6 +86,22 @@ class FastReIDSBSResNeSt50(nn.Module):
     (:attr:`bottleneck`). Weights for all three stages load from a BoT-SORT
     ``.pth`` via :func:`remap_fastreid_sbs_state_dict`.
     """
+
+    @classmethod
+    def default_preprocessing(cls) -> ReIDPreprocessing:
+        """Default crop/tensor recipe for FastReID SBS (BoT-SORT FastReIDInterface).
+
+        Config (aligned with BoT-SORT / FastReID MOT17 SBS inference):
+        - input size: 384x128 (H, W)
+        - resize: stretch (cv2.resize, no letterbox)
+        - colour: BGR crops converted to RGB
+        - normalize: ImageNet mean/std
+        """
+        return ReIDPreprocessing(
+            input_size=(384, 128),
+            resize_mode="stretch",
+            to_rgb=True,
+        )
 
     def __init__(self) -> None:
         super().__init__()

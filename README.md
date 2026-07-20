@@ -56,10 +56,11 @@ Use `ReIDModel.from_pretrained(...)`. Pick the form that matches what you have:
 
 ### Preprocessing and config
 
-Each architecture owns its default crop/tensor recipe via a
-`default_preprocessing()` next to the builder (OSNet: 256x128 stretch;
-FastReID SBS: 384x128 stretch, BoT-SORT FastReIDInterface). Dispatch is
-`architectures.default_preprocessing_for_architecture`.
+Each architecture class owns its default crop/tensor recipe as a
+`default_preprocessing()` classmethod (`OSNet.default_preprocessing()`,
+`FastReIDSBSResNeSt50.default_preprocessing()`). OSNet uses 256x128 stretch;
+FastReID SBS uses 384x128 stretch (BoT-SORT FastReIDInterface). String dispatch
+is `architectures.default_preprocessing_for_architecture`.
 
 `ReIDPreprocessing` fields (also what `reid_config.json` stores under
 `"preprocessing"`):
@@ -90,21 +91,21 @@ src/reid/
 ├── model.py            # ReIDModel (the encoder)
 ├── preprocessing.py    # ReIDPreprocessing (shared crop/tensor type)
 ├── catalog.py          # curated aliases (ModelCard, ALIASES)
-├── architectures/      # builders + per-arch default_preprocessing()
+├── architectures/      # builders + class default_preprocessing() on each net
 ├── loaders.py          # weight I/O and resolve_load_plan
 └── eval/               # gallery evaluation
 ```
 
-- **Architectures** know how to build a net and which preprocessing that net
-  expects.
+- **Architectures** know how to build a net and expose preprocessing via
+  `default_preprocessing()` on the architecture class.
 - **Catalog** is only the small allowlist of named recipes (alias →
   architecture + weights URL + that arch's preprocessing + domain warning).
 
 ## Adding a new architecture
 
 1. Implement under `src/reid/architectures/` (or use `timm:<name>`).
-2. Add `default_preprocessing()` next to the builder, documenting the
-   input size / resize / colour contract for that checkpoint family.
+2. Add a `@classmethod default_preprocessing()` on the architecture class,
+   documenting the input size / resize / colour contract for that checkpoint family.
 3. Register build + preprocessing dispatch in `architectures/__init__.py`.
 4. Optionally add a curated alias in `catalog.ALIASES`.
 

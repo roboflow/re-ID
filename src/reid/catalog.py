@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError
 
-from reid.architectures import default_preprocessing_for_architecture
-from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
+from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
+from reid.architectures.osnet import OSNet
 from reid.preprocessing import ReIDPreprocessing
 
 # OSNet x1.0 trained on MSMT17 with combineall (train + query + gallery).
@@ -76,13 +76,13 @@ ALIASES: dict[str, ModelCard] = {
     DEFAULT_MODEL: ModelCard(
         architecture="osnet_x1_0",
         weights=_DEFAULT_OSNET_WEIGHTS,
-        preprocessing=default_preprocessing_for_architecture("osnet_x1_0"),
+        preprocessing=OSNet.default_preprocessing(),
         domain_warning=_DOMAIN_WARNING,
     ),
     FASTREID_MOT17_SBS50: ModelCard(
         architecture=FASTREID_SBS_ARCHITECTURE,
         weights=_FASTREID_MOT17_WEIGHTS,
-        preprocessing=default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE),
+        preprocessing=FastReIDSBSResNeSt50.default_preprocessing(),
         domain_warning=_FASTREID_MOT17_WARNING,
     ),
 }

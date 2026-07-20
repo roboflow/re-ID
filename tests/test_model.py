@@ -7,7 +7,7 @@
 """ReID model / architecture / loader tests.
 
 Requires ``roboflow-reid`` (torch, timm, huggingface_hub, safetensors).
-Installed and run in CI via ``uv sync --group dev --extra reid``.
+Installed and run in CI via ``uv sync --all-extras`` and ``pytest tests/ -m 'not slow'``.
 Curated weight downloads live in the ``@pytest.mark.slow`` test below.
 """
 
@@ -22,14 +22,15 @@ import numpy as np
 import pytest
 
 from reid.architectures import default_preprocessing_for_architecture
-from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
+from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
+from reid.architectures.osnet import OSNet
 from reid.catalog import (
     DEFAULT_MODEL,
     FASTREID_MOT17_SBS50,
     resolve_model_card,
 )
 from reid.loaders import resolve_weights
-from reid.preprocessing import ReIDPreprocessing
+from reid.preprocessing import LETTERBOX_PAD_VALUE, ReIDPreprocessing
 
 # ---------------------------------------------------------------------------
 # 1. Preprocessing
@@ -55,11 +56,9 @@ class TestReIDPreprocessing:
         out = ReIDPreprocessing(input_size=(384, 128), resize_mode="letterbox").resize_crop(crop)
         assert out.shape == (384, 128, 3)
         assert out[0, 0, 0] == 255
-        assert out[-1, 0, 0] == 114
+        assert out[-1, 0, 0] == LETTERBOX_PAD_VALUE
 
     def test_fastreid_default_uses_stretch(self) -> None:
-        from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
-
         fastreid = default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE)
         assert fastreid.input_size == (384, 128)
         assert fastreid.resize_mode == "stretch"
@@ -102,8 +101,6 @@ class TestRegistry:
         assert card.domain_warning is not None
 
     def test_resolve_fastreid_mot17_alias(self) -> None:
-        from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
-
         card = resolve_model_card(FASTREID_MOT17_SBS50)
         assert card is not None
         assert card.architecture == FASTREID_SBS_ARCHITECTURE
@@ -112,12 +109,12 @@ class TestRegistry:
         assert card.domain_warning is not None
 
     def test_default_preprocessing_for_architecture(self) -> None:
-        from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
-
         osnet = default_preprocessing_for_architecture("osnet_x1_0")
         assert osnet.input_size == (256, 128)
+        assert osnet == OSNet.default_preprocessing()
         fastreid = default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE)
         assert fastreid.input_size == (384, 128)
+        assert fastreid == FastReIDSBSResNeSt50.default_preprocessing()
         assert default_preprocessing_for_architecture("timm:resnet50").input_size == (256, 128)
 
     def test_local_dir_with_config(self, tmp_path) -> None:
@@ -160,10 +157,8 @@ class TestLoaders:
             resolve_weights("/nonexistent/path/to/weights.pth")
 
     def test_malformed_hf_url_raises(self) -> None:
-        from reid.loaders import _resolve_hf
-
         with pytest.raises(ValueError, match="hf://"):
-            _resolve_hf("hf://only_one_part")
+            resolve_weights("hf://only_one_part")
 
     def test_load_state_dict_full_match(self, caplog: pytest.LogCaptureFixture) -> None:
         import torch
@@ -304,7 +299,6 @@ class TestLoaders:
         import torch
 
         from reid.architectures import build_architecture
-        from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
         from reid.loaders import load_state_dict_for_architecture
 
         model = build_architecture(FASTREID_SBS_ARCHITECTURE)
@@ -339,10 +333,7 @@ class TestLoaders:
         import torch
 
         from reid.architectures import build_architecture
-        from reid.architectures.fastreid_sbs import (
-            FASTREID_SBS_ARCHITECTURE,
-            FastReIDSBSResNeSt50,
-        )
+        from reid.architectures.fastreid_sbs import FastReIDSBSResNeSt50
         from reid.loaders import load_state_dict_for_architecture
 
         mot17_gem_p = 1.7194522619247437
@@ -376,10 +367,7 @@ class TestLoaders:
         import torch.nn as nn
 
         from reid.architectures import build_architecture
-        from reid.architectures.fastreid_sbs import (
-            FASTREID_SBS_ARCHITECTURE,
-            FastReIDSBSResNeSt50,
-        )
+        from reid.architectures.fastreid_sbs import FastReIDSBSResNeSt50
 
         model = cast(FastReIDSBSResNeSt50, build_architecture(FASTREID_SBS_ARCHITECTURE))
         block = cast(Any, cast(Any, model.backbone).layer4[0])
@@ -394,7 +382,6 @@ class TestLoaders:
         import torch
 
         from reid.architectures import build_architecture
-        from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 
         model = build_architecture(FASTREID_SBS_ARCHITECTURE)
         model.eval()

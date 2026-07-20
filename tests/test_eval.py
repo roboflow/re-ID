@@ -6,7 +6,8 @@
 
 """NumPy-only ReID gallery evaluation tests.
 
-These do not require torch and run in every CI job.
+These do not require torch. CI installs via ``uv sync --all-extras`` and runs
+``pytest tests/ -m 'not slow'``.
 """
 
 from __future__ import annotations

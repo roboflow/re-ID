@@ -15,14 +15,11 @@ import torch.nn as nn
 
 from reid.architectures.fastreid_sbs import (
     FASTREID_SBS_ARCHITECTURE,
+    FastReIDSBSResNeSt50,
     build_fastreid_sbs_resnest50,
-    default_preprocessing as _fastreid_default_preprocessing,
     remap_fastreid_sbs_state_dict,
 )
-from reid.architectures.osnet import (
-    build_osnet,
-    default_preprocessing as _osnet_default_preprocessing,
-)
+from reid.architectures.osnet import OSNet, build_osnet
 from reid.preprocessing import ReIDPreprocessing
 
 # OSNet width variants.
@@ -31,6 +28,11 @@ _OSNET_VARIANTS: dict[str, str] = {
     "osnet_x0_5": "x0_5",
     "osnet_x0_75": "x0_75",
     "osnet_x1_0": "x1_0",
+}
+
+_DEFAULT_PREPROCESSING_BY_ARCH: dict[str, Callable[[], ReIDPreprocessing]] = {
+    **{name: OSNet.default_preprocessing for name in _OSNET_VARIANTS},
+    FASTREID_SBS_ARCHITECTURE: FastReIDSBSResNeSt50.default_preprocessing,
 }
 
 _TIMM_PREFIX = "timm:"
@@ -93,15 +95,14 @@ def checkpoint_remap_for_architecture(architecture: str) -> Callable[[dict], dic
 def default_preprocessing_for_architecture(architecture: str | None) -> ReIDPreprocessing:
     """Return the default preprocessing owned by *architecture*.
 
-    Each registered backbone exposes its own ``default_preprocessing()``.
-    Unknown names and ``timm:<name>`` fall back to the OSNet / ImageNet recipe
-    (256x128 stretch) unless the caller passes ``preprocessing=`` explicitly.
+    Dispatches to each registered backbone's ``default_preprocessing()`` class
+    method. Unknown names and ``timm:<name>`` fall back to the OSNet / ImageNet
+    recipe (256x128 stretch) unless the caller passes ``preprocessing=``
+    explicitly.
     """
     if architecture is None:
-        return _osnet_default_preprocessing()
-    if architecture in _OSNET_VARIANTS:
-        return _osnet_default_preprocessing()
-    if architecture == FASTREID_SBS_ARCHITECTURE:
-        return _fastreid_default_preprocessing()
+        return OSNet.default_preprocessing()
+    if architecture in _DEFAULT_PREPROCESSING_BY_ARCH:
+        return _DEFAULT_PREPROCESSING_BY_ARCH[architecture]()
     # timm:* and any future unregistered string: sensible ImageNet person-ReID default.
-    return _osnet_default_preprocessing()
+    return OSNet.default_preprocessing()
