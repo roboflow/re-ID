@@ -21,10 +21,11 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from reid.architectures import default_preprocessing_for_architecture
+from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 from reid.catalog import (
     DEFAULT_MODEL,
     FASTREID_MOT17_SBS50,
-    default_preprocessing_for_architecture,
     resolve_model_card,
 )
 from reid.loaders import resolve_weights

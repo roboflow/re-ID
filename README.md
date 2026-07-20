@@ -33,30 +33,51 @@ print(embeddings.shape)  # (1, 512)
 
 Use `ReIDModel.from_pretrained(...)`. Pick the form that matches what you have:
 
-1. **Default / curated alias** — `ReIDModel.from_pretrained()` or
+1. **Curated alias** (or no argument): `ReIDModel.from_pretrained()` or
    `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")`.
-   Use when you want a known library recipe. The alias resolves through the
-   registry to architecture, weights URL, and preprocessing. Other shipped
-   aliases include `fastreid_mot17_sbs50`.
+   Resolves architecture, weights URL, and that architecture's default
+   preprocessing. Other shipped aliases include `fastreid_mot17_sbs50`.
 
-2. **Saved directory or HF repo with `reid_config.json`** —
+2. **Saved directory or HF repo with `reid_config.json`**:
    `ReIDModel.from_pretrained("/path/to/export")` or
    `ReIDModel.from_pretrained("hf://org/repo")`.
-   Use after `save_pretrained` (or an equivalent Hub upload). The config names
-   the architecture and preprocessing; weights come from
-   `weights.safetensors` next to the config.
+   Use after `save_pretrained`. The config records architecture and
+   preprocessing; weights live in `weights.safetensors` next to it.
 
-3. **Bare checkpoint file** —
+3. **Bare checkpoint file** plus `architecture=`:
    `ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")`
-   (also works for `hf://.../file.pth` and `gd://...`).
-   Use when you only have weights and already know the backbone. Architecture
-   is required; preprocessing defaults from the architecture unless you pass
-   `preprocessing=`.
+   (also `hf://.../file.pth` and `gd://...`).
+   Preprocessing comes from that architecture's `default_preprocessing()`
+   unless you pass `preprocessing=`.
 
-4. **Architecture only (random init)** —
-   `ReIDModel.from_pretrained(architecture="osnet_x1_0")` with no weights
-   source.
-   Use for tests, scaffolding, or before you train / attach a checkpoint.
+4. **Architecture only** (random init):
+   `ReIDModel.from_pretrained(architecture="osnet_x1_0")`.
+   Useful for tests, scaffolding, or before training attaches weights.
+
+### Preprocessing and config
+
+Each architecture owns its default crop/tensor recipe via a
+`default_preprocessing()` next to the builder (OSNet: 256x128 stretch;
+FastReID SBS: 384x128 stretch, BoT-SORT FastReIDInterface). Dispatch is
+`architectures.default_preprocessing_for_architecture`.
+
+`ReIDPreprocessing` fields (also what `reid_config.json` stores under
+`"preprocessing"`):
+
+| Field | Meaning | Typical |
+| --- | --- | --- |
+| `input_size` | `(H, W)` | OSNet `(256, 128)`; FastReID `(384, 128)` |
+| `resize_mode` | `stretch` or `letterbox` | `stretch` |
+| `interpolation` | OpenCV resize | `bilinear` |
+| `to_rgb` | swap BGR crops to RGB | `True` |
+| `mean` / `std` | tensor Normalize | ImageNet |
+| `pad_value` | letterbox pad | `114` |
+
+Embedding L2 norm is not a preprocessing field: extract returns raw vectors;
+cosine distance normalizes inside `ReIDEvaluator`.
+
+Saved `reid_config.json` also has `architecture`, optional `weights`, and
+optional domain warning metadata written by `save_pretrained`.
 
 ## Package layout
 
@@ -67,30 +88,25 @@ live in submodules:
 src/reid/
 ├── __init__.py         # narrow public surface (see __all__)
 ├── model.py            # ReIDModel (the encoder)
-├── preprocessing.py    # ReIDPreprocessing (crop + tensor preprocessing)
-├── catalog.py          # curated alias catalog: ModelCard, ALIASES, resolve_model_card
-├── architectures/      # architecture dispatch: build_architecture, list_architectures
-├── loaders.py          # checkpoint I/O: weight resolution, state-dict loading, load plans
-└── eval/               # gallery evaluation: datasets, metrics, evaluator
+├── preprocessing.py    # ReIDPreprocessing (shared crop/tensor type)
+├── catalog.py          # curated aliases (ModelCard, ALIASES)
+├── architectures/      # builders + per-arch default_preprocessing()
+├── loaders.py          # weight I/O and resolve_load_plan
+└── eval/               # gallery evaluation
 ```
 
-There are **two distinct registries**, kept separate on purpose:
-
-- **Architecture dispatch** lives in `architectures/` — `build_architecture` /
-  `list_architectures` map an architecture name (`osnet_x1_0`, `timm:<name>`,
-  `fastreid_sbs_resnest50`) to an `nn.Module`.
-- **Curated alias catalog** lives in top-level `catalog.py` — `ALIASES` maps a
-  friendly alias (`osnet_x1_0_msmt17_combineall`, `fastreid_mot17_sbs50`) to a
-  `ModelCard` bundling architecture + weights URL + preprocessing.
+- **Architectures** know how to build a net and which preprocessing that net
+  expects.
+- **Catalog** is only the small allowlist of named recipes (alias →
+  architecture + weights URL + that arch's preprocessing + domain warning).
 
 ## Adding a new architecture
 
-1. Implement the module under `src/reid/architectures/` (or use `timm:<name>`).
-2. Register it in `src/reid/architectures/__init__.py` via `build_architecture` /
-   `list_architectures`.
-3. If bare `.pth` loads need non-default crop behaviour, add an entry in
-   `ARCHITECTURE_DEFAULT_PREPROCESSING` in `src/reid/catalog.py`.
-4. Optionally add a curated alias in `ALIASES` in the same catalog file.
+1. Implement under `src/reid/architectures/` (or use `timm:<name>`).
+2. Add `default_preprocessing()` next to the builder, documenting the
+   input size / resize / colour contract for that checkpoint family.
+3. Register build + preprocessing dispatch in `architectures/__init__.py`.
+4. Optionally add a curated alias in `catalog.ALIASES`.
 
 ## Gallery eval
 

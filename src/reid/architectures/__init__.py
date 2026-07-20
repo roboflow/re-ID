@@ -16,9 +16,14 @@ import torch.nn as nn
 from reid.architectures.fastreid_sbs import (
     FASTREID_SBS_ARCHITECTURE,
     build_fastreid_sbs_resnest50,
+    default_preprocessing as _fastreid_default_preprocessing,
     remap_fastreid_sbs_state_dict,
 )
-from reid.architectures.osnet import build_osnet
+from reid.architectures.osnet import (
+    build_osnet,
+    default_preprocessing as _osnet_default_preprocessing,
+)
+from reid.preprocessing import ReIDPreprocessing
 
 # OSNet width variants.
 _OSNET_VARIANTS: dict[str, str] = {
@@ -83,3 +88,20 @@ def checkpoint_remap_for_architecture(architecture: str) -> Callable[[dict], dic
     if architecture == FASTREID_SBS_ARCHITECTURE:
         return remap_fastreid_sbs_state_dict
     return None
+
+
+def default_preprocessing_for_architecture(architecture: str | None) -> ReIDPreprocessing:
+    """Return the default preprocessing owned by *architecture*.
+
+    Each registered backbone exposes its own ``default_preprocessing()``.
+    Unknown names and ``timm:<name>`` fall back to the OSNet / ImageNet recipe
+    (256x128 stretch) unless the caller passes ``preprocessing=`` explicitly.
+    """
+    if architecture is None:
+        return _osnet_default_preprocessing()
+    if architecture in _OSNET_VARIANTS:
+        return _osnet_default_preprocessing()
+    if architecture == FASTREID_SBS_ARCHITECTURE:
+        return _fastreid_default_preprocessing()
+    # timm:* and any future unregistered string: sensible ImageNet person-ReID default.
+    return _osnet_default_preprocessing()

@@ -17,7 +17,25 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-__all__ = ["OSNet", "build_osnet"]
+from reid.preprocessing import ReIDPreprocessing
+
+__all__ = ["OSNet", "build_osnet", "default_preprocessing"]
+
+
+def default_preprocessing() -> ReIDPreprocessing:
+    """Default crop/tensor recipe for OSNet (torchreid / ImageNet norms).
+
+    Config (matches common OSNet x1.0 zoo checkpoints):
+    - input size: 256x128 (H, W)
+    - resize: stretch (no letterbox)
+    - colour: BGR crops converted to RGB
+    - normalize: ImageNet mean/std
+    """
+    return ReIDPreprocessing(
+        input_size=(256, 128),
+        resize_mode="stretch",
+        to_rgb=True,
+    )
 
 
 # --------------------------------------------------------------------------- #

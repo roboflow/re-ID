@@ -155,10 +155,10 @@ def resolve_load_plan(
         ValueError: For an architecture-only request without ``architecture``,
             or a bare weights file without ``architecture``.
     """
+    from reid.architectures import default_preprocessing_for_architecture
     from reid.catalog import (
         DEFAULT_MODEL,
         FASTREID_MOT17_SBS50,
-        default_preprocessing_for_architecture,
         resolve_model_card,
     )
 

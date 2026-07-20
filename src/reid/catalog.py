@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError
 
-from reid.architectures import list_architectures
+from reid.architectures import default_preprocessing_for_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 from reid.preprocessing import ReIDPreprocessing
 
@@ -42,32 +42,6 @@ _DOMAIN_WARNING = (
 DEFAULT_MODEL = "osnet_x1_0_msmt17_combineall"
 """Curated alias used when ``ReIDModel.from_pretrained`` gets no ``source``."""
 
-
-# Default preprocessing for registered architectures (bare `.pth` loads, no ModelCard).
-DEFAULT_ARCHITECTURE_PREPROCESSING = ReIDPreprocessing()
-
-_NON_DEFAULT_ARCHITECTURE_PREPROCESSING: dict[str, ReIDPreprocessing] = {
-    # BoT-SORT FastReIDInterface: cv2 stretch to 384x128.
-    FASTREID_SBS_ARCHITECTURE: ReIDPreprocessing(input_size=(384, 128), resize_mode="stretch"),
-}
-
-
-def _build_architecture_default_preprocessing() -> dict[str, ReIDPreprocessing]:
-    mapping = {name: DEFAULT_ARCHITECTURE_PREPROCESSING for name in list_architectures()}
-    mapping.update(_NON_DEFAULT_ARCHITECTURE_PREPROCESSING)
-    return mapping
-
-
-ARCHITECTURE_DEFAULT_PREPROCESSING = _build_architecture_default_preprocessing()
-
-
-def default_preprocessing_for_architecture(architecture: str | None) -> ReIDPreprocessing:
-    """Return default preprocessing for a named architecture (bare weight loads)."""
-    if architecture is None:
-        return DEFAULT_ARCHITECTURE_PREPROCESSING
-    return ARCHITECTURE_DEFAULT_PREPROCESSING.get(architecture, DEFAULT_ARCHITECTURE_PREPROCESSING)
-
-
 # BoT-SORT MOT17 SBS-S50 (ResNeSt50 + GeM + BNNeck), trained on MOT17 train-half GT crops.
 # Weights: https://github.com/niraharon/bot-sort#model-zoo
 _FASTREID_MOT17_WEIGHTS = "gd://1QZFWpoa80rqo7O-HXmlss8J8CnS7IUsN/mot17_sbs_S50.pth"
@@ -86,6 +60,10 @@ class ModelCard:
 
     Produced by curated ``ALIASES`` entries or by loading ``reid_config.json``
     from a ``save_pretrained`` directory / HF repo.
+
+    ``preprocessing`` is normally the architecture's own
+    ``default_preprocessing()``; saved configs may override fields via
+    ``reid_config.json``.
     """
 
     architecture: str
@@ -98,13 +76,13 @@ ALIASES: dict[str, ModelCard] = {
     DEFAULT_MODEL: ModelCard(
         architecture="osnet_x1_0",
         weights=_DEFAULT_OSNET_WEIGHTS,
-        preprocessing=DEFAULT_ARCHITECTURE_PREPROCESSING,
+        preprocessing=default_preprocessing_for_architecture("osnet_x1_0"),
         domain_warning=_DOMAIN_WARNING,
     ),
     FASTREID_MOT17_SBS50: ModelCard(
         architecture=FASTREID_SBS_ARCHITECTURE,
         weights=_FASTREID_MOT17_WEIGHTS,
-        preprocessing=ARCHITECTURE_DEFAULT_PREPROCESSING[FASTREID_SBS_ARCHITECTURE],
+        preprocessing=default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE),
         domain_warning=_FASTREID_MOT17_WARNING,
     ),
 }
