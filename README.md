@@ -14,6 +14,8 @@ Or with uv:
 uv sync --all-extras
 ```
 
+PyPI package name is `roboflow-reid`; import as `reid`.
+
 ## Quick start
 
 ```python
@@ -27,6 +29,9 @@ frame = np.zeros((256, 128, 3), dtype=np.uint8)
 detections = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
 embeddings = model.extract_features(detections, frame)
 print(embeddings.shape)  # (1, 512)
+
+# Pre-cropped images on disk (gallery eval, etc.)
+embeddings = model.extract_features_from_paths(["/path/to/crop.jpg"])
 ```
 
 ## Ways to load a model
@@ -84,7 +89,8 @@ optional domain warning metadata written by `save_pretrained`.
 ## Package layout
 
 The public API is exported from the top-level `reid` package; advanced helpers
-live in submodules:
+live in submodules. Discovery helpers: `list_aliases()`, `list_architectures()`.
+Constants: `DEFAULT_MODEL`, `FASTREID_MOT17_SBS50`.
 
 ```
 src/reid/
@@ -101,7 +107,8 @@ src/reid/
   `default_preprocessing()` on the architecture class.
 - **Catalog** is only the small allowlist of named recipes (alias →
   architecture + weights URL + domain warning). Preprocessing for aliases is
-  derived from the architecture at load time.
+  derived from the architecture at load time. Curated aliases require a 100%
+  state-dict match at load time (enforced in `resolve_load_plan`).
 
 ## Adding a new architecture
 
