@@ -100,7 +100,6 @@ class TestRegistry:
         assert card.architecture == "osnet_x1_0"
         assert card.weights is not None
         assert card.domain_warning is not None
-        assert card.required_match_fraction == 1.0
         assert config_preprocessing is None
 
     def test_resolve_fastreid_mot17_alias(self) -> None:
@@ -110,7 +109,6 @@ class TestRegistry:
         assert card.architecture == FASTREID_SBS_ARCHITECTURE
         assert card.weights is not None
         assert card.domain_warning is not None
-        assert card.required_match_fraction == 1.0
         assert config_preprocessing is None
         fastreid = default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE)
         assert fastreid.input_size == (384, 128)

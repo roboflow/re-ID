@@ -100,8 +100,8 @@ src/reid/
 - **Architectures** know how to build a net and expose preprocessing via
   `default_preprocessing()` on the architecture class.
 - **Catalog** is only the small allowlist of named recipes (alias →
-  architecture + weights URL + domain warning + optional load policy).
-  Preprocessing for aliases is derived from the architecture at load time.
+  architecture + weights URL + domain warning). Preprocessing for aliases is
+  derived from the architecture at load time.
 
 ## Adding a new architecture
 

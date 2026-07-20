@@ -55,7 +55,7 @@ FASTREID_MOT17_SBS50 = "fastreid_mot17_sbs50"
 
 @dataclass
 class ModelCard:
-    """Architecture, weights source, and optional domain / load-policy metadata.
+    """Architecture, weights source, and optional domain metadata.
 
     Produced by curated ``ALIASES`` entries or by loading ``reid_config.json``
     from a ``save_pretrained`` directory / HF repo. Preprocessing for curated
@@ -67,7 +67,6 @@ class ModelCard:
     architecture: str
     weights: str | None
     domain_warning: str | None = None
-    required_match_fraction: float | None = None
 
 
 ALIASES: dict[str, ModelCard] = {
@@ -75,13 +74,11 @@ ALIASES: dict[str, ModelCard] = {
         architecture="osnet_x1_0",
         weights=_DEFAULT_OSNET_WEIGHTS,
         domain_warning=_DOMAIN_WARNING,
-        required_match_fraction=1.0,
     ),
     FASTREID_MOT17_SBS50: ModelCard(
         architecture=FASTREID_SBS_ARCHITECTURE,
         weights=_FASTREID_MOT17_WEIGHTS,
         domain_warning=_FASTREID_MOT17_WARNING,
-        required_match_fraction=1.0,
     ),
 }
 

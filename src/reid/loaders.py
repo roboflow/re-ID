@@ -155,7 +155,11 @@ def resolve_load_plan(
             or a bare weights file without ``architecture``.
     """
     from reid.architectures import default_preprocessing_for_architecture
-    from reid.catalog import DEFAULT_MODEL, resolve_model_card
+    from reid.catalog import (
+        DEFAULT_MODEL,
+        FASTREID_MOT17_SBS50,
+        resolve_model_card,
+    )
 
     # No source and no architecture → use the default curated alias.
     if source is None and architecture is None:
@@ -189,7 +193,6 @@ def resolve_load_plan(
                 card.architecture if isinstance(card.architecture, str) else None
             )
         resolved_warning = card.domain_warning
-        required_fraction = None if arch_overridden else card.required_match_fraction
 
     elif source is None:
         # Architecture-only build: random init, no network downloads.
@@ -203,7 +206,6 @@ def resolve_load_plan(
             else default_preprocessing_for_architecture(architecture if isinstance(architecture, str) else None)
         )
         resolved_warning = None
-        required_fraction = None
 
     else:
         # Bare weights file — architecture is required.
@@ -223,7 +225,13 @@ def resolve_load_plan(
             else default_preprocessing_for_architecture(architecture if isinstance(architecture, str) else None)
         )
         resolved_warning = None
-        required_fraction = None
+
+    # Curated aliases ship a known-good architecture+weights pairing, so require
+    # a full match — unless the caller overrode the architecture, which voids
+    # that guarantee and makes a partial load expected.
+    required_fraction = None
+    if not arch_overridden and source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
+        required_fraction = 1.0
 
     return (
         resolved_arch,
