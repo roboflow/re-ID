@@ -40,6 +40,16 @@ class ReIDSplit:
 # --------------------------------------------------------------------------- #
 
 
+def _to_zero_indexed_camid(camid_1indexed: int) -> int:
+    """Convert a 1-indexed MSMT17 camera id to the 0-indexed value used here.
+
+    MSMT17 camera ids are 1-indexed both in image filenames (the camera field)
+    and in the optional camid column of the list files, so both paths share this
+    single conversion to stay consistent.
+    """
+    return camid_1indexed - 1
+
+
 def _parse_msmt17_camid(filename: str) -> int:
     """Extract 0-indexed camid from an MSMT17 image filename.
 
@@ -47,14 +57,16 @@ def _parse_msmt17_camid(filename: str) -> int:
     Example: ``0001_019_07_0303morning_0020_1.jpg`` → camid = 6 (0-indexed).
     """
     stem = Path(filename).stem
-    return int(stem.split("_")[2]) - 1
+    return _to_zero_indexed_camid(int(stem.split("_")[2]))
 
 
 def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     """Load MSMT17 query and gallery splits from ``root``.
 
     Expects ``test/``, ``list_query.txt``, and ``list_gallery.txt``. List files
-    may be 2-column (``path pid``; camid from filename) or 3-column.
+    may be 2-column (``path pid``; camid parsed from the filename) or 3-column
+    (``path pid camid``). In both cases the camera id is treated as 1-indexed
+    and converted to 0-indexed, so the two formats stay consistent.
 
     Args:
         root: Path to the MSMT17 directory.
@@ -83,7 +95,13 @@ def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
                 continue
             rel_path = parts[0]
             pid = int(parts[1])
-            camid = int(parts[2]) if len(parts) >= 3 else _parse_msmt17_camid(Path(rel_path).name)
+            # Both formats treat the camera id as 1-indexed: the 3-column camid
+            # and the filename camera field use the same conversion.
+            camid = (
+                _to_zero_indexed_camid(int(parts[2]))
+                if len(parts) >= 3
+                else _parse_msmt17_camid(Path(rel_path).name)
+            )
             paths.append(str(image_root / rel_path))
             pids.append(pid)
             camids.append(camid)
