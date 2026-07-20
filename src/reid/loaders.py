@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "load_state_dict_for_architecture",
-    "load_state_dict_into",
     "resolve_load_plan",
     "resolve_weights",
 ]
@@ -156,20 +155,17 @@ def resolve_load_plan(
             or a bare weights file without ``architecture``.
     """
     from reid.architectures import default_preprocessing_for_architecture
-    from reid.catalog import (
-        DEFAULT_MODEL,
-        FASTREID_MOT17_SBS50,
-        resolve_model_card,
-    )
+    from reid.catalog import DEFAULT_MODEL, resolve_model_card
 
     # No source and no architecture → use the default curated alias.
     if source is None and architecture is None:
         source = DEFAULT_MODEL
 
-    card = resolve_model_card(source) if source is not None else None
+    resolved = resolve_model_card(source) if source is not None else None
 
     arch_overridden = False
-    if card is not None:
+    if resolved is not None:
+        card, config_preprocessing = resolved
         if architecture is not None and architecture != card.architecture:
             arch_overridden = True
             warnings.warn(
@@ -184,8 +180,16 @@ def resolve_load_plan(
         else:
             resolved_arch = card.architecture
         resolved_weights = card.weights
-        resolved_preprocessing = preprocessing if preprocessing is not None else card.preprocessing
+        if preprocessing is not None:
+            resolved_preprocessing = preprocessing
+        elif config_preprocessing is not None:
+            resolved_preprocessing = config_preprocessing
+        else:
+            resolved_preprocessing = default_preprocessing_for_architecture(
+                card.architecture if isinstance(card.architecture, str) else None
+            )
         resolved_warning = card.domain_warning
+        required_fraction = None if arch_overridden else card.required_match_fraction
 
     elif source is None:
         # Architecture-only build: random init, no network downloads.
@@ -199,6 +203,7 @@ def resolve_load_plan(
             else default_preprocessing_for_architecture(architecture if isinstance(architecture, str) else None)
         )
         resolved_warning = None
+        required_fraction = None
 
     else:
         # Bare weights file — architecture is required.
@@ -218,13 +223,7 @@ def resolve_load_plan(
             else default_preprocessing_for_architecture(architecture if isinstance(architecture, str) else None)
         )
         resolved_warning = None
-
-    # Curated aliases ship a known-good architecture+weights pairing, so require
-    # a full match — unless the caller overrode the architecture, which voids
-    # that guarantee and makes a partial load expected.
-    required_fraction = None
-    if not arch_overridden and source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
-        required_fraction = 1.0
+        required_fraction = None
 
     return (
         resolved_arch,
@@ -238,37 +237,6 @@ def resolve_load_plan(
 # ---------------------------------------------------------------------------
 # State-dict loading
 # ---------------------------------------------------------------------------
-
-
-def load_state_dict_for_architecture(
-    module: nn.Module,
-    path: str,
-    device: torch.device,
-    architecture: str,
-    *,
-    warn_threshold: float = 0.5,
-    required_match_fraction: float | None = None,
-) -> None:
-    """Load ``path`` into ``module``, remapping keys for ``architecture`` itself.
-
-    The checkpoint key remap is resolved from ``architecture`` via
-    :func:`reid.architectures.checkpoint_remap_for_architecture`; callers do not
-    pass a remap. Matched fraction, missing, and unexpected keys are logged; a
-    partial load warns; and an unmet ``required_match_fraction`` raises. Nothing
-    is returned.
-    """
-    from reid.architectures import checkpoint_remap_for_architecture
-
-    remap = checkpoint_remap_for_architecture(architecture) if architecture else None
-    load_state_dict_into(
-        module,
-        path,
-        device,
-        remap=remap,
-        warn_threshold=warn_threshold,
-        required_match_fraction=required_match_fraction,
-        label=architecture or None,
-    )
 
 
 def _strip_common_prefixes(key: str) -> str:
@@ -310,11 +278,12 @@ def _read_state_dict(path: str, device: torch.device) -> dict:
     return state_dict
 
 
-def load_state_dict_into(
+def load_state_dict_for_architecture(
     module: nn.Module,
     path: str,
     device: torch.device,
     *,
+    architecture: str | None = None,
     drop_prefixes: tuple[str, ...] = _DEFAULT_DROP_PREFIXES,
     remap: Callable[[dict], dict] | None = None,
     warn_threshold: float = 0.5,
@@ -332,15 +301,29 @@ def load_state_dict_into(
         module: Target module to load weights into (updated in place).
         path: Checkpoint file (``.pth`` or ``.safetensors``).
         device: Device to map the checkpoint onto.
-        drop_prefixes: Key prefixes to skip (e.g. classifier heads).
+        architecture: When set, resolve checkpoint key remapping via
+            :func:`reid.architectures.checkpoint_remap_for_architecture`.
+            Ignored when ``remap`` is passed explicitly.
+        drop_prefixes: Key prefixes to skip (e.g. classifier heads). Used only
+            when neither ``architecture`` nor ``remap`` supplies a remapper.
         remap: Optional key remapper applied instead of the default prefix rules.
+            When set, takes precedence over ``architecture``.
         warn_threshold: Below this matched fraction the warning treats the load
             as a likely architecture mismatch rather than an expected partial.
         required_match_fraction: If set, raise when the matched fraction is below
             this value.
-        label: Optional human-readable name (e.g. architecture) used in the
-            unmet-``required_match_fraction`` error message.
+        label: Optional human-readable name used in the unmet-
+            ``required_match_fraction`` error message. Defaults to
+            ``architecture`` when omitted.
     """
+    if remap is None and architecture:
+        from reid.architectures import checkpoint_remap_for_architecture
+
+        remap = checkpoint_remap_for_architecture(architecture)
+
+    if label is None:
+        label = architecture or None
+
     state_dict = _read_state_dict(path, device)
 
     cleaned: dict

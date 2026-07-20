@@ -175,7 +175,7 @@ class ReIDModel:
                 backbone,
                 local_path,
                 resolved_device,
-                arch_name,
+                architecture=arch_name or None,
                 required_match_fraction=required_match_fraction,
             )
 
@@ -211,9 +211,8 @@ class ReIDModel:
         card = ModelCard(
             architecture=self._architecture,
             weights=None,
-            preprocessing=self._preprocessing,
         )
-        save_model_config(card, directory)
+        save_model_config(card, directory, preprocessing=self._preprocessing)
         logger.info("ReIDModel saved to %s", directory)
 
     # ------------------------------------------------------------------ #

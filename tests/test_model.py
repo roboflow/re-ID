@@ -94,19 +94,26 @@ class TestReIDPreprocessing:
 
 class TestRegistry:
     def test_resolve_default_alias(self) -> None:
-        card = resolve_model_card(DEFAULT_MODEL)
-        assert card is not None
+        resolved = resolve_model_card(DEFAULT_MODEL)
+        assert resolved is not None
+        card, config_preprocessing = resolved
         assert card.architecture == "osnet_x1_0"
         assert card.weights is not None
         assert card.domain_warning is not None
+        assert card.required_match_fraction == 1.0
+        assert config_preprocessing is None
 
     def test_resolve_fastreid_mot17_alias(self) -> None:
-        card = resolve_model_card(FASTREID_MOT17_SBS50)
-        assert card is not None
+        resolved = resolve_model_card(FASTREID_MOT17_SBS50)
+        assert resolved is not None
+        card, config_preprocessing = resolved
         assert card.architecture == FASTREID_SBS_ARCHITECTURE
         assert card.weights is not None
-        assert card.preprocessing.input_size == (384, 128)
         assert card.domain_warning is not None
+        assert card.required_match_fraction == 1.0
+        assert config_preprocessing is None
+        fastreid = default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE)
+        assert fastreid.input_size == (384, 128)
 
     def test_default_preprocessing_for_architecture(self) -> None:
         osnet = default_preprocessing_for_architecture("osnet_x1_0")
@@ -125,9 +132,12 @@ class TestRegistry:
             "preprocessing": ReIDPreprocessing().to_dict(),
         }
         (tmp_path / "reid_config.json").write_text(json.dumps(config))
-        card = resolve_model_card(str(tmp_path))
-        assert card is not None
+        resolved = resolve_model_card(str(tmp_path))
+        assert resolved is not None
+        card, config_preprocessing = resolved
         assert card.architecture == "osnet_x1_0"
+        assert config_preprocessing is not None
+        assert config_preprocessing.input_size == (256, 128)
 
     def test_bare_path_without_architecture_raises(self) -> None:
         """from_pretrained on a bare weights file without architecture → ValueError."""
@@ -164,7 +174,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders import load_state_dict_into
+        from reid.loaders import load_state_dict_for_architecture
 
         model = nn.Linear(4, 2)
         with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
@@ -172,7 +182,7 @@ class TestLoaders:
         try:
             torch.save(model.state_dict(), tmp_path)
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
-                load_state_dict_into(model, tmp_path, torch.device("cpu"))
+                load_state_dict_for_architecture(model, tmp_path, torch.device("cpu"))
             assert "100%" in caplog.text
             assert "0 missing, 0 unused" in caplog.text
         finally:
@@ -182,7 +192,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders import load_state_dict_into
+        from reid.loaders import load_state_dict_for_architecture
 
         source = nn.Linear(4, 2)
         target = nn.Linear(8, 4)
@@ -191,7 +201,7 @@ class TestLoaders:
         try:
             torch.save(source.state_dict(), tmp_path)
             with pytest.warns(UserWarning, match="weights likely do not match"):
-                load_state_dict_into(target, tmp_path, torch.device("cpu"))
+                load_state_dict_for_architecture(target, tmp_path, torch.device("cpu"))
         finally:
             os.unlink(tmp_path)
 
@@ -200,7 +210,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders import load_state_dict_into
+        from reid.loaders import load_state_dict_for_architecture
 
         class _TwoLayer(nn.Module):
             def __init__(self) -> None:
@@ -221,7 +231,7 @@ class TestLoaders:
             torch.save(partial, tmp_path)
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
                 with pytest.warns(UserWarning, match="Partial load"):
-                    load_state_dict_into(target, tmp_path, torch.device("cpu"))
+                    load_state_dict_for_architecture(target, tmp_path, torch.device("cpu"))
             assert "75%" in caplog.text
             assert "b.bias" in caplog.text
         finally:
@@ -231,7 +241,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders import load_state_dict_into
+        from reid.loaders import load_state_dict_for_architecture
 
         class _BackboneModel(nn.Module):
             def __init__(self) -> None:
@@ -248,7 +258,7 @@ class TestLoaders:
         try:
             torch.save(wrapped, tmp_path)
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
-                load_state_dict_into(model, tmp_path, torch.device("cpu"))
+                load_state_dict_for_architecture(model, tmp_path, torch.device("cpu"))
             assert "100%" in caplog.text
             assert "0 missing, 0 unused" in caplog.text
         finally:
@@ -273,7 +283,7 @@ class TestLoaders:
                 target,
                 str(path),
                 torch.device("cpu"),
-                "osnet_x0_25",
+                architecture="osnet_x0_25",
                 required_match_fraction=1.0,
             )
         assert "100%" in caplog.text
@@ -321,7 +331,7 @@ class TestLoaders:
                     model,
                     tmp_path,
                     torch.device("cpu"),
-                    FASTREID_SBS_ARCHITECTURE,
+                    architecture=FASTREID_SBS_ARCHITECTURE,
                 )
             assert "100%" in caplog.text
             assert "0 missing, 0 unused" in caplog.text
@@ -356,7 +366,7 @@ class TestLoaders:
                 model,
                 tmp_path,
                 torch.device("cpu"),
-                FASTREID_SBS_ARCHITECTURE,
+                architecture=FASTREID_SBS_ARCHITECTURE,
             )
             assert model.pool.p.item() == pytest.approx(mot17_gem_p)
         finally:

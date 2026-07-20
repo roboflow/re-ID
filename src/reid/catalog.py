@@ -15,8 +15,7 @@ from dataclasses import dataclass
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError
 
-from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
-from reid.architectures.osnet import OSNet
+from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 from reid.preprocessing import ReIDPreprocessing
 
 # OSNet x1.0 trained on MSMT17 with combineall (train + query + gallery).
@@ -56,34 +55,33 @@ FASTREID_MOT17_SBS50 = "fastreid_mot17_sbs50"
 
 @dataclass
 class ModelCard:
-    """Architecture, weights source, preprocessing, and optional domain warning.
+    """Architecture, weights source, and optional domain / load-policy metadata.
 
     Produced by curated ``ALIASES`` entries or by loading ``reid_config.json``
-    from a ``save_pretrained`` directory / HF repo.
-
-    ``preprocessing`` is normally the architecture's own
-    ``default_preprocessing()``; saved configs may override fields via
-    ``reid_config.json``.
+    from a ``save_pretrained`` directory / HF repo. Preprocessing for curated
+    aliases is derived from the architecture at load time; saved configs may
+    carry a preprocessing override in ``reid_config.json`` (see
+    :func:`resolve_model_card`).
     """
 
     architecture: str
     weights: str | None
-    preprocessing: ReIDPreprocessing
     domain_warning: str | None = None
+    required_match_fraction: float | None = None
 
 
 ALIASES: dict[str, ModelCard] = {
     DEFAULT_MODEL: ModelCard(
         architecture="osnet_x1_0",
         weights=_DEFAULT_OSNET_WEIGHTS,
-        preprocessing=OSNet.default_preprocessing(),
         domain_warning=_DOMAIN_WARNING,
+        required_match_fraction=1.0,
     ),
     FASTREID_MOT17_SBS50: ModelCard(
         architecture=FASTREID_SBS_ARCHITECTURE,
         weights=_FASTREID_MOT17_WEIGHTS,
-        preprocessing=FastReIDSBSResNeSt50.default_preprocessing(),
         domain_warning=_FASTREID_MOT17_WARNING,
+        required_match_fraction=1.0,
     ),
 }
 
@@ -92,13 +90,16 @@ ALIASES: dict[str, ModelCard] = {
 # ---------------------------------------------------------------------------
 
 
-def resolve_model_card(source: str) -> ModelCard | None:
-    """Resolve an alias or ``reid_config.json`` directory/repo to a ``ModelCard``.
+def resolve_model_card(source: str) -> tuple[ModelCard, ReIDPreprocessing | None] | None:
+    """Resolve an alias or ``reid_config.json`` directory/repo to a load recipe.
 
     Returns ``None`` when ``source`` is a bare weights path without a config.
+    Curated aliases return ``(card, None)``; saved / HF configs return
+    ``(card, preprocessing)`` with the preprocessing dict from
+    ``reid_config.json``.
     """
     if source in ALIASES:
-        return ALIASES[source]
+        return ALIASES[source], None
 
     # Local directory with a reid_config.json (save_pretrained output).
     if os.path.isdir(source):
@@ -122,13 +123,16 @@ def resolve_model_card(source: str) -> ModelCard | None:
     return None
 
 
-def load_model_config(directory_or_repo: str) -> ModelCard:
-    """Load a ``ModelCard`` from ``reid_config.json``.
+def load_model_config(directory_or_repo: str) -> tuple[ModelCard, ReIDPreprocessing]:
+    """Load a ``ModelCard`` and preprocessing from ``reid_config.json``.
 
     Local directories may also include ``weights.safetensors``.
     """
     if directory_or_repo.startswith("hf://"):
-        return _load_hf_repo_config(directory_or_repo)
+        card, preprocessing = _load_hf_repo_config(directory_or_repo)
+        if preprocessing is None:
+            raise ValueError(f"No preprocessing found in config for {directory_or_repo!r}.")
+        return card, preprocessing
 
     config_path = os.path.join(directory_or_repo, "reid_config.json")
     if not os.path.exists(config_path):
@@ -142,7 +146,12 @@ def load_model_config(directory_or_repo: str) -> ModelCard:
     return _parse_config_file(config_path, weights_source=weights_source)
 
 
-def save_model_config(card: ModelCard, directory: str) -> None:
+def save_model_config(
+    card: ModelCard,
+    directory: str,
+    *,
+    preprocessing: ReIDPreprocessing,
+) -> None:
     """Write ``reid_config.json`` to ``directory``."""
     if not isinstance(card.architecture, str):
         raise ValueError(
@@ -153,7 +162,7 @@ def save_model_config(card: ModelCard, directory: str) -> None:
 
     config = {
         "architecture": card.architecture,
-        "preprocessing": card.preprocessing.to_dict(),
+        "preprocessing": preprocessing.to_dict(),
     }
     config_path = os.path.join(directory, "reid_config.json")
     with open(config_path, "w") as f:
@@ -165,7 +174,7 @@ def save_model_config(card: ModelCard, directory: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _load_hf_repo_config(hf_repo_url: str) -> ModelCard:
+def _load_hf_repo_config(hf_repo_url: str) -> tuple[ModelCard, ReIDPreprocessing | None]:
     """Download and parse ``reid_config.json`` from an HF repo URL."""
     rest = hf_repo_url[len("hf://") :]
     parts = [p for p in rest.split("/") if p]
@@ -183,15 +192,21 @@ def _load_hf_repo_config(hf_repo_url: str) -> ModelCard:
     return _parse_config_file(config_path, weights_source=weights_source)
 
 
-def _parse_config_file(config_path: str, *, weights_source: str | None) -> ModelCard:
-    """Parse a ``reid_config.json`` file into a ``ModelCard``."""
+def _parse_config_file(
+    config_path: str,
+    *,
+    weights_source: str | None,
+) -> tuple[ModelCard, ReIDPreprocessing]:
+    """Parse a ``reid_config.json`` file into a ``ModelCard`` and preprocessing."""
     with open(config_path) as f:
         data = json.load(f)
 
     architecture = data["architecture"]
     preprocessing = ReIDPreprocessing.from_dict(data.get("preprocessing", {}))
-    return ModelCard(
-        architecture=architecture,
-        weights=weights_source,
-        preprocessing=preprocessing,
+    return (
+        ModelCard(
+            architecture=architecture,
+            weights=weights_source,
+        ),
+        preprocessing,
     )

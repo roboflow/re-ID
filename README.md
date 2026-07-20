@@ -35,8 +35,9 @@ Use `ReIDModel.from_pretrained(...)`. Pick the form that matches what you have:
 
 1. **Curated alias** (or no argument): `ReIDModel.from_pretrained()` or
    `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")`.
-   Resolves architecture, weights URL, and that architecture's default
-   preprocessing. Other shipped aliases include `fastreid_mot17_sbs50`.
+   Resolves architecture and weights URL; preprocessing comes from that
+   architecture's `default_preprocessing()`. Other shipped aliases include
+   `fastreid_mot17_sbs50`.
 
 2. **Saved directory or HF repo with `reid_config.json`**:
    `ReIDModel.from_pretrained("/path/to/export")` or
@@ -99,7 +100,8 @@ src/reid/
 - **Architectures** know how to build a net and expose preprocessing via
   `default_preprocessing()` on the architecture class.
 - **Catalog** is only the small allowlist of named recipes (alias →
-  architecture + weights URL + that arch's preprocessing + domain warning).
+  architecture + weights URL + domain warning + optional load policy).
+  Preprocessing for aliases is derived from the architecture at load time.
 
 ## Adding a new architecture
 
