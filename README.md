@@ -58,14 +58,42 @@ Use `ReIDModel.from_pretrained(...)`. Pick the form that matches what you have:
    source.
    Use for tests, scaffolding, or before you train / attach a checkpoint.
 
+## Package layout
+
+The public API is exported from the top-level `reid` package; advanced helpers
+live in submodules:
+
+```
+src/reid/
+├── __init__.py         # narrow public surface (see __all__)
+├── model.py            # ReIDModel (the encoder)
+├── encoder.py          # ReIDEncoder protocol
+├── preprocessing.py    # ReIDPreprocessing (crop + tensor preprocessing)
+├── catalog.py          # curated alias catalog: ModelCard, ALIASES, resolve_model_card
+├── architectures/      # architecture dispatch: build_architecture, list_architectures
+├── loaders/            # checkpoint I/O: weight resolution, state-dict loading, load plans
+│   ├── __init__.py     #   re-exports the public loader helpers
+│   └── io.py           #   implementation
+└── eval/               # gallery evaluation: datasets, metrics, evaluator
+```
+
+There are **two distinct registries**, kept separate on purpose:
+
+- **Architecture dispatch** lives in `architectures/` — `build_architecture` /
+  `list_architectures` map an architecture name (`osnet_x1_0`, `timm:<name>`,
+  `fastreid_sbs_resnest50`) to an `nn.Module`.
+- **Curated alias catalog** lives in top-level `catalog.py` — `ALIASES` maps a
+  friendly alias (`osnet_x1_0_msmt17_combineall`, `fastreid_mot17_sbs50`) to a
+  `ModelCard` bundling architecture + weights URL + preprocessing.
+
 ## Adding a new architecture
 
 1. Implement the module under `src/reid/architectures/` (or use `timm:<name>`).
 2. Register it in `src/reid/architectures/__init__.py` via `build_architecture` /
    `list_architectures`.
 3. If bare `.pth` loads need non-default crop behaviour, add an entry in
-   `ARCHITECTURE_DEFAULT_PREPROCESSING` in `src/reid/models/registry.py`.
-4. Optionally add a curated alias in `ALIASES` in the same registry file.
+   `ARCHITECTURE_DEFAULT_PREPROCESSING` in `src/reid/catalog.py`.
+4. Optionally add a curated alias in `ALIASES` in the same catalog file.
 
 ## Gallery eval
 
@@ -82,7 +110,7 @@ To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-d
 
 ## Weight cache
 
-Google Drive downloads (`gd://...`) are cached under `~/.cache/trackers/weights/` for behavioral parity with Trackers. Hugging Face weights use the standard Hugging Face Hub cache.
+Google Drive downloads (`gd://...`) are cached under `~/.cache/reid/weights/`. Set the `REID_CACHE_DIR` environment variable to override the cache root (weights are then stored under `$REID_CACHE_DIR/weights/`). Hugging Face weights use the standard Hugging Face Hub cache.
 
 ## License
 

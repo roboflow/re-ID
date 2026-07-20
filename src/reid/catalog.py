@@ -17,7 +17,7 @@ from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError
 
 from reid.architectures import list_architectures
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
-from reid.models.preprocessing import ReIDPreprocessing
+from reid.preprocessing import ReIDPreprocessing
 
 # OSNet x1.0 trained on MSMT17 with combineall (train + query + gallery).
 # Strong general-purpose pedestrian features, but combineall includes MSMT17
