@@ -14,7 +14,6 @@ import pickle
 import tempfile
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
@@ -128,34 +127,22 @@ def _resolve_gd(source: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class LoadPlan:
-    """Resolved recipe for building and (optionally) loading a backbone.
-
-    Produced by :func:`resolve_load_plan` from a ``from_pretrained`` request
-    (``source`` / ``architecture`` / ``preprocessing``). Callers build the
-    architecture, load ``weights`` when present, and enforce
-    ``required_match_fraction`` if set.
-    """
-
-    architecture: str | nn.Module
-    weights: str | None
-    preprocessing: ReIDPreprocessing
-    domain_warning: str | None
-    required_match_fraction: float | None
-
-
 def resolve_load_plan(
     source: str | None,
     architecture: str | nn.Module | None,
     preprocessing: ReIDPreprocessing | None,
-) -> LoadPlan:
-    """Resolve a ``from_pretrained`` request into a concrete :class:`LoadPlan`.
+) -> tuple[str | nn.Module, str | None, ReIDPreprocessing, str | None, float | None]:
+    """Resolve a ``from_pretrained`` request into the values it needs.
 
     Handles the four load forms: default alias, curated alias / config directory
     or repo, bare weights file, and architecture-only build. When a curated card
     is resolved *and* ``architecture`` is explicitly overridden, the override
     wins (with a warning); the card's weights and preprocessing are retained.
+
+    Returns:
+        A ``(architecture, weights, preprocessing, domain_warning,
+        required_match_fraction)`` tuple. Callers build the architecture, load
+        ``weights`` when present, and enforce ``required_match_fraction`` if set.
 
     Raises:
         ValueError: For an architecture-only request without ``architecture``,
@@ -232,12 +219,12 @@ def resolve_load_plan(
     if not arch_overridden and source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
         required_fraction = 1.0
 
-    return LoadPlan(
-        architecture=resolved_arch,
-        weights=resolved_weights,
-        preprocessing=resolved_preprocessing,
-        domain_warning=resolved_warning,
-        required_match_fraction=required_fraction,
+    return (
+        resolved_arch,
+        resolved_weights,
+        resolved_preprocessing,
+        resolved_warning,
+        required_fraction,
     )
 
 

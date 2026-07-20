@@ -145,35 +145,37 @@ class ReIDModel:
         """
         resolved_device = _select_device(device)
 
-        # Resolve the full load recipe (architecture, weights, preprocessing,
-        # domain warning, and strictness) in one place.
-        plan = resolve_load_plan(source, architecture, preprocessing)
+        # Resolve the load recipe (architecture, weights, preprocessing, domain
+        # warning, and strictness) in one place.
+        plan_arch, plan_weights, plan_preprocessing, domain_warning, required_match_fraction = resolve_load_plan(
+            source, architecture, preprocessing
+        )
 
-        if plan.domain_warning:
-            warnings.warn(plan.domain_warning, UserWarning, stacklevel=2)
+        if domain_warning:
+            warnings.warn(domain_warning, UserWarning, stacklevel=2)
 
         # Always build offline here. Checkpoint weights (when present) are loaded
         # explicitly below; architecture-only builds stay randomly initialised.
-        backbone = build_architecture(plan.architecture, pretrained=False)
+        backbone = build_architecture(plan_arch, pretrained=False)
         backbone.eval()
 
-        if plan.weights is not None:
-            local_path = resolve_weights(plan.weights)
-            arch_name = plan.architecture if isinstance(plan.architecture, str) else ""
-            logger.info("ReIDModel loading weights (%s)", plan.weights)
+        if plan_weights is not None:
+            local_path = resolve_weights(plan_weights)
+            arch_name = plan_arch if isinstance(plan_arch, str) else ""
+            logger.info("ReIDModel loading weights (%s)", plan_weights)
             load_state_dict_for_architecture(
                 backbone,
                 local_path,
                 resolved_device,
                 arch_name,
-                required_match_fraction=plan.required_match_fraction,
+                required_match_fraction=required_match_fraction,
             )
 
         backbone.to(resolved_device)
 
-        instance = cls(backbone, resolved_device, plan.preprocessing)
+        instance = cls(backbone, resolved_device, plan_preprocessing)
         # Store the architecture name (string only) to enable save_pretrained.
-        instance._architecture = plan.architecture if isinstance(plan.architecture, str) else None
+        instance._architecture = plan_arch if isinstance(plan_arch, str) else None
         return instance
 
     def save_pretrained(self, directory: str) -> None:
