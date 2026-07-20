@@ -27,7 +27,7 @@ from reid.catalog import (
     default_preprocessing_for_architecture,
     resolve_model_card,
 )
-from reid.loaders.io import resolve_weights
+from reid.loaders import resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ class TestLoaders:
             resolve_weights("/nonexistent/path/to/weights.pth")
 
     def test_malformed_hf_url_raises(self) -> None:
-        from reid.loaders.io import _resolve_hf
+        from reid.loaders import _resolve_hf
 
         with pytest.raises(ValueError, match="hf://"):
             _resolve_hf("hf://only_one_part")
@@ -168,7 +168,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders.io import load_state_dict_into
+        from reid.loaders import load_state_dict_into
 
         model = nn.Linear(4, 2)
         with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
@@ -186,7 +186,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders.io import load_state_dict_into
+        from reid.loaders import load_state_dict_into
 
         source = nn.Linear(4, 2)
         target = nn.Linear(8, 4)
@@ -204,7 +204,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders.io import load_state_dict_into
+        from reid.loaders import load_state_dict_into
 
         class _TwoLayer(nn.Module):
             def __init__(self) -> None:
@@ -235,7 +235,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders.io import load_state_dict_into
+        from reid.loaders import load_state_dict_into
 
         class _BackboneModel(nn.Module):
             def __init__(self) -> None:
@@ -263,7 +263,7 @@ class TestLoaders:
         import torch
 
         from reid.architectures import build_architecture
-        from reid.loaders.io import load_state_dict_for_architecture
+        from reid.loaders import load_state_dict_for_architecture
 
         source = build_architecture("osnet_x0_25")
         assert not any(key.startswith("classifier.") for key in source.state_dict())
@@ -304,7 +304,7 @@ class TestLoaders:
 
         from reid.architectures import build_architecture
         from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
-        from reid.loaders.io import load_state_dict_for_architecture
+        from reid.loaders import load_state_dict_for_architecture
 
         model = build_architecture(FASTREID_SBS_ARCHITECTURE)
         source = model.state_dict()
@@ -342,7 +342,7 @@ class TestLoaders:
             FASTREID_SBS_ARCHITECTURE,
             FastReIDSBSResNeSt50,
         )
-        from reid.loaders.io import load_state_dict_for_architecture
+        from reid.loaders import load_state_dict_for_architecture
 
         mot17_gem_p = 1.7194522619247437
 

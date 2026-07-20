@@ -70,9 +70,7 @@ src/reid/
 ├── preprocessing.py    # ReIDPreprocessing (crop + tensor preprocessing)
 ├── catalog.py          # curated alias catalog: ModelCard, ALIASES, resolve_model_card
 ├── architectures/      # architecture dispatch: build_architecture, list_architectures
-├── loaders/            # checkpoint I/O: weight resolution, state-dict loading, load plans
-│   ├── __init__.py     #   re-exports the public loader helpers
-│   └── io.py           #   implementation
+├── loaders.py          # checkpoint I/O: weight resolution, state-dict loading, load plans
 └── eval/               # gallery evaluation: datasets, metrics, evaluator
 ```
 

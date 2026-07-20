@@ -25,6 +25,13 @@ from safetensors.torch import load_file
 if TYPE_CHECKING:
     from reid.preprocessing import ReIDPreprocessing
 
+__all__ = [
+    "load_state_dict_for_architecture",
+    "load_state_dict_into",
+    "resolve_load_plan",
+    "resolve_weights",
+]
+
 logger = logging.getLogger(__name__)
 
 _HF_PREFIX = "hf://"
