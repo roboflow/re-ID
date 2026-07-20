@@ -23,7 +23,6 @@ from torch.utils.data import DataLoader, Dataset
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
-from reid.device import best_device
 from reid.loaders import load_state_dict_for_architecture, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
@@ -68,10 +67,19 @@ def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray
     return np.array([x1, y1, x2, y2], dtype=np.float32)
 
 
+def _best_device() -> torch.device:
+    """Return the best available compute device (``cuda`` → ``mps`` → ``cpu``)."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_built() and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def _select_device(device: str) -> torch.device:
     """Resolve ``"auto"`` or a device string to a ``torch.device``."""
     if device == "auto":
-        return best_device()
+        return _best_device()
     return torch.device(device)
 
 
