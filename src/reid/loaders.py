@@ -14,7 +14,7 @@ import pickle
 import tempfile
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import torch
 import torch.nn as nn
@@ -26,7 +26,8 @@ if TYPE_CHECKING:
     from reid.preprocessing import ReIDPreprocessing
 
 __all__ = [
-    "load_state_dict_for_architecture",
+    "LoadPlan",
+    "load_state_dict",
     "resolve_load_plan",
     "resolve_weights",
 ]
@@ -133,11 +134,21 @@ def _resolve_gd(source: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+class LoadPlan(NamedTuple):
+    """Resolved ``from_pretrained`` recipe."""
+
+    architecture: str | nn.Module
+    weights: str | None
+    preprocessing: ReIDPreprocessing
+    domain_warning: str | None
+    required_match_fraction: float | None
+
+
 def resolve_load_plan(
     source: str | None,
     architecture: str | nn.Module | None,
     preprocessing: ReIDPreprocessing | None,
-) -> tuple[str | nn.Module, str | None, ReIDPreprocessing, str | None, float | None]:
+) -> LoadPlan:
     """Resolve a ``from_pretrained`` request into the values it needs.
 
     Handles the four load forms: default alias, curated alias / config directory
@@ -233,7 +244,7 @@ def resolve_load_plan(
     if not arch_overridden and source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
         required_fraction = 1.0
 
-    return (
+    return LoadPlan(
         resolved_arch,
         resolved_weights,
         resolved_preprocessing,
@@ -286,7 +297,7 @@ def _read_state_dict(path: str, device: torch.device) -> dict:
     return state_dict
 
 
-def load_state_dict_for_architecture(
+def load_state_dict(
     module: nn.Module,
     path: str,
     device: torch.device,

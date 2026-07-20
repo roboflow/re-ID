@@ -55,6 +55,17 @@ class ReIDPreprocessing:
             f"{colour}, mean={self.mean}, std={self.std})"
         )
 
+    def prepare_crop_array(self, crop: np.ndarray, *, from_bgr_frame: bool) -> np.ndarray:
+        """Normalise crop colour to RGB before :meth:`resize_crop`.
+
+        Video frames from OpenCV / supervision are BGR; when ``to_rgb`` is
+        ``True``, they are converted here. On-disk crops loaded via PIL are
+        already RGB and must not be channel-swapped, regardless of ``to_rgb``.
+        """
+        if from_bgr_frame and self.to_rgb:
+            return crop[:, :, ::-1].copy()
+        return crop
+
     def resize_crop(self, crop: np.ndarray) -> np.ndarray:
         """Resize an ``HxWxC`` crop to ``input_size`` using OpenCV.
 

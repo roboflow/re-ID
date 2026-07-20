@@ -27,10 +27,34 @@ from reid.architectures.osnet import OSNet
 from reid.catalog import (
     DEFAULT_MODEL,
     FASTREID_MOT17_SBS50,
+    list_aliases,
     resolve_model_card,
 )
-from reid.loaders import resolve_weights
+from reid.loaders import load_state_dict, resolve_weights
 from reid.preprocessing import LETTERBOX_PAD_VALUE, ReIDPreprocessing
+
+
+def _save_checkpoint(state_dict: object, suffix: str = ".pth") -> str:
+    import torch
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        tmp_path = f.name
+    torch.save(state_dict, tmp_path)
+    return tmp_path
+
+
+def _tiny_encoder():
+    import torch.nn as nn
+
+    class _TinyEncoder(nn.Module):
+        def forward(self, x):
+            return x.flatten(1)[:, :16]
+
+    return _TinyEncoder()
+
+
+def _assert_full_load_logged(caplog: pytest.LogCaptureFixture) -> None:
+    assert "0 missing, 0 unused" in caplog.text
 
 # ---------------------------------------------------------------------------
 # 1. Preprocessing
@@ -69,6 +93,15 @@ class TestReIDPreprocessing:
         with pytest.raises(ValueError, match="lanczos"):
             p.resize_crop(crop)
 
+    def test_prepare_crop_array_swaps_bgr_frames_only(self) -> None:
+        bgr = np.array([[[255, 0, 0]]], dtype=np.uint8)  # blue in BGR
+        p = ReIDPreprocessing(to_rgb=True)
+        rgb = p.prepare_crop_array(bgr, from_bgr_frame=True)
+        assert rgb[0, 0, 0] == 0
+        assert rgb[0, 0, 2] == 255
+        unchanged = p.prepare_crop_array(bgr, from_bgr_frame=False)
+        np.testing.assert_array_equal(unchanged, bgr)
+
     def test_to_dict_from_dict_roundtrip(self) -> None:
         p = ReIDPreprocessing(input_size=(128, 64), interpolation="bicubic", to_rgb=False)
         d = p.to_dict()
@@ -93,6 +126,10 @@ class TestReIDPreprocessing:
 
 
 class TestRegistry:
+    def test_list_aliases(self) -> None:
+        aliases = list_aliases()
+        assert aliases == sorted([DEFAULT_MODEL, FASTREID_MOT17_SBS50])
+
     def test_resolve_default_alias(self) -> None:
         resolved = resolve_model_card(DEFAULT_MODEL)
         assert resolved is not None
@@ -172,17 +209,12 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders import load_state_dict_for_architecture
-
         model = nn.Linear(4, 2)
-        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
-            tmp_path = f.name
+        tmp_path = _save_checkpoint(model.state_dict())
         try:
-            torch.save(model.state_dict(), tmp_path)
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
-                load_state_dict_for_architecture(model, tmp_path, torch.device("cpu"))
-            assert "100%" in caplog.text
-            assert "0 missing, 0 unused" in caplog.text
+                load_state_dict(model, tmp_path, torch.device("cpu"))
+            _assert_full_load_logged(caplog)
         finally:
             os.unlink(tmp_path)
 
@@ -190,16 +222,12 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.loaders import load_state_dict_for_architecture
-
         source = nn.Linear(4, 2)
         target = nn.Linear(8, 4)
-        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
-            tmp_path = f.name
+        tmp_path = _save_checkpoint(source.state_dict())
         try:
-            torch.save(source.state_dict(), tmp_path)
             with pytest.warns(UserWarning, match="weights likely do not match"):
-                load_state_dict_for_architecture(target, tmp_path, torch.device("cpu"))
+                load_state_dict(target, tmp_path, torch.device("cpu"))
         finally:
             os.unlink(tmp_path)
 
@@ -207,8 +235,6 @@ class TestLoaders:
         """A 50–99% match (missing keys, not a full mismatch) still warns."""
         import torch
         import torch.nn as nn
-
-        from reid.loaders import load_state_dict_for_architecture
 
         class _TwoLayer(nn.Module):
             def __init__(self) -> None:
@@ -223,23 +249,19 @@ class TestLoaders:
             "a.bias": target.a.bias.detach().clone(),
             "b.weight": target.b.weight.detach().clone(),
         }
-        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
-            tmp_path = f.name
+        tmp_path = _save_checkpoint(partial)
         try:
-            torch.save(partial, tmp_path)
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
                 with pytest.warns(UserWarning, match="Partial load"):
-                    load_state_dict_for_architecture(target, tmp_path, torch.device("cpu"))
-            assert "75%" in caplog.text
+                    load_state_dict(target, tmp_path, torch.device("cpu"))
             assert "b.bias" in caplog.text
+            assert "missing=" in caplog.text
         finally:
             os.unlink(tmp_path)
 
     def test_generic_loader_preserves_backbone_prefix(self, caplog: pytest.LogCaptureFixture) -> None:
         import torch
         import torch.nn as nn
-
-        from reid.loaders import load_state_dict_for_architecture
 
         class _BackboneModel(nn.Module):
             def __init__(self) -> None:
@@ -251,14 +273,11 @@ class TestLoaders:
             "backbone.weight": model.backbone.weight.detach().clone(),
             "backbone.bias": model.backbone.bias.detach().clone(),
         }
-        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
-            tmp_path = f.name
+        tmp_path = _save_checkpoint(wrapped)
         try:
-            torch.save(wrapped, tmp_path)
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
-                load_state_dict_for_architecture(model, tmp_path, torch.device("cpu"))
-            assert "100%" in caplog.text
-            assert "0 missing, 0 unused" in caplog.text
+                load_state_dict(model, tmp_path, torch.device("cpu"))
+            _assert_full_load_logged(caplog)
         finally:
             os.unlink(tmp_path)
 
@@ -267,7 +286,6 @@ class TestLoaders:
         import torch
 
         from reid.architectures import build_architecture
-        from reid.loaders import load_state_dict_for_architecture
 
         source = build_architecture("osnet_x0_25")
         assert not any(key.startswith("classifier.") for key in source.state_dict())
@@ -277,14 +295,14 @@ class TestLoaders:
 
         target = build_architecture("osnet_x0_25")
         with caplog.at_level(logging.INFO, logger="reid.loaders"):
-            load_state_dict_for_architecture(
+            load_state_dict(
                 target,
                 str(path),
                 torch.device("cpu"),
                 architecture="osnet_x0_25",
                 required_match_fraction=1.0,
             )
-        assert "100%" in caplog.text
+        _assert_full_load_logged(caplog)
 
     def test_remap_fastreid_sbs_keys(self) -> None:
         import torch
@@ -307,7 +325,6 @@ class TestLoaders:
         import torch
 
         from reid.architectures import build_architecture
-        from reid.loaders import load_state_dict_for_architecture
 
         model = build_architecture(FASTREID_SBS_ARCHITECTURE)
         source = model.state_dict()
@@ -320,19 +337,16 @@ class TestLoaders:
             elif key.startswith("bottleneck."):
                 wrapped[f"heads.bottleneck.0.{key[len('bottleneck.') :]}"] = value
 
-        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
-            tmp_path = f.name
+        tmp_path = _save_checkpoint(wrapped)
         try:
-            torch.save(wrapped, tmp_path)
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
-                load_state_dict_for_architecture(
+                load_state_dict(
                     model,
                     tmp_path,
                     torch.device("cpu"),
                     architecture=FASTREID_SBS_ARCHITECTURE,
                 )
-            assert "100%" in caplog.text
-            assert "0 missing, 0 unused" in caplog.text
+            _assert_full_load_logged(caplog)
         finally:
             os.unlink(tmp_path)
 
@@ -342,7 +356,6 @@ class TestLoaders:
 
         from reid.architectures import build_architecture
         from reid.architectures.fastreid_sbs import FastReIDSBSResNeSt50
-        from reid.loaders import load_state_dict_for_architecture
 
         mot17_gem_p = 1.7194522619247437
 
@@ -356,11 +369,9 @@ class TestLoaders:
             elif key.startswith("bottleneck."):
                 wrapped[f"heads.bottleneck.0.{key[len('bottleneck.') :]}"] = value
 
-        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
-            tmp_path = f.name
+        tmp_path = _save_checkpoint(wrapped)
         try:
-            torch.save(wrapped, tmp_path)
-            load_state_dict_for_architecture(
+            load_state_dict(
                 model,
                 tmp_path,
                 torch.device("cpu"),
@@ -408,18 +419,12 @@ class TestModelSmoke:
         import numpy as np
         import supervision as sv
         import torch
-        import torch.nn as nn
 
         from reid.model import ReIDModel
-        from reid.preprocessing import ReIDPreprocessing
-
-        class _TinyEncoder(nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.flatten(1)[:, :16]
 
         device = torch.device("cpu")
         preprocessing = ReIDPreprocessing()
-        model = ReIDModel(_TinyEncoder(), device, preprocessing)
+        model = ReIDModel(_tiny_encoder(), device, preprocessing)
 
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 64, 64]], dtype=np.float32))
@@ -434,17 +439,11 @@ class TestModelSmoke:
         import numpy as np
         import supervision as sv
         import torch
-        import torch.nn as nn
 
         from reid.model import ReIDModel
-        from reid.preprocessing import ReIDPreprocessing
-
-        class _TinyEncoder(nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.flatten(1)[:, :16]
 
         device = torch.device("cpu")
-        model = ReIDModel(_TinyEncoder(), device, ReIDPreprocessing())
+        model = ReIDModel(_tiny_encoder(), device, ReIDPreprocessing())
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[-40.0, -40.0, 10.0, 10.0]], dtype=np.float32))
         embs = model.extract_features(dets, frame)
@@ -454,19 +453,22 @@ class TestModelSmoke:
         import numpy as np
         import supervision as sv
         import torch
-        import torch.nn as nn
 
         from reid.model import ReIDModel
-        from reid.preprocessing import ReIDPreprocessing
-
-        class _TinyEncoder(nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.flatten(1)[:, :16]
 
         device = torch.device("cpu")
-        model = ReIDModel(_TinyEncoder(), device, ReIDPreprocessing())
+        model = ReIDModel(_tiny_encoder(), device, ReIDPreprocessing())
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
         embs = model.extract_features(sv.Detections.empty(), frame)
+        assert embs.shape == (0, 0)
+
+    def test_empty_paths_returns_empty(self) -> None:
+        import torch
+
+        from reid.model import ReIDModel
+
+        model = ReIDModel(_tiny_encoder(), torch.device("cpu"), ReIDPreprocessing())
+        embs = model.extract_features_from_paths([])
         assert embs.shape == (0, 0)
 
     def test_from_pretrained_architecture_only(self) -> None:
@@ -497,15 +499,10 @@ class TestModelSmoke:
 class TestExtractContract:
     def _tiny_model(self, preprocessing):
         import torch
-        import torch.nn as nn
 
         from reid.model import ReIDModel
 
-        class _Tiny(nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.flatten(1)[:, :16]
-
-        return ReIDModel(_Tiny(), torch.device("cpu"), preprocessing)
+        return ReIDModel(_tiny_encoder(), torch.device("cpu"), preprocessing)
 
     def test_init_forces_backbone_eval(self) -> None:
         """A backbone left in train() mode is switched to eval() on construction."""
@@ -572,8 +569,7 @@ class TestExtractContract:
         import supervision as sv
         from PIL import Image as PILImage
 
-        # to_rgb=False so the frame is treated as RGB (no BGR swap), matching the
-        # RGB image read from disk; input_size matches the crop so resize is a no-op.
+        # to_rgb=False keeps frame bytes as-is; PIL path loads RGB on disk the same way.
         preprocessing = ReIDPreprocessing(input_size=(256, 128), to_rgb=False)
         model = self._tiny_model(preprocessing)
 
@@ -645,6 +641,26 @@ class TestRoundTrip:
 # ---------------------------------------------------------------------------
 # 6. Slow: curated FastReID weight download
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_default_osnet_alias_loads_with_finite_output() -> None:
+    """Download ``DEFAULT_MODEL`` and smoke the default encoder path.
+
+    Curated aliases require a 100% state-dict match; loading must not raise.
+    """
+    import supervision as sv
+
+    from reid.model import ReIDModel
+
+    model = ReIDModel.from_pretrained(DEFAULT_MODEL, device="cpu")
+    frame = np.zeros((256, 128, 3), dtype=np.uint8)
+    dets = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 256.0]], dtype=np.float32))
+
+    embs = model.extract_features(dets, frame)
+    assert embs.shape == (1, 512)
+    assert np.isfinite(embs).all()
+    assert model.preprocessing.input_size == (256, 128)
 
 
 @pytest.mark.slow

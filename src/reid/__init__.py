@@ -15,7 +15,7 @@ in :mod:`reid.architectures`.
 from __future__ import annotations
 
 from reid.architectures import list_architectures
-from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50
+from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50, list_aliases
 from reid.eval import (
     ReIDEvaluator,
     ReIDMetrics,
@@ -38,6 +38,7 @@ __all__ = [
     "ReIDResult",
     "ReIDSplit",
     "compute_reid_metrics",
+    "list_aliases",
     "list_architectures",
     "load_market1501",
     "load_msmt17",

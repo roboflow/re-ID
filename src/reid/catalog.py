@@ -87,6 +87,11 @@ ALIASES: dict[str, ModelCard] = {
 # ---------------------------------------------------------------------------
 
 
+def list_aliases() -> list[str]:
+    """Return curated alias names (sorted keys of :data:`ALIASES`)."""
+    return sorted(ALIASES)
+
+
 def resolve_model_card(source: str) -> tuple[ModelCard, ReIDPreprocessing | None] | None:
     """Resolve an alias or ``reid_config.json`` directory/repo to a load recipe.
 

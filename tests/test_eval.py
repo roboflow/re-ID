@@ -24,6 +24,19 @@ import supervision as sv
 # ---------------------------------------------------------------------------
 
 
+class TestDistanceMatrix:
+    def test_cosine_and_euclidean_shapes(self) -> None:
+        from reid.eval.evaluator import _distance_matrix
+
+        q = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        g = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        cos = _distance_matrix(q, g, "cosine")
+        euc = _distance_matrix(q, g, "euclidean")
+        assert cos.shape == (2, 2)
+        assert euc.shape == (2, 2)
+        assert np.allclose(cos.diagonal(), 0.0, atol=1e-5)
+
+
 class TestComputeReidMetrics:
     def test_market1501_pid_zero_is_junk_in_gallery(self) -> None:
         from reid.eval.datasets import MARKET1501_GALLERY_JUNK_PIDS

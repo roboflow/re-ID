@@ -71,7 +71,7 @@ is `architectures.default_preprocessing_for_architecture`.
 | `input_size` | `(H, W)` | OSNet `(256, 128)`; FastReID `(384, 128)` |
 | `resize_mode` | `stretch` or `letterbox` | `stretch` |
 | `interpolation` | OpenCV resize | `bilinear` |
-| `to_rgb` | swap BGR crops to RGB | `True` |
+| `to_rgb` | BGR→RGB swap for video-frame crops only; on-disk RGB paths are unchanged | `True` |
 | `mean` / `std` | tensor Normalize | ImageNet |
 | `pad_value` | letterbox pad | `114` |
 

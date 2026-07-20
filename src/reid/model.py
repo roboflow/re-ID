@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
-from reid.loaders import load_state_dict_for_architecture, resolve_load_plan, resolve_weights
+from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 class _CropPathDataset(Dataset):
     """Reads crop images from disk and applies preprocessing on worker processes.
 
-    Images on disk are assumed RGB-ready, so the ``to_rgb`` BGR→RGB swap (which
-    is for video frames) is intentionally not applied here.
+    Images on disk are assumed RGB (PIL ``convert("RGB")``); see
+    :meth:`ReIDPreprocessing.prepare_crop_array`.
     """
 
     def __init__(
@@ -51,7 +51,8 @@ class _CropPathDataset(Dataset):
 
     def __getitem__(self, index: int) -> torch.Tensor:
         img = PILImage.open(self._image_paths[index]).convert("RGB")
-        resized = self._preprocessing.resize_crop(np.asarray(img))
+        arr = self._preprocessing.prepare_crop_array(np.asarray(img), from_bgr_frame=False)
+        resized = self._preprocessing.resize_crop(arr)
         return self._transforms(resized)
 
 
@@ -155,35 +156,33 @@ class ReIDModel:
 
         # Resolve the load recipe (architecture, weights, preprocessing, domain
         # warning, and strictness) in one place.
-        plan_arch, plan_weights, plan_preprocessing, domain_warning, required_match_fraction = resolve_load_plan(
-            source, architecture, preprocessing
-        )
+        plan = resolve_load_plan(source, architecture, preprocessing)
 
-        if domain_warning:
-            warnings.warn(domain_warning, UserWarning, stacklevel=2)
+        if plan.domain_warning:
+            warnings.warn(plan.domain_warning, UserWarning, stacklevel=2)
 
         # Always build offline here. Checkpoint weights (when present) are loaded
         # explicitly below; architecture-only builds stay randomly initialised.
-        backbone = build_architecture(plan_arch, pretrained=False)
+        backbone = build_architecture(plan.architecture, pretrained=False)
         backbone.eval()
 
-        if plan_weights is not None:
-            local_path = resolve_weights(plan_weights)
-            arch_name = plan_arch if isinstance(plan_arch, str) else ""
-            logger.info("ReIDModel loading weights (%s)", plan_weights)
-            load_state_dict_for_architecture(
+        if plan.weights is not None:
+            local_path = resolve_weights(plan.weights)
+            arch_name = plan.architecture if isinstance(plan.architecture, str) else ""
+            logger.info("ReIDModel loading weights (%s)", plan.weights)
+            load_state_dict(
                 backbone,
                 local_path,
                 resolved_device,
                 architecture=arch_name or None,
-                required_match_fraction=required_match_fraction,
+                required_match_fraction=plan.required_match_fraction,
             )
 
         backbone.to(resolved_device)
 
-        instance = cls(backbone, resolved_device, plan_preprocessing)
+        instance = cls(backbone, resolved_device, plan.preprocessing)
         # Store the architecture name (string only) to enable save_pretrained.
-        instance._architecture = plan_arch if isinstance(plan_arch, str) else None
+        instance._architecture = plan.architecture if isinstance(plan.architecture, str) else None
         return instance
 
     def save_pretrained(self, directory: str) -> None:
@@ -313,8 +312,7 @@ class ReIDModel:
         for box in detections.xyxy:
             safe_box = _clamp_xyxy_to_frame(box, frame_h, frame_w)
             crop = sv.crop_image(image=frame, xyxy=safe_box.astype(int))
-            if self._preprocessing.to_rgb:
-                crop = crop[:, :, ::-1].copy()
+            crop = self._preprocessing.prepare_crop_array(crop, from_bgr_frame=True)
             tensors.append(self._crop_to_tensor(crop))
 
         all_embeddings: list[np.ndarray] = []
