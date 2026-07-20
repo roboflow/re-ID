@@ -224,11 +224,15 @@ class TestMSMT17Loader:
         image_path = test_root / rel
         image_path.parent.mkdir(parents=True)
         image_path.write_bytes(b"jpeg")
+        # 2-col: camid parsed from the filename camera field (07 → 6).
+        # 3-col: camid column is 1-indexed like the filename (07 → 6), so both
+        # formats resolve the same physical camera to the same 0-indexed id.
         (root / "list_query.txt").write_text(f"{rel} 42\n")
-        (root / "list_gallery.txt").write_text(f"{rel} 42 6\n")
+        (root / "list_gallery.txt").write_text(f"{rel} 42 7\n")
 
         query, gallery = load_msmt17(root)
         assert query.pids.tolist() == [42]
         assert query.camids.tolist() == [6]
         assert gallery.pids.tolist() == [42]
+        assert gallery.camids.tolist() == [6]
         assert gallery.gallery_junk_pids == frozenset({-1})

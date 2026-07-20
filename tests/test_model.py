@@ -20,14 +20,14 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from reid.models.loaders import resolve_weights
-from reid.models.preprocessing import ReIDPreprocessing
-from reid.models.registry import (
+from reid.catalog import (
     DEFAULT_MODEL,
     FASTREID_MOT17_SBS50,
     default_preprocessing_for_architecture,
     resolve_model_card,
 )
+from reid.loaders.io import resolve_weights
+from reid.preprocessing import ReIDPreprocessing
 
 # ---------------------------------------------------------------------------
 # 1. Preprocessing
@@ -150,7 +150,7 @@ class TestLoaders:
             resolve_weights("/nonexistent/path/to/weights.pth")
 
     def test_malformed_hf_url_raises(self) -> None:
-        from reid.models.loaders import _resolve_hf
+        from reid.loaders.io import _resolve_hf
 
         with pytest.raises(ValueError, match="hf://"):
             _resolve_hf("hf://only_one_part")
@@ -159,7 +159,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.models.loaders import load_state_dict_into
+        from reid.loaders.io import load_state_dict_into
 
         model = nn.Linear(4, 2)
         with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
@@ -176,7 +176,7 @@ class TestLoaders:
         import torch
         import torch.nn as nn
 
-        from reid.models.loaders import load_state_dict_into
+        from reid.loaders.io import load_state_dict_into
 
         source = nn.Linear(4, 2)
         target = nn.Linear(8, 4)
@@ -189,11 +189,42 @@ class TestLoaders:
         finally:
             os.unlink(tmp_path)
 
+    def test_partial_load_in_high_band_warns(self) -> None:
+        """A 50–99% match (missing keys, not a full mismatch) still warns."""
+        import torch
+        import torch.nn as nn
+
+        from reid.loaders.io import load_state_dict_into
+
+        class _TwoLayer(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.a = nn.Linear(4, 2)
+                self.b = nn.Linear(4, 2)
+
+        target = _TwoLayer()
+        # Checkpoint provides 3 of the 4 params (75%): b.bias is missing.
+        partial = {
+            "a.weight": target.a.weight.detach().clone(),
+            "a.bias": target.a.bias.detach().clone(),
+            "b.weight": target.b.weight.detach().clone(),
+        }
+        with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
+            tmp_path = f.name
+        try:
+            torch.save(partial, tmp_path)
+            with pytest.warns(UserWarning, match="Partial load"):
+                report = load_state_dict_into(target, tmp_path, torch.device("cpu"))
+            assert 0.5 <= report.matched_fraction < 1.0
+            assert report.missing == ["b.bias"]
+        finally:
+            os.unlink(tmp_path)
+
     def test_generic_loader_preserves_backbone_prefix(self) -> None:
         import torch
         import torch.nn as nn
 
-        from reid.models.loaders import load_state_dict_into
+        from reid.loaders.io import load_state_dict_into
 
         class _BackboneModel(nn.Module):
             def __init__(self) -> None:
@@ -220,7 +251,7 @@ class TestLoaders:
         import torch
 
         from reid.architectures import build_architecture
-        from reid.models.loaders import load_state_dict_for_architecture
+        from reid.loaders.io import load_state_dict_for_architecture
 
         source = build_architecture("osnet_x0_25")
         assert not any(key.startswith("classifier.") for key in source.state_dict())
@@ -258,12 +289,9 @@ class TestLoaders:
     def test_load_fastreid_sbs_from_synthetic_checkpoint(self) -> None:
         import torch
 
-        from reid.architectures import (
-            build_architecture,
-            checkpoint_remap_for_architecture,
-        )
+        from reid.architectures import build_architecture
         from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
-        from reid.models.loaders import load_state_dict_for_architecture
+        from reid.loaders.io import load_state_dict_for_architecture
 
         model = build_architecture(FASTREID_SBS_ARCHITECTURE)
         source = model.state_dict()
@@ -285,7 +313,6 @@ class TestLoaders:
                 tmp_path,
                 torch.device("cpu"),
                 FASTREID_SBS_ARCHITECTURE,
-                remap=checkpoint_remap_for_architecture(FASTREID_SBS_ARCHITECTURE),
             )
             assert report.matched == report.total
             assert report.matched_fraction == 1.0
@@ -296,15 +323,12 @@ class TestLoaders:
         """GeM ``p`` must come from ``heads.pool_layer.p``, not the 3.0 constructor default."""
         import torch
 
-        from reid.architectures import (
-            build_architecture,
-            checkpoint_remap_for_architecture,
-        )
+        from reid.architectures import build_architecture
         from reid.architectures.fastreid_sbs import (
             FASTREID_SBS_ARCHITECTURE,
             FastReIDSBSResNeSt50,
         )
-        from reid.models.loaders import load_state_dict_for_architecture
+        from reid.loaders.io import load_state_dict_for_architecture
 
         mot17_gem_p = 1.7194522619247437
 
@@ -327,7 +351,6 @@ class TestLoaders:
                 tmp_path,
                 torch.device("cpu"),
                 FASTREID_SBS_ARCHITECTURE,
-                remap=checkpoint_remap_for_architecture(FASTREID_SBS_ARCHITECTURE),
             )
             assert report.matched == report.total
             assert model.pool.p.item() == pytest.approx(mot17_gem_p)
@@ -379,7 +402,7 @@ class TestModelSmoke:
         import torch.nn as nn
 
         from reid.model import ReIDModel
-        from reid.models.preprocessing import ReIDPreprocessing
+        from reid.preprocessing import ReIDPreprocessing
 
         class _TinyEncoder(nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -405,7 +428,7 @@ class TestModelSmoke:
         import torch.nn as nn
 
         from reid.model import ReIDModel
-        from reid.models.preprocessing import ReIDPreprocessing
+        from reid.preprocessing import ReIDPreprocessing
 
         class _TinyEncoder(nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -428,7 +451,7 @@ class TestModelSmoke:
         import torch.nn as nn
 
         from reid.model import ReIDModel
-        from reid.models.preprocessing import ReIDPreprocessing
+        from reid.preprocessing import ReIDPreprocessing
 
         class _TinyEncoder(nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -448,7 +471,7 @@ class TestModelSmoke:
         import torch.nn as nn
 
         from reid.model import ReIDModel
-        from reid.models.preprocessing import ReIDPreprocessing
+        from reid.preprocessing import ReIDPreprocessing
 
         class _TinyEncoder(nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -478,6 +501,139 @@ class TestModelSmoke:
         assert embs.dtype == np.float32
         norms = np.linalg.norm(embs, axis=1)
         assert not np.allclose(norms, np.ones_like(norms), atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# 4b. Shared extract contract: parity, batching, eval(), normalize policy
+# ---------------------------------------------------------------------------
+
+
+class TestExtractContract:
+    def _tiny_model(self, preprocessing):
+        import torch
+        import torch.nn as nn
+
+        from reid.model import ReIDModel
+
+        class _Tiny(nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.flatten(1)[:, :16]
+
+        return ReIDModel(_Tiny(), torch.device("cpu"), preprocessing)
+
+    def test_init_forces_backbone_eval(self) -> None:
+        """A backbone left in train() mode is switched to eval() on construction."""
+        import torch
+        import torch.nn as nn
+
+        from reid.model import ReIDModel
+
+        class _WithBN(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bn = nn.BatchNorm1d(16)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.bn(x.flatten(1)[:, :16])
+
+        backbone = _WithBN()
+        backbone.train()
+        assert backbone.training is True
+        model = ReIDModel(backbone, torch.device("cpu"), ReIDPreprocessing())
+        assert model._backbone.training is False
+
+    def test_extract_features_sub_batches(self) -> None:
+        """extract_features splits crops into batch_size chunks for the forward pass."""
+        import numpy as np
+        import supervision as sv
+        import torch
+        import torch.nn as nn
+
+        from reid.model import ReIDModel
+
+        class _Counting(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.batch_sizes: list[int] = []
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.batch_sizes.append(int(x.shape[0]))
+                return x.flatten(1)[:, :16]
+
+        backbone = _Counting()
+        model = ReIDModel(backbone, torch.device("cpu"), ReIDPreprocessing())
+        frame = np.zeros((128, 128, 3), dtype=np.uint8)
+        boxes = np.array([[0, 0, 32, 32]] * 5, dtype=np.float32)
+        dets = sv.Detections(xyxy=boxes)
+
+        embs = model.extract_features(dets, frame, batch_size=2)
+        assert embs.shape[0] == 5
+        assert backbone.batch_sizes == [2, 2, 1]
+
+    def test_extract_features_rejects_bad_batch_size(self) -> None:
+        import numpy as np
+        import supervision as sv
+
+        model = self._tiny_model(ReIDPreprocessing())
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        dets = sv.Detections(xyxy=np.array([[0, 0, 32, 32]], dtype=np.float32))
+        with pytest.raises(ValueError, match="batch_size"):
+            model.extract_features(dets, frame, batch_size=0)
+
+    def test_frame_and_path_extract_parity(self, tmp_path) -> None:
+        """Same crop via a frame box vs. an on-disk file yields identical embeddings."""
+        import numpy as np
+        import supervision as sv
+        from PIL import Image as PILImage
+
+        # to_rgb=False so the frame is treated as RGB (no BGR swap), matching the
+        # RGB image read from disk; input_size matches the crop so resize is a no-op.
+        preprocessing = ReIDPreprocessing(input_size=(256, 128), to_rgb=False)
+        model = self._tiny_model(preprocessing)
+
+        rng = np.random.default_rng(0)
+        crop = rng.integers(0, 255, size=(256, 128, 3), dtype=np.uint8)
+        crop_path = tmp_path / "crop.png"
+        PILImage.fromarray(crop).save(crop_path)  # PNG is lossless
+
+        dets = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
+        emb_frame = model.extract_features(dets, crop)
+        emb_path = model.extract_features_from_paths([str(crop_path)])
+
+        assert emb_frame.shape == emb_path.shape
+        np.testing.assert_allclose(emb_frame, emb_path, atol=1e-6)
+
+    def test_path_extract_honors_preprocessing_normalize_flag(self, tmp_path) -> None:
+        """extract_features_from_paths defers to preprocessing.normalize_embeddings."""
+        import numpy as np
+        from PIL import Image as PILImage
+
+        rng = np.random.default_rng(1)
+        crop = rng.integers(0, 255, size=(256, 128, 3), dtype=np.uint8)
+        crop_path = tmp_path / "crop.png"
+        PILImage.fromarray(crop).save(crop_path)
+
+        normalizing = self._tiny_model(ReIDPreprocessing(normalize_embeddings=True))
+        embs = normalizing.extract_features_from_paths([str(crop_path)])
+        np.testing.assert_allclose(np.linalg.norm(embs, axis=1), 1.0, atol=1e-5)
+
+        # Explicit override wins over the preprocessing flag.
+        embs_raw = normalizing.extract_features_from_paths([str(crop_path)], normalize=False)
+        assert not np.allclose(np.linalg.norm(embs_raw, axis=1), 1.0, atol=1e-3)
+
+    def test_frame_extract_normalize_override(self) -> None:
+        """extract_features normalize override forces L2 even when the flag is False."""
+        import numpy as np
+        import supervision as sv
+
+        model = self._tiny_model(ReIDPreprocessing(normalize_embeddings=False))
+        frame = np.zeros((128, 128, 3), dtype=np.uint8)
+        dets = sv.Detections(xyxy=np.array([[0, 0, 64, 64]], dtype=np.float32))
+
+        raw = model.extract_features(dets, frame)
+        assert not np.allclose(np.linalg.norm(raw, axis=1), 1.0, atol=1e-3)
+        normed = model.extract_features(dets, frame, normalize=True)
+        np.testing.assert_allclose(np.linalg.norm(normed, axis=1), 1.0, atol=1e-5)
 
 
 # ---------------------------------------------------------------------------
@@ -517,8 +673,14 @@ class TestRoundTrip:
 
 
 @pytest.mark.slow
-def test_fastreid_mot17_alias_loads_with_finite_normalized_output() -> None:
-    """Download ``fastreid_mot17_sbs50`` and smoke the BoT-SORT encoder path."""
+def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
+    """Download ``fastreid_mot17_sbs50`` and smoke the BoT-SORT encoder path.
+
+    The card sets ``normalize_embeddings=False``, so ``extract_features`` returns
+    raw BNNeck features (cosine similarity is applied at distance time in
+    ``ReIDEvaluator._distance_matrix``). An explicit ``normalize=True`` override
+    still yields unit-norm vectors.
+    """
     import supervision as sv
 
     from reid.model import ReIDModel
@@ -526,8 +688,11 @@ def test_fastreid_mot17_alias_loads_with_finite_normalized_output() -> None:
     model = ReIDModel.from_pretrained("fastreid_mot17_sbs50", device="cpu")
     frame = np.zeros((384, 128, 3), dtype=np.uint8)
     dets = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 384.0]], dtype=np.float32))
+
     embs = model.extract_features(dets, frame)
     assert embs.shape == (1, 2048)
     assert np.isfinite(embs).all()
-    np.testing.assert_allclose(np.linalg.norm(embs, axis=1), 1.0, atol=1e-4)
+
+    embs_normalized = model.extract_features(dets, frame, normalize=True)
+    np.testing.assert_allclose(np.linalg.norm(embs_normalized, axis=1), 1.0, atol=1e-4)
     assert model.preprocessing.input_size == (384, 128)
