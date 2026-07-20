@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from reid.architectures import list_architectures
 from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50
-from reid.encoder import ReIDEncoder
 from reid.eval import (
     ReIDEvaluator,
     ReIDMetrics,
@@ -32,7 +31,6 @@ from reid.preprocessing import ReIDPreprocessing
 __all__ = [
     "DEFAULT_MODEL",
     "FASTREID_MOT17_SBS50",
-    "ReIDEncoder",
     "ReIDEvaluator",
     "ReIDMetrics",
     "ReIDModel",

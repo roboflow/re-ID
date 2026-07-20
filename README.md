@@ -67,7 +67,6 @@ live in submodules:
 src/reid/
 ├── __init__.py         # narrow public surface (see __all__)
 ├── model.py            # ReIDModel (the encoder)
-├── encoder.py          # ReIDEncoder protocol
 ├── preprocessing.py    # ReIDPreprocessing (crop + tensor preprocessing)
 ├── catalog.py          # curated alias catalog: ModelCard, ALIASES, resolve_model_card
 ├── architectures/      # architecture dispatch: build_architecture, list_architectures

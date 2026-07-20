@@ -13,9 +13,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from reid.encoder import ReIDEncoder
 from reid.eval.datasets import ReIDSplit
 from reid.eval.metrics import ReIDMetrics, compute_reid_metrics
+from reid.model import ReIDModel
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +51,15 @@ def _distance_matrix(q_embs: np.ndarray, g_embs: np.ndarray, metric: str) -> np.
 
 
 class ReIDEvaluator:
-    """Run embedding extraction and retrieval metrics for a ReID encoder.
+    """Run embedding extraction and retrieval metrics for a ReID model.
 
     Args:
-        model: Encoder implementing ``ReIDEncoder`` (for example ``ReIDModel``).
+        model: A ``ReIDModel`` (or any object exposing the same
+            ``extract_features_from_paths`` interface) used to embed crops.
         batch_size: Images per forward pass.
     """
 
-    def __init__(self, model: ReIDEncoder, batch_size: int = 64) -> None:
+    def __init__(self, model: ReIDModel, batch_size: int = 64) -> None:
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
         self._model = model
