@@ -210,30 +210,16 @@ class ReIDModel:
     # Inference
     # ------------------------------------------------------------------ #
 
-    def _resolve_normalize(self, override: bool | None) -> bool:
-        """Resolve the effective L2-normalise policy.
-
-        A per-call ``normalize`` override wins when given; otherwise the
-        ``preprocessing.normalize_embeddings`` flag decides. Both extract
-        methods share this policy so frame crops and path crops behave
-        identically.
-        """
-        if override is None:
-            return self._preprocessing.normalize_embeddings
-        return override
-
     def _crop_to_tensor(self, rgb_crop: np.ndarray) -> torch.Tensor:
         """Resize an RGB crop to the model input and apply tensor normalisation."""
         resized = self._preprocessing.resize_crop(rgb_crop)
         return self._transforms(resized)
 
-    def _embed_batch(self, batch: torch.Tensor, normalize: bool) -> np.ndarray:
+    def _embed_batch(self, batch: torch.Tensor) -> np.ndarray:
         """Run one pre-collated crop batch through the backbone → ``(B, D)`` float32."""
         batch = batch.to(self._device)
         with torch.inference_mode():
             embeddings = self._backbone(batch)
-        if normalize:
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
         out = embeddings.cpu().numpy().astype(np.float32)
         if out.ndim != 2:
             raise ValueError(f"embeddings must be 2-D, got shape {out.shape}")
@@ -246,20 +232,18 @@ class ReIDModel:
         image_paths: Sequence[str],
         *,
         batch_size: int = 32,
-        normalize: bool | None = None,
         num_workers: int = 0,
     ) -> np.ndarray:
         """Extract embeddings from pre-cropped image paths.
 
         For bbox crops from a video frame, use ``extract_features``. Images are
         decoded and preprocessed via a ``DataLoader`` so ``num_workers > 0``
-        parallelises disk I/O on platforms that support it.
+        parallelises disk I/O on platforms that support it. Raw (un-normalised)
+        embeddings are returned; cosine callers normalise at distance time.
 
         Args:
             image_paths: Paths to RGB-ready crop images.
             batch_size: Images per forward pass.
-            normalize: L2-normalise policy override. ``None`` (default) defers to
-                ``preprocessing.normalize_embeddings``; ``True``/``False`` force it.
             num_workers: DataLoader worker processes (``0`` decodes inline).
 
         Returns:
@@ -273,7 +257,6 @@ class ReIDModel:
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
 
-        should_normalize = self._resolve_normalize(normalize)
         dataset = _CropPathDataset(image_paths, self._preprocessing, self._transforms)
         loader = DataLoader(
             dataset,
@@ -283,7 +266,7 @@ class ReIDModel:
             collate_fn=torch.stack,
         )
 
-        all_embeddings: list[np.ndarray] = [self._embed_batch(batch, should_normalize) for batch in loader]
+        all_embeddings: list[np.ndarray] = [self._embed_batch(batch) for batch in loader]
         return np.concatenate(all_embeddings, axis=0)
 
     def extract_features(
@@ -292,20 +275,18 @@ class ReIDModel:
         frame: np.ndarray,
         *,
         batch_size: int = 32,
-        normalize: bool | None = None,
     ) -> np.ndarray:
         """Extract appearance embeddings for each detection.
 
         Crops are sub-batched so crowded frames do not build one oversized
-        forward pass. Shares crop→tensor→forward and the normalise policy with
-        ``extract_features_from_paths``.
+        forward pass. Shares crop→tensor→forward with
+        ``extract_features_from_paths``. Raw (un-normalised) embeddings are
+        returned; cosine callers normalise at distance time.
 
         Args:
             detections: Detections whose ``xyxy`` boxes define the crops.
             frame: BGR video frame the detections were produced on.
             batch_size: Crops per forward pass.
-            normalize: L2-normalise policy override. ``None`` (default) defers to
-                ``preprocessing.normalize_embeddings``; ``True``/``False`` force it.
 
         Returns:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
@@ -317,8 +298,6 @@ class ReIDModel:
             return np.empty((0, 0), dtype=np.float32)
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
-
-        should_normalize = self._resolve_normalize(normalize)
 
         frame_h, frame_w = frame.shape[:2]
         tensors: list[torch.Tensor] = []
@@ -332,5 +311,5 @@ class ReIDModel:
         all_embeddings: list[np.ndarray] = []
         for start in range(0, len(tensors), batch_size):
             chunk = tensors[start : start + batch_size]
-            all_embeddings.append(self._embed_batch(torch.stack(chunk), should_normalize))
+            all_embeddings.append(self._embed_batch(torch.stack(chunk)))
         return np.concatenate(all_embeddings, axis=0)

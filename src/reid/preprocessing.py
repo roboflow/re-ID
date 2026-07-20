@@ -31,14 +31,18 @@ ResizeMode = Literal["stretch", "letterbox"]
 
 @dataclass(frozen=True)
 class ReIDPreprocessing:
-    """Crop resize, colour conversion, and optional embedding L2 normalisation."""
+    """Crop resize and colour/tensor conversion for backbone input.
+
+    Preprocessing does not own embedding L2 normalisation: ``extract_*`` always
+    returns raw embeddings and cosine similarity is normalised at distance time
+    (see ``ReIDEvaluator._distance_matrix``).
+    """
 
     input_size: tuple[int, int] = REID_INPUT_SIZE
     mean: tuple[float, float, float] = IMAGENET_MEAN
     std: tuple[float, float, float] = IMAGENET_STD
     interpolation: str = "bilinear"
     to_rgb: bool = True
-    normalize_embeddings: bool = False
     resize_mode: ResizeMode = "stretch"
     pad_value: int = LETTERBOX_PAD_VALUE
 
@@ -46,10 +50,9 @@ class ReIDPreprocessing:
         """Human-readable one-line summary."""
         h, w = self.input_size
         colour = "BGR→RGB" if self.to_rgb else "RGB (no swap)"
-        norm = "L2" if self.normalize_embeddings else "none"
         return (
             f"ReIDPreprocessing(resize={h}x{w} [{self.resize_mode}, {self.interpolation}], "
-            f"{colour}, mean={self.mean}, std={self.std}, embed_norm={norm})"
+            f"{colour}, mean={self.mean}, std={self.std})"
         )
 
     def resize_crop(self, crop: np.ndarray) -> np.ndarray:
@@ -102,14 +105,17 @@ class ReIDPreprocessing:
             "std": list(self.std),
             "interpolation": self.interpolation,
             "to_rgb": self.to_rgb,
-            "normalize_embeddings": self.normalize_embeddings,
             "resize_mode": self.resize_mode,
             "pad_value": self.pad_value,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> ReIDPreprocessing:
-        """Reconstruct from a ``reid_config.json`` preprocessing dict."""
+        """Reconstruct from a ``reid_config.json`` preprocessing dict.
+
+        Unknown keys are ignored, so configs written by older versions (e.g. a
+        legacy ``normalize_embeddings`` flag) still load cleanly.
+        """
         kwargs: dict = {}
         if "input_size" in data:
             kwargs["input_size"] = tuple(data["input_size"])
@@ -121,8 +127,6 @@ class ReIDPreprocessing:
             kwargs["interpolation"] = data["interpolation"]
         if "to_rgb" in data:
             kwargs["to_rgb"] = data["to_rgb"]
-        if "normalize_embeddings" in data:
-            kwargs["normalize_embeddings"] = data["normalize_embeddings"]
         if "resize_mode" in data:
             kwargs["resize_mode"] = data["resize_mode"]
         if "pad_value" in data:

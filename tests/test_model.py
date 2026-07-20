@@ -78,6 +78,14 @@ class TestReIDPreprocessing:
         p2 = ReIDPreprocessing.from_dict(d)
         assert p2 == p
 
+    def test_from_dict_ignores_legacy_normalize_embeddings(self) -> None:
+        """Old reid_config.json files carrying normalize_embeddings still load."""
+        legacy = ReIDPreprocessing(input_size=(128, 64), to_rgb=False).to_dict()
+        legacy["normalize_embeddings"] = True  # removed field from an older version
+        p = ReIDPreprocessing.from_dict(legacy)
+        assert p == ReIDPreprocessing(input_size=(128, 64), to_rgb=False)
+        assert not hasattr(p, "normalize_embeddings")
+
 
 # ---------------------------------------------------------------------------
 # 2. Registry / resolution
@@ -426,29 +434,6 @@ class TestModelSmoke:
         norms = np.linalg.norm(embs, axis=1)
         assert not np.allclose(norms, np.ones_like(norms), atol=1e-5)
 
-    def test_extract_features_optional_l2_normalize(self) -> None:
-        import numpy as np
-        import supervision as sv
-        import torch
-        import torch.nn as nn
-
-        from reid.model import ReIDModel
-        from reid.preprocessing import ReIDPreprocessing
-
-        class _TinyEncoder(nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.flatten(1)[:, :16]
-
-        device = torch.device("cpu")
-        preprocessing = ReIDPreprocessing(normalize_embeddings=True)
-        model = ReIDModel(_TinyEncoder(), device, preprocessing)
-
-        frame = np.zeros((128, 128, 3), dtype=np.uint8)
-        dets = sv.Detections(xyxy=np.array([[0, 0, 64, 64]], dtype=np.float32))
-        embs = model.extract_features(dets, frame)
-        norms = np.linalg.norm(embs, axis=1)
-        np.testing.assert_allclose(norms, np.ones_like(norms), atol=1e-5)
-
     def test_extract_features_clamps_out_of_frame_boxes(self) -> None:
         import numpy as np
         import supervision as sv
@@ -509,7 +494,7 @@ class TestModelSmoke:
 
 
 # ---------------------------------------------------------------------------
-# 4b. Shared extract contract: parity, batching, eval(), normalize policy
+# 4b. Shared extract contract: parity, batching, eval(), raw embeddings
 # ---------------------------------------------------------------------------
 
 
@@ -608,37 +593,26 @@ class TestExtractContract:
         assert emb_frame.shape == emb_path.shape
         np.testing.assert_allclose(emb_frame, emb_path, atol=1e-6)
 
-    def test_path_extract_honors_preprocessing_normalize_flag(self, tmp_path) -> None:
-        """extract_features_from_paths defers to preprocessing.normalize_embeddings."""
+    def test_extract_returns_raw_embeddings(self, tmp_path) -> None:
+        """extract_* always returns raw embeddings; normalisation is a distance-time concern."""
         import numpy as np
+        import supervision as sv
         from PIL import Image as PILImage
+
+        model = self._tiny_model(ReIDPreprocessing(to_rgb=False))
 
         rng = np.random.default_rng(1)
         crop = rng.integers(0, 255, size=(256, 128, 3), dtype=np.uint8)
         crop_path = tmp_path / "crop.png"
         PILImage.fromarray(crop).save(crop_path)
 
-        normalizing = self._tiny_model(ReIDPreprocessing(normalize_embeddings=True))
-        embs = normalizing.extract_features_from_paths([str(crop_path)])
-        np.testing.assert_allclose(np.linalg.norm(embs, axis=1), 1.0, atol=1e-5)
+        path_embs = model.extract_features_from_paths([str(crop_path)])
+        assert not np.allclose(np.linalg.norm(path_embs, axis=1), 1.0, atol=1e-3)
 
-        # Explicit override wins over the preprocessing flag.
-        embs_raw = normalizing.extract_features_from_paths([str(crop_path)], normalize=False)
-        assert not np.allclose(np.linalg.norm(embs_raw, axis=1), 1.0, atol=1e-3)
-
-    def test_frame_extract_normalize_override(self) -> None:
-        """extract_features normalize override forces L2 even when the flag is False."""
-        import numpy as np
-        import supervision as sv
-
-        model = self._tiny_model(ReIDPreprocessing(normalize_embeddings=False))
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 64, 64]], dtype=np.float32))
-
-        raw = model.extract_features(dets, frame)
-        assert not np.allclose(np.linalg.norm(raw, axis=1), 1.0, atol=1e-3)
-        normed = model.extract_features(dets, frame, normalize=True)
-        np.testing.assert_allclose(np.linalg.norm(normed, axis=1), 1.0, atol=1e-5)
+        frame_embs = model.extract_features(dets, frame)
+        assert not np.allclose(np.linalg.norm(frame_embs, axis=1), 1.0, atol=1e-3)
 
 
 # ---------------------------------------------------------------------------
@@ -681,10 +655,8 @@ class TestRoundTrip:
 def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
     """Download ``fastreid_mot17_sbs50`` and smoke the BoT-SORT encoder path.
 
-    The card sets ``normalize_embeddings=False``, so ``extract_features`` returns
-    raw BNNeck features (cosine similarity is applied at distance time in
-    ``ReIDEvaluator._distance_matrix``). An explicit ``normalize=True`` override
-    still yields unit-norm vectors.
+    ``extract_features`` returns raw BNNeck features; cosine similarity is
+    applied at distance time in ``ReIDEvaluator._distance_matrix``.
     """
     import supervision as sv
 
@@ -697,7 +669,4 @@ def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
     embs = model.extract_features(dets, frame)
     assert embs.shape == (1, 2048)
     assert np.isfinite(embs).all()
-
-    embs_normalized = model.extract_features(dets, frame, normalize=True)
-    np.testing.assert_allclose(np.linalg.norm(embs_normalized, axis=1), 1.0, atol=1e-4)
     assert model.preprocessing.input_size == (384, 128)

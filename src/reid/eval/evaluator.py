@@ -98,7 +98,7 @@ class ReIDEvaluator:
             if verbose:
                 logger.info("Extracting query embeddings (%s images)…", len(query))
             q_embs = self._model.extract_features_from_paths(
-                query.image_paths, batch_size=self._batch_size, normalize=False
+                query.image_paths, batch_size=self._batch_size
             )
         else:
             if query_embeddings.shape[0] != len(query):
@@ -111,7 +111,7 @@ class ReIDEvaluator:
             if verbose:
                 logger.info("Extracting gallery embeddings (%s images)…", len(gallery))
             g_embs = self._model.extract_features_from_paths(
-                gallery.image_paths, batch_size=self._batch_size, normalize=False
+                gallery.image_paths, batch_size=self._batch_size
             )
         else:
             if gallery_embeddings.shape[0] != len(gallery):

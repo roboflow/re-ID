@@ -126,7 +126,6 @@ class TestReIDEvaluator:
                 image_paths: Sequence[str],
                 *,
                 batch_size: int = 64,
-                normalize: bool = False,
             ) -> np.ndarray:
                 self.calls.append(list(image_paths))
                 return np.ones((len(image_paths), 2), dtype=np.float32)
@@ -170,7 +169,6 @@ class TestReIDEvaluator:
                 image_paths: Sequence[str],
                 *,
                 batch_size: int = 64,
-                normalize: bool = False,
             ) -> np.ndarray:
                 return np.ones((len(image_paths), 2), dtype=np.float32)
 
