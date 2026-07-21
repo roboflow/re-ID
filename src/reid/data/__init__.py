@@ -4,16 +4,24 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""Shared ReID dataset types and benchmark loaders."""
+"""Shared ReID dataset types, benchmark loaders, and crop partitioners."""
 
 from __future__ import annotations
 
 from reid.data.benchmarks import load_market1501, load_msmt17
+from reid.data.crops import (
+    build_crop_identity_holdout_split,
+    build_crop_retrieval_split,
+    load_identity_crops,
+)
 from reid.data.splits import MARKET1501_GALLERY_JUNK_PIDS, ReIDSplit
 
 __all__ = [
     "MARKET1501_GALLERY_JUNK_PIDS",
     "ReIDSplit",
+    "build_crop_identity_holdout_split",
+    "build_crop_retrieval_split",
+    "load_identity_crops",
     "load_market1501",
     "load_msmt17",
 ]
