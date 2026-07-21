@@ -100,7 +100,7 @@ src/reid/
 ├── catalog.py          # curated aliases (ModelCard, ALIASES)
 ├── architectures/      # builders + class default_preprocessing() on each net
 ├── loaders.py          # weight I/O and resolve_load_plan
-├── data/               # ReIDSplit, benchmark loaders, shared image extensions
+├── data/               # ReIDSplit and benchmark loaders
 └── eval/               # gallery evaluation (metrics + ReIDEvaluator)
 ```
 
