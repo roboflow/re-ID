@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from reid.eval.datasets import ReIDSplit, load_market1501, load_msmt17
+from reid.data import ReIDSplit, load_market1501, load_msmt17
 from reid.eval.evaluator import ReIDEvaluator, ReIDResult
 from reid.eval.metrics import ReIDMetrics, compute_reid_metrics
 

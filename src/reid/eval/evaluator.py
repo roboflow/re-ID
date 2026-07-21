@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from reid.eval.datasets import ReIDSplit
+from reid.data import ReIDSplit
 from reid.eval.metrics import ReIDMetrics, compute_reid_metrics
 from reid.model import ReIDModel
 
@@ -97,9 +97,7 @@ class ReIDEvaluator:
         if query_embeddings is None:
             if verbose:
                 logger.info("Extracting query embeddings (%s images)…", len(query))
-            q_embs = self._model.extract_features_from_paths(
-                query.image_paths, batch_size=self._batch_size
-            )
+            q_embs = self._model.extract_features_from_paths(query.image_paths, batch_size=self._batch_size)
         else:
             if query_embeddings.shape[0] != len(query):
                 raise ValueError(
@@ -110,9 +108,7 @@ class ReIDEvaluator:
         if gallery_embeddings is None:
             if verbose:
                 logger.info("Extracting gallery embeddings (%s images)…", len(gallery))
-            g_embs = self._model.extract_features_from_paths(
-                gallery.image_paths, batch_size=self._batch_size
-            )
+            g_embs = self._model.extract_features_from_paths(gallery.image_paths, batch_size=self._batch_size)
         else:
             if gallery_embeddings.shape[0] != len(gallery):
                 raise ValueError(

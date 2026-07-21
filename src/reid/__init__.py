@@ -8,8 +8,9 @@
 
 The public surface is intentionally narrow. Advanced helpers live in
 submodules: checkpoint loading in :mod:`reid.loaders`, the curated alias
-catalog and ``ModelCard`` in :mod:`reid.catalog`, and architecture dispatch
-in :mod:`reid.architectures`.
+catalog and ``ModelCard`` in :mod:`reid.catalog`, shared dataset types and
+benchmark loaders in :mod:`reid.data`, and architecture dispatch in
+:mod:`reid.architectures`.
 """
 
 from __future__ import annotations
