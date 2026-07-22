@@ -9,7 +9,7 @@
 The canonical flow is ``source format -> loader -> ReIDSplit -> optional
 partitioning -> Dataset/evaluator``. :func:`load_identity_crops` turns an
 identity-folder layout (``<root>/<identity>/<crop>.jpg``) into a single
-``ReIDSplit``. The ``build_crop_*`` partitioners then consume that split to
+``ReIDSplit``. The ``build_identity_crop_*`` partitioners then consume that split to
 produce query/gallery (and optional train) splits; they never touch the
 filesystem.
 
@@ -45,7 +45,7 @@ def load_identity_crops(
     Expects ``<root>/<identity>/<crop>.(jpg|jpeg|png|bmp)``. Identity folders are
     sorted by name and assigned contiguous person IDs (``0..N-1``). Camera IDs
     are set to ``-1`` because on-disk crops carry no camera information; the
-    ``build_crop_*`` partitioners assign synthetic camera IDs where retrieval
+    ``build_identity_crop_*`` partitioners assign synthetic camera IDs where retrieval
     needs them.
 
     Args:
@@ -91,7 +91,7 @@ def load_identity_crops(
     )
 
 
-def build_crop_retrieval_split(
+def build_identity_crop_retrieval_split(
     split: ReIDSplit,
     *,
     queries_per_id: int = 1,
@@ -135,7 +135,7 @@ def build_crop_retrieval_split(
     )
 
 
-def build_crop_identity_holdout_split(
+def build_identity_crop_holdout_split(
     split: ReIDSplit,
     *,
     holdout_fraction: float = 0.2,
@@ -147,7 +147,7 @@ def build_crop_identity_holdout_split(
 
     A fraction of the identities that have at least ``min_crops`` crops is drawn
     (deterministically via ``seed``) and turned into query/gallery splits exactly
-    as in :func:`build_crop_retrieval_split`. Every remaining crop, including
+    as in :func:`build_identity_crop_retrieval_split`. Every remaining crop, including
     crops of identities too small to be eligible for holdout, forms the train
     split with its original camera IDs preserved. The train and evaluation splits
     are identity-disjoint, so retrieval never scores an identity the model saw
