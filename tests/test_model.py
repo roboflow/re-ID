@@ -56,12 +56,10 @@ def _tiny_encoder():
 def _assert_full_load_logged(caplog: pytest.LogCaptureFixture) -> None:
     assert "0 missing, 0 unused" in caplog.text
 
-# ---------------------------------------------------------------------------
-# 1. Preprocessing
-# ---------------------------------------------------------------------------
-
 
 class TestReIDPreprocessing:
+    """Preprocessing geometry, color conversion, and config serialization."""
+
     def test_build_transform_callable(self) -> None:
         t = ReIDPreprocessing().build_transform()
         from PIL import Image
@@ -120,12 +118,9 @@ class TestReIDPreprocessing:
         assert not hasattr(p, "normalize_embeddings")
 
 
-# ---------------------------------------------------------------------------
-# 2. Registry / resolution
-# ---------------------------------------------------------------------------
-
-
 class TestRegistry:
+    """Architecture defaults, model aliases, and load-recipe resolution."""
+
     def test_list_aliases(self) -> None:
         aliases = list_aliases()
         assert aliases == sorted([DEFAULT_MODEL, FASTREID_MOT17_SBS50])
@@ -195,12 +190,9 @@ class TestRegistry:
             os.unlink(tmp_path)
 
 
-# ---------------------------------------------------------------------------
-# 3. Loaders
-# ---------------------------------------------------------------------------
-
-
 class TestLoaders:
+    """Checkpoint path resolution, remapping, and state-dict loading."""
+
     def test_missing_local_path_raises(self) -> None:
         with pytest.raises(FileNotFoundError):
             resolve_weights("/nonexistent/path/to/weights.pth")
@@ -413,12 +405,9 @@ class TestLoaders:
         assert out.shape == (2, 2048)
 
 
-# ---------------------------------------------------------------------------
-# 4. Model smoke (torch required)
-# ---------------------------------------------------------------------------
-
-
 class TestModelSmoke:
+    """Core ``ReIDModel`` construction and extraction smoke tests."""
+
     def test_extract_features_tiny_module(self) -> None:
         import numpy as np
         import supervision as sv
@@ -495,12 +484,9 @@ class TestModelSmoke:
         assert not np.allclose(norms, np.ones_like(norms), atol=1e-5)
 
 
-# ---------------------------------------------------------------------------
-# 4b. Shared extract contract: parity, batching, eval(), raw embeddings
-# ---------------------------------------------------------------------------
-
-
 class TestExtractContract:
+    """Extraction parity, batching, eval mode, and raw-embedding behavior."""
+
     def _tiny_model(self, preprocessing):
         import torch
 
@@ -611,12 +597,9 @@ class TestExtractContract:
         assert not np.allclose(np.linalg.norm(frame_embs, axis=1), 1.0, atol=1e-3)
 
 
-# ---------------------------------------------------------------------------
-# 5. Round-trip: save_pretrained → from_pretrained (torch required)
-# ---------------------------------------------------------------------------
-
-
 class TestRoundTrip:
+    """``save_pretrained`` / ``from_pretrained`` round-trip behavior."""
+
     def test_save_and_reload_produces_identical_embeddings(self, tmp_path) -> None:
         import numpy as np
         import supervision as sv
@@ -640,11 +623,6 @@ class TestRoundTrip:
         embs_a = model_a.extract_features(dets, frame)
         embs_b = model_b.extract_features(dets, frame)
         np.testing.assert_allclose(embs_a, embs_b, atol=1e-5)
-
-
-# ---------------------------------------------------------------------------
-# 6. Slow: curated FastReID weight download
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow

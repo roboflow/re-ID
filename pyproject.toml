@@ -6,13 +6,12 @@ readme = "README.md"
 authors = [
   { name = "Roboflow et al.", email = "develop@roboflow.com" },
 ]
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -40,19 +39,15 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling>=1.25.0"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/reid"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["reid*"]
 
-[tool.hatch.build.targets.sdist]
-include = [
-    "/src",
-    "/tests",
-    "/README.md",
-    "/LICENSE",
-]
+[tool.setuptools.package-data]
+reid = ["py.typed"]
 
 [tool.pytest.ini_options]
 markers = [

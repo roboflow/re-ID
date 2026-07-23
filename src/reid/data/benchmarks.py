@@ -39,6 +39,32 @@ def _parse_msmt17_camid(filename: str) -> int:
     return _to_zero_indexed_camid(int(stem.split("_")[2]))
 
 
+def _load_msmt17_list(list_file: Path, image_root: Path) -> ReIDSplit:
+    """Load one MSMT17 query/gallery list file."""
+    if not list_file.exists():
+        raise FileNotFoundError(f"MSMT17 list file not found: {list_file}")
+    paths, pids, camids = [], [], []
+    for line in list_file.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        rel_path = parts[0]
+        pid = int(parts[1])
+        camid = _to_zero_indexed_camid(int(parts[2])) if len(parts) >= 3 else _parse_msmt17_camid(Path(rel_path).name)
+        paths.append(str(image_root / rel_path))
+        pids.append(pid)
+        camids.append(camid)
+    return ReIDSplit(
+        image_paths=paths,
+        pids=np.array(pids, dtype=np.int32),
+        camids=np.array(camids, dtype=np.int32),
+        gallery_junk_pids=frozenset({-1}),
+    )
+
+
 def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     """Load MSMT17 query and gallery splits from ``root``.
 
@@ -61,37 +87,9 @@ def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     if not root.exists():
         raise FileNotFoundError(f"MSMT17 root not found: {root}")
 
-    def _parse_list(list_file: Path, image_root: Path) -> ReIDSplit:
-        if not list_file.exists():
-            raise FileNotFoundError(f"MSMT17 list file not found: {list_file}")
-        paths, pids, camids = [], [], []
-        for line in list_file.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) < 2:
-                continue
-            rel_path = parts[0]
-            pid = int(parts[1])
-            # Both formats treat the camera id as 1-indexed: the 3-column camid
-            # and the filename camera field use the same conversion.
-            camid = (
-                _to_zero_indexed_camid(int(parts[2])) if len(parts) >= 3 else _parse_msmt17_camid(Path(rel_path).name)
-            )
-            paths.append(str(image_root / rel_path))
-            pids.append(pid)
-            camids.append(camid)
-        return ReIDSplit(
-            image_paths=paths,
-            pids=np.array(pids, dtype=np.int32),
-            camids=np.array(camids, dtype=np.int32),
-            gallery_junk_pids=frozenset({-1}),
-        )
-
     test_root = root / "test"
-    query = _parse_list(root / "list_query.txt", test_root)
-    gallery = _parse_list(root / "list_gallery.txt", test_root)
+    query = _load_msmt17_list(root / "list_query.txt", test_root)
+    gallery = _load_msmt17_list(root / "list_gallery.txt", test_root)
     return query, gallery
 
 
@@ -110,6 +108,28 @@ def _parse_market_filename(filename: str) -> tuple[int, int]:
     pid = int(parts[0])
     camid = int(parts[1][1]) - 1  # "c1" → 0
     return pid, camid
+
+
+def _load_market1501_dir(
+    subdir: Path,
+    *,
+    gallery_junk_pids: frozenset[int],
+) -> ReIDSplit:
+    """Load one Market-1501 image directory."""
+    if not subdir.exists():
+        raise FileNotFoundError(f"Market-1501 sub-directory not found: {subdir}")
+    paths, pids, camids = [], [], []
+    for img_path in sorted(subdir.glob("*.jpg")):
+        pid, camid = _parse_market_filename(img_path.name)
+        paths.append(str(img_path))
+        pids.append(pid)
+        camids.append(camid)
+    return ReIDSplit(
+        image_paths=paths,
+        pids=np.array(pids, dtype=np.int32),
+        camids=np.array(camids, dtype=np.int32),
+        gallery_junk_pids=gallery_junk_pids,
+    )
 
 
 def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
@@ -132,22 +152,12 @@ def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     if not root.exists():
         raise FileNotFoundError(f"Market-1501 root not found: {root}")
 
-    def _load_dir(subdir: Path, *, gallery_junk_pids: frozenset[int]) -> ReIDSplit:
-        if not subdir.exists():
-            raise FileNotFoundError(f"Market-1501 sub-directory not found: {subdir}")
-        paths, pids, camids = [], [], []
-        for img_path in sorted(subdir.glob("*.jpg")):
-            pid, camid = _parse_market_filename(img_path.name)
-            paths.append(str(img_path))
-            pids.append(pid)
-            camids.append(camid)
-        return ReIDSplit(
-            image_paths=paths,
-            pids=np.array(pids, dtype=np.int32),
-            camids=np.array(camids, dtype=np.int32),
-            gallery_junk_pids=gallery_junk_pids,
-        )
-
-    query = _load_dir(root / "query", gallery_junk_pids=frozenset({-1}))
-    gallery = _load_dir(root / "bounding_box_test", gallery_junk_pids=MARKET1501_GALLERY_JUNK_PIDS)
+    query = _load_market1501_dir(
+        root / "query",
+        gallery_junk_pids=frozenset({-1}),
+    )
+    gallery = _load_market1501_dir(
+        root / "bounding_box_test",
+        gallery_junk_pids=MARKET1501_GALLERY_JUNK_PIDS,
+    )
     return query, gallery

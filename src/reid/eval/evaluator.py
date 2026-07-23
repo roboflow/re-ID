@@ -100,9 +100,7 @@ class ReIDEvaluator:
         if query_embeddings is None:
             if verbose:
                 logger.info("Extracting query embeddings (%s images)…", len(query))
-            query_embeddings = self._model.extract_features_from_paths(
-                query.image_paths, batch_size=self._batch_size
-            )
+            query_embeddings = self._model.extract_features_from_paths(query.image_paths, batch_size=self._batch_size)
         elif query_embeddings.shape[0] != len(query):
             raise ValueError(
                 f"query_embeddings rows ({query_embeddings.shape[0]}) must match query length ({len(query)})"
@@ -116,8 +114,7 @@ class ReIDEvaluator:
             )
         elif gallery_embeddings.shape[0] != len(gallery):
             raise ValueError(
-                f"gallery_embeddings rows ({gallery_embeddings.shape[0]}) must "
-                f"match gallery length ({len(gallery)})"
+                f"gallery_embeddings rows ({gallery_embeddings.shape[0]}) must match gallery length ({len(gallery)})"
             )
 
         if verbose:
