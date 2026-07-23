@@ -14,7 +14,7 @@ Or with uv:
 uv sync --all-extras
 ```
 
-PyPI package name is `roboflow-reid`; import as `reid`.
+Once published, install from PyPI with `pip install reid`; import as `reid`.
 
 ## Quick start
 

@@ -1,5 +1,5 @@
 [project]
-name = "roboflow-reid"
+name = "reid"
 version = "0.1.0"
 description = "Re-identification model stack for appearance embeddings"
 readme = "README.md"
