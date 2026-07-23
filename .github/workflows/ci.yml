@@ -24,10 +24,11 @@ jobs:
 
       - name: Verify no trackers imports
         run: |
-          if rg "from trackers|import trackers" src/reid; then
+          if grep -REn 'from trackers|import trackers' src/reid; then
             echo "FAIL: trackers imports found under src/reid"
             exit 1
           fi
+          echo "OK: no trackers imports under src/reid"
 
       - name: Ruff
         run: uv run pre-commit run --all-files
