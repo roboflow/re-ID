@@ -174,6 +174,10 @@ class TestRegistry:
         assert config_preprocessing is not None
         assert config_preprocessing.input_size == (256, 128)
 
+    def test_local_dir_without_config_raises(self, tmp_path) -> None:
+        with pytest.raises(ValueError, match="reid_config.json"):
+            resolve_model_card(str(tmp_path))
+
     def test_bare_path_without_architecture_raises(self) -> None:
         """from_pretrained on a bare weights file without architecture → ValueError."""
         from reid.model import ReIDModel

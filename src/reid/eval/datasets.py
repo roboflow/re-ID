@@ -8,12 +8,13 @@
 
 from __future__ import annotations
 
-from reid.data.benchmarks import load_market1501, load_msmt17
-from reid.data.splits import MARKET1501_GALLERY_JUNK_PIDS, ReIDSplit
-
-__all__ = [
-    "MARKET1501_GALLERY_JUNK_PIDS",
-    "ReIDSplit",
-    "load_market1501",
-    "load_msmt17",
-]
+from reid.data.benchmarks import (
+    load_market1501 as load_market1501,
+)
+from reid.data.benchmarks import (
+    load_msmt17 as load_msmt17,
+)
+from reid.data.splits import (
+    MARKET1501_GALLERY_JUNK_PIDS as MARKET1501_GALLERY_JUNK_PIDS,
+)
+from reid.data.splits import ReIDSplit as ReIDSplit

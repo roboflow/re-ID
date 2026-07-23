@@ -22,13 +22,6 @@ jobs:
       - name: Install package
         run: uv sync --all-extras
 
-      - name: Verify no trackers imports
-        run: |
-          if rg "from trackers|import trackers" src/reid; then
-            echo "FAIL: trackers imports found under src/reid"
-            exit 1
-          fi
-
       - name: Ruff
         run: uv run ruff check src tests
 

@@ -19,9 +19,6 @@ from torch.nn import functional as F
 
 from reid.preprocessing import ReIDPreprocessing
 
-__all__ = ["OSNet", "build_osnet"]
-
-
 # --------------------------------------------------------------------------- #
 # Basic layers
 # --------------------------------------------------------------------------- #

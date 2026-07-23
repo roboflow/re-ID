@@ -30,20 +30,24 @@ class ReIDResult:
     distmat: np.ndarray
 
 
-def _distance_matrix(q_embs: np.ndarray, g_embs: np.ndarray, metric: str) -> np.ndarray:
+def _distance_matrix(query_embeddings: np.ndarray, gallery_embeddings: np.ndarray, metric: str) -> np.ndarray:
     """Build a query x gallery distance matrix (``cosine`` or ``euclidean``)."""
     if metric == "cosine":
-        qn = (q_embs / (np.linalg.norm(q_embs, axis=1, keepdims=True) + 1e-12)).astype(np.float32, copy=False)
-        gn = (g_embs / (np.linalg.norm(g_embs, axis=1, keepdims=True) + 1e-12)).astype(np.float32, copy=False)
-        distmat = qn @ gn.T
+        normalized_query = (
+            query_embeddings / (np.linalg.norm(query_embeddings, axis=1, keepdims=True) + 1e-12)
+        ).astype(np.float32, copy=False)
+        normalized_gallery = (
+            gallery_embeddings / (np.linalg.norm(gallery_embeddings, axis=1, keepdims=True) + 1e-12)
+        ).astype(np.float32, copy=False)
+        distmat = normalized_query @ normalized_gallery.T
         distmat *= -1.0
         distmat += 1.0
         return distmat
     if metric == "euclidean":
-        distmat = (q_embs @ g_embs.T).astype(np.float32, copy=False)
+        distmat = (query_embeddings @ gallery_embeddings.T).astype(np.float32, copy=False)
         distmat *= -2.0
-        distmat += (q_embs**2).sum(axis=1, keepdims=True)
-        distmat += (g_embs**2).sum(axis=1, keepdims=True).T
+        distmat += (query_embeddings**2).sum(axis=1, keepdims=True)
+        distmat += (gallery_embeddings**2).sum(axis=1, keepdims=True).T
         np.maximum(distmat, 0.0, out=distmat)
         np.sqrt(distmat, out=distmat)
         return distmat
@@ -54,8 +58,7 @@ class ReIDEvaluator:
     """Run embedding extraction and retrieval metrics for a ReID model.
 
     Args:
-        model: A ``ReIDModel`` (or any object exposing the same
-            ``extract_features_from_paths`` interface) used to embed crops.
+        model: A ``ReIDModel`` used to embed crops.
         batch_size: Images per forward pass.
     """
 
@@ -97,29 +100,29 @@ class ReIDEvaluator:
         if query_embeddings is None:
             if verbose:
                 logger.info("Extracting query embeddings (%s images)…", len(query))
-            q_embs = self._model.extract_features_from_paths(query.image_paths, batch_size=self._batch_size)
-        else:
-            if query_embeddings.shape[0] != len(query):
-                raise ValueError(
-                    f"query_embeddings rows ({query_embeddings.shape[0]}) must match query length ({len(query)})"
-                )
-            q_embs = query_embeddings
+            query_embeddings = self._model.extract_features_from_paths(
+                query.image_paths, batch_size=self._batch_size
+            )
+        elif query_embeddings.shape[0] != len(query):
+            raise ValueError(
+                f"query_embeddings rows ({query_embeddings.shape[0]}) must match query length ({len(query)})"
+            )
 
         if gallery_embeddings is None:
             if verbose:
                 logger.info("Extracting gallery embeddings (%s images)…", len(gallery))
-            g_embs = self._model.extract_features_from_paths(gallery.image_paths, batch_size=self._batch_size)
-        else:
-            if gallery_embeddings.shape[0] != len(gallery):
-                raise ValueError(
-                    f"gallery_embeddings rows ({gallery_embeddings.shape[0]}) must "
-                    f"match gallery length ({len(gallery)})"
-                )
-            g_embs = gallery_embeddings
+            gallery_embeddings = self._model.extract_features_from_paths(
+                gallery.image_paths, batch_size=self._batch_size
+            )
+        elif gallery_embeddings.shape[0] != len(gallery):
+            raise ValueError(
+                f"gallery_embeddings rows ({gallery_embeddings.shape[0]}) must "
+                f"match gallery length ({len(gallery)})"
+            )
 
         if verbose:
             logger.info("Computing distance matrix (%s)…", distance)
-        distmat = _distance_matrix(q_embs, g_embs, distance)
+        distmat = _distance_matrix(query_embeddings, gallery_embeddings, distance)
 
         if verbose:
             logger.info("Computing metrics…")
@@ -142,7 +145,7 @@ class ReIDEvaluator:
 
         return ReIDResult(
             metrics=metrics,
-            query_embeddings=q_embs,
-            gallery_embeddings=g_embs,
+            query_embeddings=query_embeddings,
+            gallery_embeddings=gallery_embeddings,
             distmat=distmat,
         )

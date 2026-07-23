@@ -95,20 +95,28 @@ def list_aliases() -> list[str]:
 def resolve_model_card(source: str) -> tuple[ModelCard, ReIDPreprocessing | None] | None:
     """Resolve an alias or ``reid_config.json`` directory/repo to a load recipe.
 
-    Returns ``None`` when ``source`` is a bare weights path without a config.
-    Curated aliases return ``(card, None)``; saved / HF configs return
+    Returns ``None`` when ``source`` is a bare weights *file* URL/path without a
+    config. Curated aliases return ``(card, None)``; saved / HF configs return
     ``(card, preprocessing)`` with the preprocessing dict from
     ``reid_config.json``.
+
+    Raises:
+        ValueError: If ``source`` is a local directory that does not contain
+            ``reid_config.json`` (directories are never bare weight files).
     """
     if source in ALIASES:
         return ALIASES[source], None
 
-    # Local directory with a reid_config.json (save_pretrained output).
+    # Local directory must be a save_pretrained() tree (reid_config.json).
     if os.path.isdir(source):
         config_path = os.path.join(source, "reid_config.json")
-        if os.path.exists(config_path):
-            return load_model_config(source)
-        return None
+        if not os.path.isfile(config_path):
+            raise ValueError(
+                f"Cannot load {source!r}: directory has no reid_config.json. "
+                "Point to a directory produced by ReIDModel.save_pretrained(), "
+                "or pass a weights *file* path together with architecture=... ."
+            )
+        return load_model_config(source)
 
     # HF repo URL (no trailing filename) — try to fetch reid_config.json.
     # hf://org/repo has exactly 2 non-empty parts after "hf://".

@@ -25,13 +25,6 @@ from safetensors.torch import load_file
 if TYPE_CHECKING:
     from reid.preprocessing import ReIDPreprocessing
 
-__all__ = [
-    "LoadPlan",
-    "load_state_dict",
-    "resolve_load_plan",
-    "resolve_weights",
-]
-
 logger = logging.getLogger(__name__)
 
 _HF_PREFIX = "hf://"
@@ -190,7 +183,8 @@ def resolve_load_plan(
 
     Raises:
         ValueError: For an architecture-only request without ``architecture``,
-            or a bare weights file without ``architecture``.
+            a bare weights file without ``architecture``, or a local directory
+            that is missing ``reid_config.json``.
     """
     from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50, resolve_model_card
 

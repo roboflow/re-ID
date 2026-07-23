@@ -31,13 +31,6 @@ from torch.nn import functional as F
 
 from reid.preprocessing import ReIDPreprocessing
 
-__all__ = [
-    "FASTREID_SBS_ARCHITECTURE",
-    "FastReIDSBSResNeSt50",
-    "build_fastreid_sbs_resnest50",
-    "remap_fastreid_sbs_state_dict",
-]
-
 FASTREID_SBS_ARCHITECTURE = "fastreid_sbs_resnest50"
 FASTREID_SBS_EMBED_DIM = 2048
 
