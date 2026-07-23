@@ -1,0 +1,327 @@
+# ------------------------------------------------------------------------
+# re-ID
+# Copyright (c) 2026 Roboflow. All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 [see LICENSE for details]
+# ------------------------------------------------------------------------
+
+"""Fine-tune a ReID encoder on a per-identity crop dataset."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from reid.data import ReIDSplit, load_identity_crops
+from reid.preprocessing import ReIDPreprocessing
+
+if TYPE_CHECKING:
+    import torch
+    from torch import nn
+
+    from reid.model import ReIDModel
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TrainConfig:
+    """Hyper-parameters for :func:`train_reid`.
+
+    Args:
+        epochs: Training epochs.
+        p: Identities per PK batch.
+        k: Instances per identity per PK batch.
+        lr: Adam learning rate.
+        weight_decay: Adam weight decay.
+        warmup_epochs: Linear LR warmup length.
+        lr_milestones: Epochs where LR is multiplied by ``lr_gamma``.
+        lr_gamma: Multiplicative LR decay at each milestone.
+        margin: Batch-hard triplet margin.
+        label_smoothing: Cross-entropy label smoothing.
+        triplet_weight: Weight on the triplet term.
+        use_center: Enable optional center loss.
+        center_weight: Weight on the center term when enabled.
+        center_lr: Dedicated Adam LR for center parameters.
+        freeze_backbone_epochs: Freeze backbone (except head) for this many epochs.
+        num_workers: DataLoader workers.
+        amp: Use CUDA autocast + GradScaler when on GPU.
+        device: Torch device string, or ``"auto"``.
+        seed: RNG seed.
+        log_interval: Log every N optimizer steps.
+    """
+
+    epochs: int = 30
+    p: int = 8
+    k: int = 4
+    lr: float = 3e-4
+    weight_decay: float = 5e-4
+    warmup_epochs: int = 5
+    lr_milestones: tuple[int, ...] = (20, 27)
+    lr_gamma: float = 0.1
+    margin: float = 0.3
+    label_smoothing: float = 0.1
+    triplet_weight: float = 1.0
+    use_center: bool = False
+    center_weight: float = 0.0005
+    center_lr: float = 0.5
+    freeze_backbone_epochs: int = 0
+    num_workers: int = 4
+    amp: bool = True
+    device: str = "auto"
+    seed: int = 42
+    log_interval: int = 20
+
+
+@dataclass
+class TrainResult:
+    """Output of :func:`train_reid` (model, class count, history, save path)."""
+
+    model: ReIDModel
+    num_classes: int
+    history: list[dict[str, float]] = field(default_factory=list)
+    output_dir: str | None = None
+
+
+def _forward_embeddings_logits(
+    backbone: nn.Module,
+    images: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return ``(embeddings, logits)`` from a trainable ReID backbone.
+
+    Supported architectures implement ``forward_embeddings_logits`` (OSNet and
+    FastReID SBS ResNeSt50).
+    """
+    forward_train = getattr(backbone, "forward_embeddings_logits", None)
+    if not callable(forward_train):
+        raise TypeError(
+            "train_reid expects a backbone with forward_embeddings_logits(images) "
+            f"-> (embeddings, logits). Supported: OSNet, FastReID SBS. "
+            f"Got {type(backbone).__name__}."
+        )
+    return forward_train(images)
+
+
+def _set_backbone_frozen(backbone: nn.Module, frozen: bool) -> None:
+    """Freeze/unfreeze the trunk while keeping the training head trainable."""
+    set_frozen = getattr(backbone, "set_backbone_frozen", None)
+    if not callable(set_frozen):
+        raise TypeError(
+            "train_reid expects a backbone with set_backbone_frozen(frozen). "
+            f"Supported: OSNet, FastReID SBS. Got {type(backbone).__name__}."
+        )
+    set_frozen(frozen)
+
+
+def _build_lr_lambda(config: TrainConfig):
+    def lr_lambda(epoch: int) -> float:
+        if config.warmup_epochs > 0 and epoch < config.warmup_epochs:
+            return float(epoch + 1) / float(config.warmup_epochs)
+        factor = 1.0
+        for milestone in config.lr_milestones:
+            if epoch >= milestone:
+                factor *= config.lr_gamma
+        return factor
+
+    return lr_lambda
+
+
+def _resolve_training_recipe(
+    architecture: str | None,
+    pretrained: str | None,
+    preprocessing: ReIDPreprocessing | None,
+) -> tuple[str | nn.Module, str | None, ReIDPreprocessing]:
+    """Resolve architecture, warm-start weights, and preprocessing.
+
+    Delegates to :func:`reid.loaders.resolve_load_plan` so training shares the
+    single load-recipe entry point with ``ReIDModel.from_pretrained``. The
+    plan's strict-load fraction is not applied here: the trainable backbone
+    carries a classifier head that inference checkpoints do not contain, so the
+    warm-start is a deliberately partial load (see :func:`_build_trainable_backbone`).
+    """
+    from reid.loaders import resolve_load_plan
+
+    plan = resolve_load_plan(pretrained, architecture, preprocessing)
+    return plan.architecture, plan.weights, plan.preprocessing
+
+
+def _build_trainable_backbone(
+    arch_name: str | nn.Module,
+    weights_source: str | None,
+    num_classes: int,
+    device: torch.device,
+) -> nn.Module:
+    """Build a backbone with a classifier head and optional warm-start weights."""
+    from reid.architectures import build_architecture
+    from reid.loaders import load_state_dict, resolve_weights
+
+    backbone = build_architecture(arch_name, num_classes=num_classes)
+    if weights_source is not None:
+        local_path = resolve_weights(weights_source)
+        # Warm-start is a partial load by design: the classifier head is fresh
+        # (num_classes differs from any source checkpoint), so no strict
+        # required_match_fraction is enforced.
+        load_state_dict(
+            backbone,
+            local_path,
+            device,
+            architecture=arch_name if isinstance(arch_name, str) else None,
+        )
+        logger.info("Warm-start from %s", weights_source)
+    return backbone
+
+
+def train_reid(
+    data: ReIDSplit | str | Path,
+    config: TrainConfig | None = None,
+    *,
+    architecture: str | None = None,
+    pretrained: str | None = None,
+    preprocessing: ReIDPreprocessing | None = None,
+    output_dir: str | Path | None = None,
+) -> TrainResult:
+    """Fine-tune a ReID encoder on a crop :class:`ReIDSplit`.
+
+    Args:
+        data: A crop :class:`ReIDSplit`, or a path to an identity-folder crop
+            dataset. A path is loaded via :func:`reid.data.load_identity_crops`;
+            filter identities on the loader when you need a subset.
+        config: Training hyper-parameters.
+        architecture: Backbone name override. When set with ``pretrained=None``,
+            the backbone is randomly initialised (no warm-start).
+        pretrained: Weights source / alias to warm-start from. When
+            ``architecture`` is omitted, ``None`` resolves to the default curated
+            alias (warm-start included). When ``architecture`` is set, ``None``
+            means no warm-start weights.
+        preprocessing: Preprocessing override.
+        output_dir: If set, save via :meth:`ReIDModel.save_pretrained`.
+
+    Returns:
+        :class:`TrainResult`.
+    """
+    import torch
+    from torch.utils.data import DataLoader
+
+    from reid.model import ReIDModel, _select_device
+    from reid.training.datasets import (
+        PKSampler,
+        ReIDTrainDataset,
+        build_train_transform,
+    )
+    from reid.training.losses import ReIDLoss
+
+    config = config or TrainConfig()
+    device = _select_device(config.device)
+    torch.manual_seed(config.seed)
+
+    split = data if isinstance(data, ReIDSplit) else load_identity_crops(data)
+
+    arch_name, weights_source, resolved_preprocessing = _resolve_training_recipe(
+        architecture, pretrained, preprocessing
+    )
+    transform = build_train_transform(
+        input_size=resolved_preprocessing.input_size,
+        mean=resolved_preprocessing.mean,
+        std=resolved_preprocessing.std,
+    )
+    dataset = ReIDTrainDataset(split, transform=transform)
+    num_classes = dataset.num_classes
+    logger.info("Crop dataset: %d identities, %d crops", num_classes, len(dataset))
+
+    sampler = PKSampler(dataset.labels, p=config.p, k=config.k, seed=config.seed)
+    loader = DataLoader(
+        dataset,
+        batch_sampler=sampler,
+        num_workers=config.num_workers,
+        pin_memory=(device.type == "cuda"),
+    )
+
+    backbone = _build_trainable_backbone(arch_name, weights_source, num_classes, device)
+    backbone.to(device).train()
+    if not hasattr(backbone, "feature_dim"):
+        raise TypeError(
+            f"Trainable backbone {type(backbone).__name__} must expose feature_dim "
+            "(embedding size for losses / center loss)."
+        )
+    feat_dim = int(backbone.feature_dim)
+    loss_fn = ReIDLoss(
+        num_classes,
+        feat_dim,
+        margin=config.margin,
+        label_smoothing=config.label_smoothing,
+        triplet_weight=config.triplet_weight,
+        use_center=config.use_center,
+        center_weight=config.center_weight,
+    ).to(device)
+
+    param_groups: list[dict] = [{"params": backbone.parameters()}]
+    if config.use_center and loss_fn.center is not None:
+        param_groups.append(
+            {
+                "params": loss_fn.center.parameters(),
+                "lr": config.center_lr,
+                "weight_decay": 0.0,
+            }
+        )
+    optimizer = torch.optim.Adam(param_groups, lr=config.lr, weight_decay=config.weight_decay)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _build_lr_lambda(config))
+
+    use_amp = config.amp and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+
+    history: list[dict[str, float]] = []
+    step = 0
+    for epoch in range(config.epochs):
+        sampler.set_epoch(epoch)
+        _set_backbone_frozen(backbone, frozen=epoch < config.freeze_backbone_epochs)
+
+        epoch_totals: dict[str, float] = {}
+        num_batches = 0
+        for images, labels in loader:
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast(device_type=device.type, enabled=use_amp):
+                embeddings, logits = _forward_embeddings_logits(backbone, images)
+                loss, components = loss_fn(embeddings, logits, labels)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            for key, value in components.items():
+                epoch_totals[key] = epoch_totals.get(key, 0.0) + value
+            num_batches += 1
+            step += 1
+            if step % config.log_interval == 0:
+                logger.info(
+                    "epoch %d step %d: %s",
+                    epoch,
+                    step,
+                    {k: round(v, 4) for k, v in components.items()},
+                )
+
+        scheduler.step()
+        epoch_mean = {k: v / max(1, num_batches) for k, v in epoch_totals.items()}
+        epoch_mean["epoch"] = epoch
+        epoch_mean["lr"] = optimizer.param_groups[0]["lr"]
+        history.append(epoch_mean)
+        logger.info("epoch %d mean: %s", epoch, {k: round(v, 4) for k, v in epoch_mean.items()})
+
+    backbone.eval()
+    model = ReIDModel(backbone, device, resolved_preprocessing)
+    model._architecture = arch_name if isinstance(arch_name, str) else None
+
+    saved_dir = None
+    if output_dir is not None:
+        saved_dir = str(output_dir)
+        model.save_pretrained(saved_dir)
+
+    return TrainResult(
+        model=model,
+        num_classes=num_classes,
+        history=history,
+        output_dir=saved_dir,
+    )

@@ -100,8 +100,9 @@ src/reid/
 ├── catalog.py          # curated aliases (ModelCard, ALIASES)
 ├── architectures/      # builders + class default_preprocessing() on each net
 ├── loaders.py          # weight I/O and resolve_load_plan
-├── data/               # ReIDSplit and benchmark loaders
-└── eval/               # gallery evaluation (metrics + ReIDEvaluator)
+├── data/               # ReIDSplit, benchmarks, identity crops, MOT patches
+├── eval/               # gallery evaluation (metrics + ReIDEvaluator)
+└── training/           # fine-tuning loop (datasets, losses, trainer)
 ```
 
 - **Architectures** know how to build a net and expose preprocessing via
@@ -116,7 +117,7 @@ src/reid/
 1. Implement under `src/reid/architectures/` (or use `timm:<name>`).
 2. Add a `@classmethod default_preprocessing()` on the architecture class,
    documenting the input size / resize / colour contract for that checkpoint family.
-3. Register build + preprocessing dispatch in `architectures/__init__.py`.
+3. Register build + preprocessing dispatch in `architectures/registry.py`.
 4. Optionally add a curated alias in `catalog.ALIASES`.
 
 ## Gallery eval
@@ -131,6 +132,35 @@ print(result.metrics)
 ```
 
 To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-domain checkpoints, cosine vs Euclidean), run [`notebooks/eval_reid.ipynb`](notebooks/eval_reid.ipynb) — Colab-friendly, pins this PR branch while under review.
+
+## Fine-tuning on MOT crops
+
+The data layer follows a single flow: `source format -> loader -> ReIDSplit -> optional partitioning -> Dataset/evaluator`. Crop loading and partitioning live in `reid.data`; MOT crop generation lives in `reid.data.mot`. `reid.training` fine-tunes an encoder on a crop `ReIDSplit` and stays a submodule import so `import reid` does not pull the trainer.
+
+`generate_mot_patches` reads MOT sequences and writes `output_dir/<seq>_<id>/<seq>_<frame>.jpg`. The default `split="train_half"` keeps crops frame-disjoint from the standard MOT17 val-half tracking evaluation, and MOT17 detector variants collapse to one base sequence.
+
+```python
+from reid.data.mot import generate_mot_patches
+from reid.training import TrainConfig, train_reid
+
+generate_mot_patches("/path/to/MOT17/train", "/path/to/crops", split="train_half")
+
+result = train_reid(
+    "/path/to/crops",
+    TrainConfig(epochs=30),
+    architecture="osnet_x1_0",
+    pretrained="osnet_x1_0_msmt17_combineall",
+    output_dir="/path/to/checkpoint",
+)
+
+from reid import ReIDModel
+
+model = ReIDModel.from_pretrained("/path/to/checkpoint")
+```
+
+`train_reid` accepts either a crop dataset path or a `ReIDSplit`. A path is loaded with `reid.data.load_identity_crops`; pass a `ReIDSplit` directly when you have already loaded or partitioned the crops. It optimizes label-smoothed cross-entropy plus a batch-hard triplet term (optional center loss) with a PK sampler, and resolves architecture, warm-start weights, and preprocessing through the same `resolve_load_plan` entry point as `ReIDModel.from_pretrained`. Warm-start is a partial load: the fresh classifier head is not in the source checkpoint, so no strict state-dict match is enforced. When `output_dir` is set, the tuned encoder is written via `save_pretrained` and reloads with `ReIDModel.from_pretrained`.
+
+To measure retrieval on held-out identities without cross-sequence leakage, `reid.data.build_identity_crop_holdout_split` takes a crop `ReIDSplit` and reserves a fraction of identities for a query/gallery split, returning the remaining crops as a train split. Query and gallery crops use synthetic camera ids 0 and 1 so single-camera MOT folders still produce valid retrieval pairs under gallery eval. See [`notebooks/train_reid_mot17.ipynb`](notebooks/train_reid_mot17.ipynb) for the MOT17 train-half fine-tune to BoT-SORT A/B walkthrough.
 
 ## Weight cache
 
