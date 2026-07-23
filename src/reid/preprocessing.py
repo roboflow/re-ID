@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 import cv2
@@ -29,6 +30,21 @@ LETTERBOX_PAD_VALUE = 114
 ResizeMode = Literal["stretch", "letterbox"]
 
 
+class Interpolation(str, Enum):
+    """Supported crop interpolation modes."""
+
+    BILINEAR = "bilinear"
+    BICUBIC = "bicubic"
+    NEAREST = "nearest"
+
+
+_OPENCV_INTERPOLATION = {
+    Interpolation.BILINEAR: cv2.INTER_LINEAR,
+    Interpolation.BICUBIC: cv2.INTER_CUBIC,
+    Interpolation.NEAREST: cv2.INTER_NEAREST,
+}
+
+
 @dataclass(frozen=True)
 class ReIDPreprocessing:
     """Crop resize and colour/tensor conversion for backbone input.
@@ -41,17 +57,26 @@ class ReIDPreprocessing:
     input_size: tuple[int, int] = REID_INPUT_SIZE
     mean: tuple[float, float, float] = IMAGENET_MEAN
     std: tuple[float, float, float] = IMAGENET_STD
-    interpolation: str = "bilinear"
+    interpolation: Interpolation = Interpolation.BILINEAR
     to_rgb: bool = True
     resize_mode: ResizeMode = "stretch"
     pad_value: int = LETTERBOX_PAD_VALUE
+
+    def __post_init__(self) -> None:
+        """Normalize legacy string values to ``Interpolation`` members."""
+        try:
+            interpolation = Interpolation(self.interpolation)
+        except ValueError as error:
+            choices = sorted(mode.value for mode in Interpolation)
+            raise ValueError(f"Unknown interpolation {self.interpolation!r}. Choose from: {choices}") from error
+        object.__setattr__(self, "interpolation", interpolation)
 
     def describe(self) -> str:
         """Human-readable one-line summary."""
         h, w = self.input_size
         colour = "BGR→RGB" if self.to_rgb else "RGB (no swap)"
         return (
-            f"ReIDPreprocessing(resize={h}x{w} [{self.resize_mode}, {self.interpolation}], "
+            f"ReIDPreprocessing(resize={h}x{w} [{self.resize_mode}, {self.interpolation.value}], "
             f"{colour}, mean={self.mean}, std={self.std})"
         )
 
@@ -82,7 +107,7 @@ class ReIDPreprocessing:
             return np.zeros(shape, dtype=crop.dtype)
 
         target_h, target_w = self.input_size
-        interpolation = _opencv_interpolation(self.interpolation)
+        interpolation = _OPENCV_INTERPOLATION[self.interpolation]
 
         if self.resize_mode == "letterbox":
             height, width = crop.shape[:2]
@@ -114,7 +139,7 @@ class ReIDPreprocessing:
             "input_size": list(self.input_size),
             "mean": list(self.mean),
             "std": list(self.std),
-            "interpolation": self.interpolation,
+            "interpolation": self.interpolation.value,
             "to_rgb": self.to_rgb,
             "resize_mode": self.resize_mode,
             "pad_value": self.pad_value,
@@ -143,14 +168,3 @@ class ReIDPreprocessing:
         if "pad_value" in data:
             kwargs["pad_value"] = data["pad_value"]
         return cls(**kwargs)
-
-
-def _opencv_interpolation(name: str) -> int:
-    modes = {
-        "bilinear": cv2.INTER_LINEAR,
-        "bicubic": cv2.INTER_CUBIC,
-        "nearest": cv2.INTER_NEAREST,
-    }
-    if name not in modes:
-        raise ValueError(f"Unknown interpolation {name!r}. Choose from: {sorted(modes)}")
-    return modes[name]

@@ -27,11 +27,12 @@ from reid.eval import (
     load_msmt17,
 )
 from reid.model import ReIDModel
-from reid.preprocessing import ReIDPreprocessing
+from reid.preprocessing import Interpolation, ReIDPreprocessing
 
 __all__ = [
     "DEFAULT_MODEL",
     "FASTREID_MOT17_SBS50",
+    "Interpolation",
     "ReIDEvaluator",
     "ReIDMetrics",
     "ReIDModel",

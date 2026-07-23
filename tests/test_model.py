@@ -31,7 +31,11 @@ from reid.catalog import (
     resolve_model_card,
 )
 from reid.loaders import load_state_dict, resolve_weights
-from reid.preprocessing import LETTERBOX_PAD_VALUE, ReIDPreprocessing
+from reid.preprocessing import (
+    LETTERBOX_PAD_VALUE,
+    Interpolation,
+    ReIDPreprocessing,
+)
 
 
 def _save_checkpoint(state_dict: object, suffix: str = ".pth") -> str:
@@ -86,10 +90,8 @@ class TestReIDPreprocessing:
         assert fastreid.resize_mode == "stretch"
 
     def test_unknown_interpolation_raises(self) -> None:
-        p = ReIDPreprocessing(interpolation="lanczos")
-        crop = np.zeros((32, 16, 3), dtype=np.uint8)
         with pytest.raises(ValueError, match="lanczos"):
-            p.resize_crop(crop)
+            ReIDPreprocessing(interpolation="lanczos")
 
     def test_prepare_crop_array_swaps_bgr_frames_only(self) -> None:
         bgr = np.array([[[255, 0, 0]]], dtype=np.uint8)  # blue in BGR
@@ -107,6 +109,7 @@ class TestReIDPreprocessing:
         assert d["input_size"] == [128, 64]
         assert d["to_rgb"] is False
         p2 = ReIDPreprocessing.from_dict(d)
+        assert p2.interpolation is Interpolation.BICUBIC
         assert p2 == p
 
     def test_from_dict_ignores_legacy_normalize_embeddings(self) -> None:
