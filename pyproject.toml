@@ -1,0 +1,69 @@
+[project]
+name = "reid"
+version = "0.1.0"
+description = "Re-identification model stack for appearance embeddings"
+readme = "README.md"
+authors = [
+  { name = "Roboflow et al.", email = "develop@roboflow.com" },
+]
+license = "Apache-2.0"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+keywords = ["reid", "re-identification", "tracking", "computer-vision", "deep-learning"]
+
+dependencies = [
+    "numpy",
+    "opencv-python",
+    "supervision>=0.26.1",
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "timm>=1.0",
+    "huggingface-hub>=0.20",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "gdown>=5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.3",
+    "pre-commit>=4.2.0",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["reid*"]
+
+[tool.setuptools.package-data]
+reid = ["py.typed"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: downloads curated weights (network)",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

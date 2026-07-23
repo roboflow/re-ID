@@ -1,0 +1,163 @@
+# ------------------------------------------------------------------------
+# re-ID
+# Copyright (c) 2026 Roboflow. All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 [see LICENSE for details]
+# ------------------------------------------------------------------------
+
+"""ReID benchmark dataset loaders (Market-1501, MSMT17)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+
+from reid.data.splits import MARKET1501_GALLERY_JUNK_PIDS, ReIDSplit
+
+# --------------------------------------------------------------------------- #
+# MSMT17
+# --------------------------------------------------------------------------- #
+
+
+def _to_zero_indexed_camid(camid_1indexed: int) -> int:
+    """Convert a 1-indexed MSMT17 camera id to the 0-indexed value used here.
+
+    MSMT17 camera ids are 1-indexed both in image filenames (the camera field)
+    and in the optional camid column of the list files, so both paths share this
+    single conversion to stay consistent.
+    """
+    return camid_1indexed - 1
+
+
+def _parse_msmt17_camid(filename: str) -> int:
+    """Extract 0-indexed camid from an MSMT17 image filename.
+
+    Filename format: ``<pid>_<idx>_<camid>_<scene>_<frame>_<track>.jpg``
+    Example: ``0001_019_07_0303morning_0020_1.jpg`` → camid = 6 (0-indexed).
+    """
+    stem = Path(filename).stem
+    return _to_zero_indexed_camid(int(stem.split("_")[2]))
+
+
+def _load_msmt17_list(list_file: Path, image_root: Path) -> ReIDSplit:
+    """Load one MSMT17 query/gallery list file."""
+    if not list_file.exists():
+        raise FileNotFoundError(f"MSMT17 list file not found: {list_file}")
+    paths, pids, camids = [], [], []
+    for line in list_file.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        rel_path = parts[0]
+        pid = int(parts[1])
+        camid = _to_zero_indexed_camid(int(parts[2])) if len(parts) >= 3 else _parse_msmt17_camid(Path(rel_path).name)
+        paths.append(str(image_root / rel_path))
+        pids.append(pid)
+        camids.append(camid)
+    return ReIDSplit(
+        image_paths=paths,
+        pids=np.array(pids, dtype=np.int32),
+        camids=np.array(camids, dtype=np.int32),
+        gallery_junk_pids=frozenset({-1}),
+    )
+
+
+def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
+    """Load MSMT17 query and gallery splits from ``root``.
+
+    Expects ``test/``, ``list_query.txt``, and ``list_gallery.txt``. List files
+    may be 2-column (``path pid``; camid parsed from the filename) or 3-column
+    (``path pid camid``). In both cases the camera id is treated as 1-indexed
+    and converted to 0-indexed, so the two formats stay consistent.
+
+    Args:
+        root: Path to the MSMT17 directory.
+
+    Returns:
+        Query and gallery as ``(ReIDSplit, ReIDSplit)``.
+
+    Raises:
+        FileNotFoundError: If ``root``, ``list_query.txt``, or ``list_gallery.txt``
+            does not exist.
+    """
+    root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(f"MSMT17 root not found: {root}")
+
+    test_root = root / "test"
+    query = _load_msmt17_list(root / "list_query.txt", test_root)
+    gallery = _load_msmt17_list(root / "list_gallery.txt", test_root)
+    return query, gallery
+
+
+# --------------------------------------------------------------------------- #
+# Market-1501
+# --------------------------------------------------------------------------- #
+
+
+def _parse_market_filename(filename: str) -> tuple[int, int]:
+    """Parse ``(pid, camid)`` from a Market-1501 filename.
+
+    ``-1_*`` → junk (``pid=-1``); ``0000_*`` → distractor (``pid=0``).
+    """
+    stem = Path(filename).stem
+    parts = stem.split("_")
+    pid = int(parts[0])
+    camid = int(parts[1][1]) - 1  # "c1" → 0
+    return pid, camid
+
+
+def _load_market1501_dir(
+    subdir: Path,
+    *,
+    gallery_junk_pids: frozenset[int],
+) -> ReIDSplit:
+    """Load one Market-1501 image directory."""
+    if not subdir.exists():
+        raise FileNotFoundError(f"Market-1501 sub-directory not found: {subdir}")
+    paths, pids, camids = [], [], []
+    for img_path in sorted(subdir.glob("*.jpg")):
+        pid, camid = _parse_market_filename(img_path.name)
+        paths.append(str(img_path))
+        pids.append(pid)
+        camids.append(camid)
+    return ReIDSplit(
+        image_paths=paths,
+        pids=np.array(pids, dtype=np.int32),
+        camids=np.array(camids, dtype=np.int32),
+        gallery_junk_pids=gallery_junk_pids,
+    )
+
+
+def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
+    """Load Market-1501 query and gallery splits from ``root``.
+
+    Expects ``query/`` and ``bounding_box_test/``. Person and camera IDs are
+    parsed from filenames.
+
+    Args:
+        root: Path to the Market-1501 directory.
+
+    Returns:
+        Query and gallery as ``(ReIDSplit, ReIDSplit)``.
+
+    Raises:
+        FileNotFoundError: If ``root``, ``query/``, or ``bounding_box_test/``
+            does not exist.
+    """
+    root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(f"Market-1501 root not found: {root}")
+
+    query = _load_market1501_dir(
+        root / "query",
+        gallery_junk_pids=frozenset({-1}),
+    )
+    gallery = _load_market1501_dir(
+        root / "bounding_box_test",
+        gallery_junk_pids=MARKET1501_GALLERY_JUNK_PIDS,
+    )
+    return query, gallery
