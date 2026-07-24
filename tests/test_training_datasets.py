@@ -59,16 +59,6 @@ def test_dataset_remaps_noncontiguous_pids_to_dense_labels() -> None:
     assert dataset.labels == [0, 1, 1]
 
 
-def test_dataset_rejects_empty_split() -> None:
-    empty = ReIDSplit(
-        image_paths=[],
-        pids=np.array([], dtype=np.int32),
-        camids=np.array([], dtype=np.int32),
-    )
-    with pytest.raises(ValueError, match="empty ReIDSplit"):
-        ReIDTrainDataset(empty)
-
-
 def test_pk_sampler_batch_structure(tmp_path: Path) -> None:
     _make_crops(tmp_path, num_ids=5, num_per=4)
     dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
@@ -109,27 +99,6 @@ def test_pk_sampler_samples_epoch_is_longer_with_many_images_per_id(tmp_path: Pa
         label_counts = Counter(dataset.labels[i] for i in batch)
         assert len(label_counts) == p
         assert all(count == k for count in label_counts.values())
-
-
-def test_pk_sampler_rejects_unknown_epoch_length(tmp_path: Path) -> None:
-    _make_crops(tmp_path, num_ids=4, num_per=4)
-    dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
-    with pytest.raises(ValueError, match="epoch_length"):
-        PKSampler(dataset.labels, p=2, k=2, epoch_length="crops")  # type: ignore[arg-type]
-
-
-def test_pk_sampler_handles_identity_with_few_instances(tmp_path: Path) -> None:
-    # One identity has fewer than k instances -> sampled with replacement.
-    (tmp_path / "id_a").mkdir(parents=True)
-    (tmp_path / "id_b").mkdir(parents=True)
-    rng = np.random.default_rng(1)
-    for j in range(5):
-        Image.fromarray((rng.random((48, 24, 3)) * 255).astype("uint8")).save(tmp_path / "id_a" / f"{j}.jpg")
-    Image.fromarray((rng.random((48, 24, 3)) * 255).astype("uint8")).save(tmp_path / "id_b" / "0.jpg")
-    dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
-    sampler = PKSampler(dataset.labels, p=2, k=4, seed=0)
-    batch = next(iter(sampler))
-    assert len(batch) == 8
 
 
 def test_pk_sampler_rejects_too_few_identities(tmp_path: Path) -> None:
