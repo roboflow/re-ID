@@ -6,7 +6,7 @@
 
 """ReID model / architecture / loader tests.
 
-Requires ``roboflow-reid`` (torch, timm, huggingface_hub, safetensors).
+Requires the ``reid`` package (torch, timm, huggingface_hub, safetensors).
 Installed and run in CI via ``uv sync --all-extras`` and ``pytest tests/ -m 'not slow'``.
 Curated weight downloads live in the ``@pytest.mark.slow`` test below.
 """

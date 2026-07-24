@@ -1,0 +1,31 @@
+site_name: reid
+site_description: Re-identification models and gallery evaluation for appearance embeddings.
+repo_name: roboflow/re-ID
+repo_url: https://github.com/roboflow/re-ID
+edit_uri: https://github.com/roboflow/re-ID/tree/main/docs
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.tracking
+    - search.suggest
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Guides:
+    - ReID Metrics: learn/metrics.md
