@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from reid.training.datasets import (
     PKSampler,
     ReIDTrainDataset,
+    build_eval_transform,
     build_train_transform,
 )
 from reid.training.losses import ReIDLoss
@@ -33,6 +34,7 @@ __all__ = [
     "ReIDTrainDataset",
     "TrainConfig",
     "TrainResult",
+    "build_eval_transform",
     "build_train_transform",
     "train_reid",
 ]

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from PIL import Image
@@ -63,6 +64,34 @@ def build_train_transform(
     )
 
 
+def build_eval_transform(
+    input_size: tuple[int, int] = REID_INPUT_SIZE,
+    mean: tuple[float, float, float] = IMAGENET_MEAN,
+    std: tuple[float, float, float] = IMAGENET_STD,
+):
+    """Deterministic resize + normalize for validation (no augmentation)."""
+    from torchvision.transforms import (
+        Compose,
+        InterpolationMode,
+        Normalize,
+        Resize,
+        ToTensor,
+    )
+
+    return Compose(
+        [
+            Resize(input_size, interpolation=InterpolationMode.BILINEAR),
+            ToTensor(),
+            Normalize(mean=list(mean), std=list(std)),
+        ]
+    )
+
+
+def identity_name_from_crop_path(path: str | Path) -> str:
+    """Identity folder name for ``<root>/<identity>/<crop>.jpg`` layouts."""
+    return Path(path).parent.name
+
+
 class ReIDTrainDataset(Dataset):
     """Crop dataset over a :class:`ReIDSplit`, with dense training labels.
 
@@ -74,32 +103,100 @@ class ReIDTrainDataset(Dataset):
     identity holdout) still yields a dense label space for the classifier head.
     """
 
-    def __init__(self, split: ReIDSplit, transform=None) -> None:
-        """Build a training dataset from ``split``.
+    def __init__(
+        self,
+        split: ReIDSplit | None = None,
+        transform=None,
+        *,
+        image_paths: list[str] | None = None,
+        labels: list[int] | None = None,
+        num_classes: int | None = None,
+    ) -> None:
+        """Build a training dataset from ``split`` or explicit paths/labels.
 
         Args:
             split: Crop split providing image paths and person IDs.
             transform: Optional image transform (defaults to
                 :func:`build_train_transform`).
+            image_paths: Explicit crop paths (with ``labels``).
+            labels: Explicit classifier labels aligned with ``image_paths``.
+            num_classes: Classifier class count when using explicit labels.
+                Defaults to ``max(labels) + 1``.
 
         Raises:
-            ValueError: If ``split`` is empty.
+            ValueError: If inputs are empty or inconsistent.
         """
-        if len(split) == 0:
-            raise ValueError("Cannot build a training dataset from an empty ReIDSplit.")
+        if split is not None:
+            if image_paths is not None or labels is not None:
+                raise ValueError("Pass either split or image_paths/labels, not both.")
+            if len(split) == 0:
+                raise ValueError("Cannot build a training dataset from an empty ReIDSplit.")
+
+            self.image_paths = list(split.image_paths)
+            split_pids = [int(pid) for pid in split.pids.tolist()]
+            label_by_pid = {pid: label for label, pid in enumerate(sorted(set(split_pids)))}
+            self.labels = [label_by_pid[pid] for pid in split_pids]
+            self._num_classes = len(label_by_pid)
+        else:
+            if image_paths is None or labels is None:
+                raise ValueError("Provide split, or both image_paths and labels.")
+            if len(image_paths) == 0:
+                raise ValueError("Cannot build a training dataset from empty image_paths.")
+            if len(image_paths) != len(labels):
+                raise ValueError("image_paths and labels must have the same length.")
+            self.image_paths = list(image_paths)
+            self.labels = [int(label) for label in labels]
+            self._num_classes = num_classes if num_classes is not None else max(self.labels) + 1
 
         self.transform = transform if transform is not None else build_train_transform()
-        self.image_paths = list(split.image_paths)
+        self._label_by_identity = {
+            identity_name_from_crop_path(path): label
+            for path, label in zip(self.image_paths, self.labels, strict=True)
+        }
 
-        split_pids = [int(pid) for pid in split.pids.tolist()]
-        label_by_pid = {pid: label for label, pid in enumerate(sorted(set(split_pids)))}
-        self.labels = [label_by_pid[pid] for pid in split_pids]
-        self._num_classes = len(label_by_pid)
+    @classmethod
+    def from_identity_label_map(
+        cls,
+        split: ReIDSplit,
+        label_by_identity: dict[str, int],
+        transform=None,
+        *,
+        num_classes: int | None = None,
+    ) -> ReIDTrainDataset:
+        """Keep crops whose identity folder is in ``label_by_identity``.
+
+        Used for temporal val crops that reuse training identity folder names
+        (for example MOT17 train-half / val-half of the same sequences).
+        """
+        image_paths: list[str] = []
+        labels: list[int] = []
+        for path in split.image_paths:
+            name = identity_name_from_crop_path(path)
+            label = label_by_identity.get(name)
+            if label is None:
+                continue
+            image_paths.append(path)
+            labels.append(label)
+        if not image_paths:
+            raise ValueError(
+                "No validation crops share identity folder names with the training map."
+            )
+        return cls(
+            transform=transform,
+            image_paths=image_paths,
+            labels=labels,
+            num_classes=num_classes if num_classes is not None else max(label_by_identity.values()) + 1,
+        )
 
     @property
     def num_classes(self) -> int:
         """Number of distinct identities."""
         return self._num_classes
+
+    @property
+    def label_by_identity(self) -> dict[str, int]:
+        """Map identity folder name → classifier label."""
+        return dict(self._label_by_identity)
 
     def __len__(self) -> int:
         return len(self.image_paths)

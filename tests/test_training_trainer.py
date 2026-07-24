@@ -85,6 +85,7 @@ class TestTrainReid:
         assert result.num_classes == 4
         assert len(result.history) == 1
         assert "total" in result.history[0]
+        assert result.best_epoch is None
         assert (out_dir / "weights.safetensors").exists()
         assert (out_dir / "reid_config.json").exists()
 
@@ -92,3 +93,38 @@ class TestTrainReid:
         detections = sv.Detections(xyxy=np.array([[10, 10, 40, 80]], dtype=float))
         embeddings = result.model.extract_features(detections, frame)
         assert embeddings.shape == (1, 512)
+
+    def test_val_keeps_best_epoch(self, tmp_path: Path) -> None:
+        train_root = tmp_path / "train"
+        val_root = tmp_path / "val"
+        _make_crops(train_root, num_ids=4, num_per=4)
+        _make_crops(val_root, num_ids=4, num_per=4)
+
+        config = TrainConfig(
+            epochs=2,
+            p=2,
+            k=2,
+            warmup_epochs=0,
+            num_workers=0,
+            amp=False,
+            device="cpu",
+            log_interval=1,
+        )
+        out_dir = tmp_path / "checkpoint"
+        result = train_reid(
+            train_root,
+            config,
+            architecture="osnet_x0_25",
+            pretrained=None,
+            output_dir=out_dir,
+            val_data=val_root,
+        )
+
+        assert len(result.history) == 2
+        assert "val_total" in result.history[0]
+        assert "val_ce" in result.history[0]
+        assert "val_triplet" in result.history[0]
+        assert result.best_epoch is not None
+        assert result.best_val_total is not None
+        assert result.best_epoch in {0, 1}
+        assert (out_dir / "weights.safetensors").exists()

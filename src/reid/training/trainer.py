@@ -20,8 +20,11 @@ from reid.training.datasets import EpochLength
 if TYPE_CHECKING:
     import torch
     from torch import nn
+    from torch.utils.data import DataLoader
 
     from reid.model import ReIDModel
+    from reid.training.datasets import ReIDTrainDataset
+    from reid.training.losses import ReIDLoss
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +88,8 @@ class TrainConfig:
                 f"Unknown epoch_length {self.epoch_length!r}. "
                 "Choose from: ['identities', 'samples']."
             )
+        if self.log_interval < 0:
+            raise ValueError(f"log_interval must be >= 0, got {self.log_interval}.")
         if self.triplet_weight > 0 and (self.p < 2 or self.k < 2):
             raise ValueError(
                 "Batch-hard triplet mining needs p >= 2 and k >= 2 "
@@ -100,6 +105,8 @@ class TrainResult:
     num_classes: int
     history: list[dict[str, float]] = field(default_factory=list)
     output_dir: str | None = None
+    best_epoch: int | None = None
+    best_val_total: float | None = None
 
 
 def _forward_embeddings_logits(
@@ -190,6 +197,128 @@ def _build_trainable_backbone(
     return backbone
 
 
+def _clone_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
+    import torch
+
+    return {key: value.detach().cpu().clone() for key, value in module.state_dict().items()}
+
+
+def _run_epoch(
+    *,
+    backbone: nn.Module,
+    loss_fn: ReIDLoss,
+    loader: DataLoader,
+    device: torch.device,
+    use_amp: bool,
+    optimizer: torch.optim.Optimizer | None,
+    scaler: torch.amp.GradScaler | None,
+    log_interval: int,
+    epoch: int,
+    step: int,
+    frozen_backbone: bool = False,
+) -> tuple[dict[str, float], int]:
+    """Run one train or eval epoch. When ``optimizer`` is set, apply gradients."""
+    import torch
+
+    train_mode = optimizer is not None
+    if train_mode:
+        backbone.train()
+        # ``backbone.train()`` would undo trunk ``eval()`` from freeze; re-apply.
+        if frozen_backbone:
+            _set_backbone_frozen(backbone, True)
+    else:
+        backbone.eval()
+
+    epoch_totals: dict[str, float] = {}
+    num_batches = 0
+    for images, labels in loader:
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
+
+        if train_mode:
+            assert optimizer is not None and scaler is not None
+            optimizer.zero_grad(set_to_none=True)
+
+        with torch.autocast(device_type=device.type, enabled=use_amp):
+            embeddings, logits = _forward_embeddings_logits(backbone, images)
+            loss, components = loss_fn(embeddings, logits, labels)
+
+        if train_mode:
+            assert optimizer is not None and scaler is not None
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            step += 1
+            if log_interval > 0 and step % log_interval == 0:
+                logger.info(
+                    "epoch %d step %d: %s",
+                    epoch,
+                    step,
+                    {k: round(v, 4) for k, v in components.items()},
+                )
+
+        for key, value in components.items():
+            epoch_totals[key] = epoch_totals.get(key, 0.0) + value
+        num_batches += 1
+
+    epoch_mean = {k: v / max(1, num_batches) for k, v in epoch_totals.items()}
+    return epoch_mean, step
+
+
+def _build_val_loader(
+    val_data: ReIDSplit | str | Path,
+    train_dataset: ReIDTrainDataset,
+    config: TrainConfig,
+    preprocessing: ReIDPreprocessing,
+    device: torch.device,
+) -> DataLoader:
+    import torch
+    from torch.utils.data import DataLoader
+
+    from reid.training.datasets import (
+        PKSampler,
+        ReIDTrainDataset,
+        build_eval_transform,
+    )
+
+    val_split = val_data if isinstance(val_data, ReIDSplit) else load_identity_crops(val_data)
+    eval_transform = build_eval_transform(
+        input_size=preprocessing.input_size,
+        mean=preprocessing.mean,
+        std=preprocessing.std,
+    )
+    val_dataset = ReIDTrainDataset.from_identity_label_map(
+        val_split,
+        train_dataset.label_by_identity,
+        transform=eval_transform,
+        num_classes=train_dataset.num_classes,
+    )
+    n_val_ids = len(set(val_dataset.labels))
+    if n_val_ids < config.p:
+        raise ValueError(
+            f"Validation needs at least p={config.p} overlapping identities with train, "
+            f"got {n_val_ids}."
+        )
+    logger.info(
+        "Val crops (overlapping identities): %d identities, %d crops",
+        n_val_ids,
+        len(val_dataset),
+    )
+    val_sampler = PKSampler(
+        val_dataset.labels,
+        p=config.p,
+        k=config.k,
+        seed=config.seed,
+        epoch_length=config.epoch_length,
+    )
+    return DataLoader(
+        val_dataset,
+        batch_sampler=val_sampler,
+        num_workers=config.num_workers,
+        pin_memory=(device.type == "cuda"),
+    )
+
+
 def train_reid(
     data: ReIDSplit | str | Path,
     config: TrainConfig | None = None,
@@ -198,6 +327,7 @@ def train_reid(
     pretrained: str | None = None,
     preprocessing: ReIDPreprocessing | None = None,
     output_dir: str | Path | None = None,
+    val_data: ReIDSplit | str | Path | None = None,
 ) -> TrainResult:
     """Fine-tune a ReID encoder on a crop :class:`ReIDSplit`.
 
@@ -214,6 +344,10 @@ def train_reid(
             means no warm-start weights.
         preprocessing: Preprocessing override.
         output_dir: If set, save via :meth:`ReIDModel.save_pretrained`.
+        val_data: Optional val crop split/path. Crops whose identity folder names
+            overlap the training set contribute CE + triplet validation loss each
+            epoch. When set, the checkpoint written to ``output_dir`` is the epoch
+            with the lowest ``val_total``.
 
     Returns:
         :class:`TrainResult`.
@@ -261,6 +395,10 @@ def train_reid(
         pin_memory=(device.type == "cuda"),
     )
 
+    val_loader = None
+    if val_data is not None:
+        val_loader = _build_val_loader(val_data, dataset, config, resolved_preprocessing, device)
+
     backbone = _build_trainable_backbone(arch_name, weights_source, num_classes, device)
     backbone.to(device).train()
     if not hasattr(backbone, "feature_dim"):
@@ -296,43 +434,75 @@ def train_reid(
 
     history: list[dict[str, float]] = []
     step = 0
+    best_epoch: int | None = None
+    best_val_total: float | None = None
+    best_backbone_state: dict[str, torch.Tensor] | None = None
+    best_center_state: dict[str, torch.Tensor] | None = None
+
     for epoch in range(config.epochs):
         sampler.set_epoch(epoch)
-        _set_backbone_frozen(backbone, frozen=epoch < config.freeze_backbone_epochs)
+        frozen = epoch < config.freeze_backbone_epochs
+        _set_backbone_frozen(backbone, frozen=frozen)
 
-        epoch_totals: dict[str, float] = {}
-        num_batches = 0
-        for images, labels in loader:
-            images = images.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
-
-            optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, enabled=use_amp):
-                embeddings, logits = _forward_embeddings_logits(backbone, images)
-                loss, components = loss_fn(embeddings, logits, labels)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            for key, value in components.items():
-                epoch_totals[key] = epoch_totals.get(key, 0.0) + value
-            num_batches += 1
-            step += 1
-            if step % config.log_interval == 0:
-                logger.info(
-                    "epoch %d step %d: %s",
-                    epoch,
-                    step,
-                    {k: round(v, 4) for k, v in components.items()},
-                )
-
+        epoch_mean, step = _run_epoch(
+            backbone=backbone,
+            loss_fn=loss_fn,
+            loader=loader,
+            device=device,
+            use_amp=use_amp,
+            optimizer=optimizer,
+            scaler=scaler,
+            log_interval=config.log_interval,
+            epoch=epoch,
+            step=step,
+            frozen_backbone=frozen,
+        )
         scheduler.step()
-        epoch_mean = {k: v / max(1, num_batches) for k, v in epoch_totals.items()}
         epoch_mean["epoch"] = epoch
         epoch_mean["lr"] = optimizer.param_groups[0]["lr"]
+
+        if val_loader is not None:
+            val_sampler = val_loader.batch_sampler
+            if hasattr(val_sampler, "set_epoch"):
+                val_sampler.set_epoch(epoch)
+            with torch.no_grad():
+                val_mean, _ = _run_epoch(
+                    backbone=backbone,
+                    loss_fn=loss_fn,
+                    loader=val_loader,
+                    device=device,
+                    use_amp=use_amp,
+                    optimizer=None,
+                    scaler=None,
+                    log_interval=config.log_interval,
+                    epoch=epoch,
+                    step=step,
+                )
+            epoch_mean["val_ce"] = val_mean["ce"]
+            epoch_mean["val_triplet"] = val_mean["triplet"]
+            epoch_mean["val_total"] = val_mean["total"]
+            if "center" in val_mean:
+                epoch_mean["val_center"] = val_mean["center"]
+
+            if best_val_total is None or val_mean["total"] < best_val_total:
+                best_val_total = val_mean["total"]
+                best_epoch = epoch
+                best_backbone_state = _clone_state_dict(backbone)
+                if loss_fn.center is not None:
+                    best_center_state = _clone_state_dict(loss_fn.center)
+
         history.append(epoch_mean)
         logger.info("epoch %d mean: %s", epoch, {k: round(v, 4) for k, v in epoch_mean.items()})
+
+    if best_backbone_state is not None:
+        backbone.load_state_dict(best_backbone_state)
+        if best_center_state is not None and loss_fn.center is not None:
+            loss_fn.center.load_state_dict(best_center_state)
+        logger.info(
+            "Restored best validation epoch %s (val_total=%.4f)",
+            best_epoch,
+            best_val_total,
+        )
 
     backbone.eval()
     model = ReIDModel(backbone, device, resolved_preprocessing)
@@ -348,4 +518,6 @@ def train_reid(
         num_classes=num_classes,
         history=history,
         output_dir=saved_dir,
+        best_epoch=best_epoch,
+        best_val_total=best_val_total,
     )

@@ -57,6 +57,35 @@ class TestReIDTrainDataset:
         assert dataset.num_classes == 2
         assert dataset.labels == [0, 1, 1]
 
+    def test_from_identity_label_map_keeps_overlapping_folders(self, tmp_path: Path) -> None:
+        train_root = tmp_path / "train"
+        val_root = tmp_path / "val"
+        _make_crops(train_root, num_ids=4, num_per=3)
+        for name in ("id_00", "id_02"):
+            src = train_root / name
+            dst = val_root / name
+            dst.mkdir(parents=True)
+            for path in src.glob("*.jpg"):
+                Image.open(path).save(dst / path.name)
+        unseen = val_root / "id_99"
+        unseen.mkdir(parents=True)
+        Image.fromarray(np.zeros((48, 24, 3), dtype="uint8")).save(unseen / "0.jpg")
+
+        train_ds = ReIDTrainDataset(load_identity_crops(train_root), transform=lambda image: image)
+        val_ds = ReIDTrainDataset.from_identity_label_map(
+            load_identity_crops(val_root),
+            train_ds.label_by_identity,
+            transform=lambda image: image,
+            num_classes=train_ds.num_classes,
+        )
+
+        assert len(val_ds) == 6
+        assert set(val_ds.labels) == {
+            train_ds.label_by_identity["id_00"],
+            train_ds.label_by_identity["id_02"],
+        }
+        assert val_ds.num_classes == 4
+
 
 class TestPKSampler:
     """Tests for :class:`PKSampler`."""
