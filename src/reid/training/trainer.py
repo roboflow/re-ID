@@ -85,6 +85,11 @@ class TrainConfig:
                 f"Unknown epoch_length {self.epoch_length!r}. "
                 "Choose from: ['identities', 'samples']."
             )
+        if self.triplet_weight > 0 and (self.p < 2 or self.k < 2):
+            raise ValueError(
+                "Batch-hard triplet mining needs p >= 2 and k >= 2 "
+                f"(got p={self.p}, k={self.k}, triplet_weight={self.triplet_weight})."
+            )
 
 
 @dataclass

@@ -201,7 +201,8 @@ def _crop_rows_from_sequence(
         identity_dir = output_dir / identity
         identity_dir.mkdir(parents=True, exist_ok=True)
         crop_path = identity_dir / f"{base}_{frame:06d}.{image_ext}"
-        cv2.imwrite(str(crop_path), image[y1:y2, x1:x2])
+        if not cv2.imwrite(str(crop_path), image[y1:y2, x1:x2]):
+            raise OSError(f"Failed to write MOT crop to {crop_path}")
 
         seq_crops += 1
         seq_identities.add(identity)
