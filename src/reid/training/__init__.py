@@ -18,6 +18,7 @@ from reid.training.datasets import (
     ReIDTrainDataset,
     build_train_transform,
 )
+from reid.training.losses import ReIDLoss
 
 if TYPE_CHECKING:
     from reid.training.trainer import (
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "PKSampler",
+    "ReIDLoss",
     "ReIDTrainDataset",
     "TrainConfig",
     "TrainResult",

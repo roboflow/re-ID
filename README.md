@@ -149,7 +149,7 @@ generate_mot_patches("/path/to/MOT17/train", "/path/to/crops", split="train_half
 
 result = train_reid(
     "/path/to/crops",
-    TrainConfig(epochs=30),
+    TrainConfig(epochs=30, epoch_length="samples"),
     architecture="osnet_x1_0",
     pretrained="osnet_x1_0_msmt17_combineall",
     output_dir="/path/to/checkpoint",
@@ -161,6 +161,8 @@ model = ReIDModel.from_pretrained("/path/to/checkpoint")
 ```
 
 `train_reid` accepts either a crop dataset path or a `ReIDSplit`. A path is loaded with `reid.data.load_identity_crops`; pass a `ReIDSplit` directly when you have already loaded or partitioned the crops. It optimizes label-smoothed cross-entropy plus a batch-hard triplet term (optional center loss) with a PK sampler, and resolves architecture, warm-start weights, and preprocessing through the same `resolve_load_plan` entry point as `ReIDModel.from_pretrained`. Warm-start is a partial load: the fresh classifier head is not in the source checkpoint, so no strict state-dict match is enforced. When `output_dir` is set, the tuned encoder is written via `save_pretrained` and reloads with `ReIDModel.from_pretrained`.
+
+`TrainConfig.epoch_length` chooses how many PK batches make one epoch: `"identities"` (default) uses `num_identities // p`; `"samples"` uses `max(1, num_samples // (p * k))` — a FastReID-style step budget. Prefer `"samples"` for MOT-style folders with many images per identity (longer wall-clock per epoch). Dataset helpers (`ReIDTrainDataset`, `PKSampler`, `build_train_transform`) and `ReIDLoss` are public on `reid.training` for custom loops.
 
 To measure retrieval on held-out identities without cross-sequence leakage, `reid.data.build_identity_crop_holdout_split` takes a crop `ReIDSplit` and reserves a fraction of identities for a query/gallery split, returning the remaining crops as a train split. Query and gallery crops use synthetic camera ids 0 and 1 so single-camera MOT folders still produce valid retrieval pairs under gallery eval. See [`notebooks/train_reid_mot17.ipynb`](notebooks/train_reid_mot17.ipynb) for the MOT17 train-half fine-tune to BoT-SORT A/B walkthrough.
 
