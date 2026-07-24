@@ -83,8 +83,10 @@ is `architectures.default_preprocessing_for_architecture`.
 Embedding L2 norm is not a preprocessing field: extract returns raw vectors;
 cosine distance normalizes inside `ReIDEvaluator`.
 
-Saved `reid_config.json` also has `architecture`, optional `weights`, and
-optional domain warning metadata written by `save_pretrained`.
+`save_pretrained` writes `architecture` and `preprocessing` into
+`reid_config.json`, with weights beside it in `weights.safetensors`. Domain
+warnings stay on curated aliases at load time; they are not written into saved
+configs.
 
 ## Package layout
 

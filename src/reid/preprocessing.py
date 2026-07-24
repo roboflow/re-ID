@@ -63,13 +63,18 @@ class ReIDPreprocessing:
     pad_value: int = LETTERBOX_PAD_VALUE
 
     def __post_init__(self) -> None:
-        """Normalize legacy string values to ``Interpolation`` members."""
+        """Normalize interpolation and reject unknown ``resize_mode`` values."""
         try:
             interpolation = Interpolation(self.interpolation)
         except ValueError as error:
             choices = sorted(mode.value for mode in Interpolation)
             raise ValueError(f"Unknown interpolation {self.interpolation!r}. Choose from: {choices}") from error
         object.__setattr__(self, "interpolation", interpolation)
+
+        if self.resize_mode not in ("stretch", "letterbox"):
+            raise ValueError(
+                f"Unknown resize_mode {self.resize_mode!r}. Choose from: ['letterbox', 'stretch']."
+            )
 
     def describe(self) -> str:
         """Human-readable one-line summary."""

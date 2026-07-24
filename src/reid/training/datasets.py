@@ -99,7 +99,8 @@ class ReIDTrainDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
-        image = Image.open(self.image_paths[index]).convert("RGB")
+        with Image.open(self.image_paths[index]) as img:
+            image = img.convert("RGB")
         return self.transform(image), self.labels[index]
 
 

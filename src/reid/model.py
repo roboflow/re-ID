@@ -50,8 +50,9 @@ class _CropPathDataset(Dataset):
         return len(self._image_paths)
 
     def __getitem__(self, index: int) -> torch.Tensor:
-        img = PILImage.open(self._image_paths[index]).convert("RGB")
-        arr = self._preprocessing.prepare_crop_array(np.asarray(img), from_bgr_frame=False)
+        with PILImage.open(self._image_paths[index]) as img:
+            rgb = img.convert("RGB")
+        arr = self._preprocessing.prepare_crop_array(np.asarray(rgb), from_bgr_frame=False)
         resized = self._preprocessing.resize_crop(arr)
         return self._transforms(resized)
 
@@ -205,7 +206,8 @@ class ReIDModel:
         os.makedirs(directory, exist_ok=True)
 
         weights_path = os.path.join(directory, "weights.safetensors")
-        save_file(self._backbone.state_dict(), weights_path)
+        state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
+        save_file(state_dict, weights_path)
 
         card = ModelCard(
             architecture=self._architecture,
