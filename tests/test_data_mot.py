@@ -13,9 +13,17 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from reid.data.mot import generate_mot_patches
+from reid.data.mot import generate_mot_patches, sequence_qualified_track_key
 
 _FRAME_H, _FRAME_W = 128, 64
+
+
+def test_sequence_qualified_track_key_disambiguates_raw_ids() -> None:
+    """Raw MOT track IDs restart per sequence; keys must not collide."""
+    assert sequence_qualified_track_key("MOT17-02-FRCNN", 1) != sequence_qualified_track_key(
+        "MOT17-04-FRCNN", 1
+    )
+    assert sequence_qualified_track_key("MOT17-02-FRCNN", 1) == "MOT17-02-FRCNN_1"
 
 
 def _write_sequence(

@@ -39,6 +39,17 @@ _COL_VISIBILITY = 8
 _VALID_SPLITS = ("train_half", "val_half", "full")
 
 
+def sequence_qualified_track_key(sequence: str, track_id: int) -> str:
+    """Build a track key that is unique across MOT sequences.
+
+    Raw MOT ground-truth track IDs restart per sequence, so the same integer can
+    label different people in ``MOT17-02`` and ``MOT17-04``. Diagnostics that
+    pool detections across sequences must qualify IDs (for example
+    ``MOT17-02-FRCNN_12``) before treating labels as identities.
+    """
+    return f"{sequence}_{int(track_id)}"
+
+
 @dataclass
 class PatchGenerationStats:
     """Summary counts from :func:`generate_mot_patches`."""
