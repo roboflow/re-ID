@@ -272,11 +272,20 @@ class OSNet(nn.Module):
         return embeddings, self.classifier(embeddings)
 
     def set_backbone_frozen(self, frozen: bool) -> None:
-        """Freeze/unfreeze trunk params; keep ``fc`` / ``classifier`` trainable."""
+        """Freeze/unfreeze trunk params; keep ``fc`` / ``classifier`` trainable.
+
+        When frozen, trunk modules are switched to ``eval()`` so BatchNorm
+        running statistics stop updating. Unfreezing restores trunk ``train()``.
+        """
         head = {"fc", "classifier"}
         for name, param in self.named_parameters():
             top = name.split(".", 1)[0]
             param.requires_grad = (top in head) or (not frozen)
+
+        for name, module in self.named_children():
+            if name in head:
+                continue
+            module.train(not frozen)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run a forward pass.

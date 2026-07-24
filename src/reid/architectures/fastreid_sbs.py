@@ -133,9 +133,14 @@ class FastReIDSBSResNeSt50(nn.Module):
         return embeddings, self.classifier(embeddings)
 
     def set_backbone_frozen(self, frozen: bool) -> None:
-        """Freeze/unfreeze the ResNeSt trunk; keep pool / BNNeck / classifier trainable."""
+        """Freeze/unfreeze the ResNeSt trunk; keep pool / BNNeck / classifier trainable.
+
+        When frozen, the trunk is switched to ``eval()`` so BatchNorm running
+        statistics stop updating. Unfreezing restores trunk ``train()``.
+        """
         for param in self.backbone.parameters():
             param.requires_grad = not frozen
+        self.backbone.train(not frozen)
 
 
 def build_fastreid_sbs_resnest50(*, num_classes: int = 0, pretrained: bool = False) -> FastReIDSBSResNeSt50:
