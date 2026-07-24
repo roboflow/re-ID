@@ -73,7 +73,7 @@ def test_pk_sampler_batch_structure(tmp_path: Path) -> None:
     _make_crops(tmp_path, num_ids=5, num_per=4)
     dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
     p, k = 2, 3
-    sampler = PKSampler(dataset.labels, p=p, k=k, seed=123)
+    sampler = PKSampler(dataset.labels, p=p, k=k, seed=123, epoch_length="identities")
 
     # num_identities // p batches.
     batches = list(sampler)
@@ -86,6 +86,36 @@ def test_pk_sampler_batch_structure(tmp_path: Path) -> None:
         # Exactly p identities, each appearing k times.
         assert len(label_counts) == p
         assert all(count == k for count in label_counts.values())
+
+
+def test_pk_sampler_samples_epoch_is_longer_with_many_images_per_id(tmp_path: Path) -> None:
+    # 4 identities x 20 images, p=2, k=4:
+    # identities -> 4 // 2 = 2 batches; samples -> 80 // 8 = 10 batches.
+    _make_crops(tmp_path, num_ids=4, num_per=20)
+    dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
+    p, k = 2, 4
+
+    identity_sampler = PKSampler(dataset.labels, p=p, k=k, seed=0, epoch_length="identities")
+    samples_sampler = PKSampler(dataset.labels, p=p, k=k, seed=0, epoch_length="samples")
+
+    assert len(identity_sampler) == 4 // p
+    assert len(samples_sampler) == len(dataset) // (p * k)
+    assert len(samples_sampler) > len(identity_sampler)
+
+    samples_batches = list(samples_sampler)
+    assert len(samples_batches) == len(samples_sampler)
+    for batch in samples_batches:
+        assert len(batch) == p * k
+        label_counts = Counter(dataset.labels[i] for i in batch)
+        assert len(label_counts) == p
+        assert all(count == k for count in label_counts.values())
+
+
+def test_pk_sampler_rejects_unknown_epoch_length(tmp_path: Path) -> None:
+    _make_crops(tmp_path, num_ids=4, num_per=4)
+    dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
+    with pytest.raises(ValueError, match="epoch_length"):
+        PKSampler(dataset.labels, p=2, k=2, epoch_length="crops")  # type: ignore[arg-type]
 
 
 def test_pk_sampler_handles_identity_with_few_instances(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from PIL import Image
 from torch.utils.data import Dataset, Sampler
@@ -26,6 +26,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     import torch
+
+# How many PK batches make one epoch:
+# - identities: num_identities // p (short; current default)
+# - samples: max(1, num_samples // (p * k)) (FastReID-style step budget)
+EpochLength = Literal["identities", "samples"]
+_EPOCH_LENGTH_CHOICES: tuple[str, ...] = ("identities", "samples")
 
 
 def build_train_transform(
@@ -104,8 +110,33 @@ class ReIDTrainDataset(Dataset):
         return self.transform(image), self.labels[index]
 
 
+def _resolve_pk_num_batches(
+    num_samples: int,
+    num_identities: int,
+    p: int,
+    k: int,
+    epoch_length: EpochLength,
+) -> int:
+    """Return how many PK batches one epoch should contain."""
+    if epoch_length == "identities":
+        return num_identities // p
+    if epoch_length == "samples":
+        return max(1, num_samples // (p * k))
+    choices = ", ".join(repr(choice) for choice in _EPOCH_LENGTH_CHOICES)
+    raise ValueError(f"Unknown epoch_length {epoch_length!r}. Choose from: [{choices}].")
+
+
 class PKSampler(Sampler[list[int]]):
-    """Sample ``P`` identities x ``K`` instances per batch for triplet mining."""
+    """Sample ``P`` identities x ``K`` instances per batch for triplet mining.
+
+    ``epoch_length`` controls how many batches make one epoch:
+
+    - ``"identities"``: ``num_identities // p`` (default; short when many images
+      per identity).
+    - ``"samples"``: ``max(1, num_samples // (p * k))`` — a FastReID-style step
+      budget ≈ one pass over the dataset in PK batch units. Identities are
+      reshuffled within the epoch when a pass over the ID list is exhausted.
+    """
 
     def __init__(
         self,
@@ -113,6 +144,8 @@ class PKSampler(Sampler[list[int]]):
         p: int,
         k: int,
         seed: int | None = None,
+        *,
+        epoch_length: EpochLength = "identities",
     ) -> None:
         """Initialize the PK sampler.
 
@@ -121,6 +154,7 @@ class PKSampler(Sampler[list[int]]):
             p: Identities per batch.
             k: Instances per identity per batch.
             seed: Optional shuffle seed.
+            epoch_length: How many batches constitute one epoch.
         """
         if p <= 0 or k <= 0:
             raise ValueError(f"p and k must be positive, got p={p}, k={k}.")
@@ -129,6 +163,7 @@ class PKSampler(Sampler[list[int]]):
         self.k = k
         self.batch_size = p * k
         self.seed = seed
+        self.epoch_length = epoch_length
         self._epoch = 0
 
         self._indices_by_label: dict[int, list[int]] = defaultdict(list)
@@ -139,7 +174,13 @@ class PKSampler(Sampler[list[int]]):
         if len(self._labels) < p:
             raise ValueError(f"PKSampler needs at least p={p} identities, got {len(self._labels)}.")
 
-        self._num_batches = len(self._labels) // p
+        self._num_batches = _resolve_pk_num_batches(
+            num_samples=len(labels),
+            num_identities=len(self._labels),
+            p=p,
+            k=k,
+            epoch_length=epoch_length,
+        )
 
     def __len__(self) -> int:
         return self._num_batches
@@ -160,19 +201,25 @@ class PKSampler(Sampler[list[int]]):
 
         labels = self._labels.copy()
         rng.shuffle(labels)
+        label_cursor = 0
+        index_cursor = {label: 0 for label in labels}
 
-        cursor = {label: 0 for label in labels}
-        for batch_start in range(self._num_batches):
-            chosen = labels[batch_start * self.p : (batch_start + 1) * self.p]
+        for _ in range(self._num_batches):
+            if label_cursor + self.p > len(labels):
+                rng.shuffle(labels)
+                label_cursor = 0
+            chosen = labels[label_cursor : label_cursor + self.p]
+            label_cursor += self.p
+
             batch: list[int] = []
             for label in chosen:
                 pool = per_label_pool[label]
                 picks: list[int] = []
                 for _ in range(self.k):
-                    if cursor[label] >= len(pool):
+                    if index_cursor[label] >= len(pool):
                         rng.shuffle(pool)
-                        cursor[label] = 0
-                    picks.append(pool[cursor[label]])
-                    cursor[label] += 1
+                        index_cursor[label] = 0
+                    picks.append(pool[index_cursor[label]])
+                    index_cursor[label] += 1
                 batch.extend(picks)
             yield batch

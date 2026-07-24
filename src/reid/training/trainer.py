@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from reid.data import ReIDSplit, load_identity_crops
 from reid.preprocessing import ReIDPreprocessing
+from reid.training.datasets import EpochLength
 
 if TYPE_CHECKING:
     import torch
@@ -50,6 +51,10 @@ class TrainConfig:
         device: Torch device string, or ``"auto"``.
         seed: RNG seed.
         log_interval: Log every N optimizer steps.
+        epoch_length: How many PK batches make one epoch. ``"identities"`` uses
+            ``num_identities // p`` (default). ``"samples"`` uses
+            ``max(1, num_samples // (p * k))`` — a FastReID-style step budget
+            suited to MOT folders with many images per identity.
     """
 
     epochs: int = 30
@@ -72,6 +77,14 @@ class TrainConfig:
     device: str = "auto"
     seed: int = 42
     log_interval: int = 20
+    epoch_length: EpochLength = "identities"
+
+    def __post_init__(self) -> None:
+        if self.epoch_length not in ("identities", "samples"):
+            raise ValueError(
+                f"Unknown epoch_length {self.epoch_length!r}. "
+                "Choose from: ['identities', 'samples']."
+            )
 
 
 @dataclass
@@ -229,7 +242,13 @@ def train_reid(
     num_classes = dataset.num_classes
     logger.info("Crop dataset: %d identities, %d crops", num_classes, len(dataset))
 
-    sampler = PKSampler(dataset.labels, p=config.p, k=config.k, seed=config.seed)
+    sampler = PKSampler(
+        dataset.labels,
+        p=config.p,
+        k=config.k,
+        seed=config.seed,
+        epoch_length=config.epoch_length,
+    )
     loader = DataLoader(
         dataset,
         batch_sampler=sampler,
