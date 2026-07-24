@@ -4,7 +4,7 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""Smoke tests for ``train_reid``."""
+"""Smoke tests for ``train_reid`` and training-related backbone freeze."""
 
 from __future__ import annotations
 
@@ -30,58 +30,65 @@ def _make_crops(root: Path, num_ids: int, num_per: int) -> None:
             Image.fromarray(array).save(identity_dir / f"{j}.jpg")
 
 
-def test_train_config_rejects_degenerate_pk_with_triplet() -> None:
-    with pytest.raises(ValueError, match="p >= 2 and k >= 2"):
-        TrainConfig(p=1, k=4, triplet_weight=1.0)
+class TestTrainConfig:
+    """Tests for :class:`TrainConfig` validation."""
+
+    def test_rejects_degenerate_pk_with_triplet(self) -> None:
+        with pytest.raises(ValueError, match="p >= 2 and k >= 2"):
+            TrainConfig(p=1, k=4, triplet_weight=1.0)
 
 
-def test_frozen_trunk_keeps_batchnorm_stats_fixed() -> None:
-    """Freeze must stop trunk BatchNorm running-stat updates, not only grads."""
-    backbone = build_architecture("osnet_x0_25", num_classes=4)
-    backbone.train()
-    backbone.set_backbone_frozen(True)
+class TestBackboneFreeze:
+    """Tests for architecture ``set_backbone_frozen`` used by training."""
 
-    bn = backbone.conv1.bn
-    before = bn.running_mean.clone()
-    backbone.forward_embeddings_logits(torch.randn(4, 3, 256, 128))
-    assert torch.equal(before, bn.running_mean)
+    def test_frozen_trunk_keeps_batchnorm_stats_fixed(self) -> None:
+        backbone = build_architecture("osnet_x0_25", num_classes=4)
+        backbone.train()
+        backbone.set_backbone_frozen(True)
 
-    backbone.set_backbone_frozen(False)
-    backbone.forward_embeddings_logits(torch.randn(4, 3, 256, 128))
-    assert not torch.equal(before, bn.running_mean)
+        bn = backbone.conv1.bn
+        before = bn.running_mean.clone()
+        backbone.forward_embeddings_logits(torch.randn(4, 3, 256, 128))
+        assert torch.equal(before, bn.running_mean)
+
+        backbone.set_backbone_frozen(False)
+        backbone.forward_embeddings_logits(torch.randn(4, 3, 256, 128))
+        assert not torch.equal(before, bn.running_mean)
 
 
-def test_train_reid_smoke_saves_and_embeds(tmp_path: Path) -> None:
-    """One epoch of random-init OSNet writes a loadable checkpoint and embeds."""
-    data_root = tmp_path / "crops"
-    _make_crops(data_root, num_ids=4, num_per=4)
+class TestTrainReid:
+    """End-to-end smoke for :func:`train_reid`."""
 
-    config = TrainConfig(
-        epochs=1,
-        p=2,
-        k=2,
-        warmup_epochs=0,
-        num_workers=0,
-        amp=False,
-        device="cpu",
-        log_interval=1,
-    )
-    out_dir = tmp_path / "checkpoint"
-    result = train_reid(
-        data_root,
-        config,
-        architecture="osnet_x0_25",
-        pretrained=None,
-        output_dir=out_dir,
-    )
+    def test_saves_and_embeds(self, tmp_path: Path) -> None:
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
 
-    assert result.num_classes == 4
-    assert len(result.history) == 1
-    assert "total" in result.history[0]
-    assert (out_dir / "weights.safetensors").exists()
-    assert (out_dir / "reid_config.json").exists()
+        config = TrainConfig(
+            epochs=1,
+            p=2,
+            k=2,
+            warmup_epochs=0,
+            num_workers=0,
+            amp=False,
+            device="cpu",
+            log_interval=1,
+        )
+        out_dir = tmp_path / "checkpoint"
+        result = train_reid(
+            data_root,
+            config,
+            architecture="osnet_x0_25",
+            pretrained=None,
+            output_dir=out_dir,
+        )
 
-    frame = np.zeros((128, 128, 3), dtype=np.uint8)
-    detections = sv.Detections(xyxy=np.array([[10, 10, 40, 80]], dtype=float))
-    embeddings = result.model.extract_features(detections, frame)
-    assert embeddings.shape == (1, 512)
+        assert result.num_classes == 4
+        assert len(result.history) == 1
+        assert "total" in result.history[0]
+        assert (out_dir / "weights.safetensors").exists()
+        assert (out_dir / "reid_config.json").exists()
+
+        frame = np.zeros((128, 128, 3), dtype=np.uint8)
+        detections = sv.Detections(xyxy=np.array([[10, 10, 40, 80]], dtype=float))
+        embeddings = result.model.extract_features(detections, frame)
+        assert embeddings.shape == (1, 512)
