@@ -11,9 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import supervision as sv
+import torch
 from PIL import Image
 
+from reid.architectures import build_architecture
 from reid.training import TrainConfig, train_reid
 
 
@@ -25,6 +28,27 @@ def _make_crops(root: Path, num_ids: int, num_per: int) -> None:
         for j in range(num_per):
             array = (rng.random((64, 32, 3)) * 255).astype("uint8")
             Image.fromarray(array).save(identity_dir / f"{j}.jpg")
+
+
+def test_train_config_rejects_degenerate_pk_with_triplet() -> None:
+    with pytest.raises(ValueError, match="p >= 2 and k >= 2"):
+        TrainConfig(p=1, k=4, triplet_weight=1.0)
+
+
+def test_frozen_trunk_keeps_batchnorm_stats_fixed() -> None:
+    """Freeze must stop trunk BatchNorm running-stat updates, not only grads."""
+    backbone = build_architecture("osnet_x0_25", num_classes=4)
+    backbone.train()
+    backbone.set_backbone_frozen(True)
+
+    bn = backbone.conv1.bn
+    before = bn.running_mean.clone()
+    backbone.forward_embeddings_logits(torch.randn(4, 3, 256, 128))
+    assert torch.equal(before, bn.running_mean)
+
+    backbone.set_backbone_frozen(False)
+    backbone.forward_embeddings_logits(torch.randn(4, 3, 256, 128))
+    assert not torch.equal(before, bn.running_mean)
 
 
 def test_train_reid_smoke_saves_and_embeds(tmp_path: Path) -> None:
