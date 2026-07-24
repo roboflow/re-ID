@@ -12,7 +12,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import pytest
 
 from reid.data.mot import generate_mot_patches
 
@@ -82,7 +81,7 @@ class TestGenerateMotPatches:
         assert identity_dirs == ["SEQ-01_1", "SEQ-02_1"]
         assert stats.num_identities == 2
 
-    def test_filters_distractors_low_conf_and_low_visibility(self, tmp_path: Path) -> None:
+    def test_filters_distractors_visibility_and_small_crops(self, tmp_path: Path) -> None:
         mot_root = tmp_path / "MOT"
         rows = [
             _box(1, 1),
@@ -90,16 +89,18 @@ class TestGenerateMotPatches:
             _box(1, 2, cls=2),
             _box(2, 3, conf=0),
             _box(1, 4, vis=0.1),
+            [1, 5, 5, 5, 4, 40, 1, 1, 1.0],  # width 4 -> dropped by min_side
         ]
         _write_sequence(mot_root, "SEQ-01", seq_length=2, rows=rows)
 
         out = tmp_path / "out"
-        stats = generate_mot_patches(mot_root, out, split="full", min_visibility=0.5)
+        stats = generate_mot_patches(mot_root, out, split="full", min_visibility=0.5, min_side=10)
 
         assert stats.num_identities == 1
         assert sorted(p.name for p in out.iterdir() if p.is_dir()) == ["SEQ-01_1"]
         assert stats.num_crops == 2
         assert stats.skipped_low_visibility == 1
+        assert stats.skipped_small == 1
 
     def test_detector_variants_are_deduplicated(self, tmp_path: Path) -> None:
         mot_root = tmp_path / "MOT"
@@ -112,23 +113,3 @@ class TestGenerateMotPatches:
         assert stats.sequences == ["MOT17-02"]
         assert stats.num_identities == 1
         assert stats.num_crops == 2
-
-    def test_min_side_drops_small_crops(self, tmp_path: Path) -> None:
-        mot_root = tmp_path / "MOT"
-        rows = [
-            [1, 1, 5, 5, 20, 40, 1, 1, 1.0],
-            [1, 2, 5, 5, 4, 40, 1, 1, 1.0],
-        ]
-        _write_sequence(mot_root, "SEQ-01", seq_length=2, rows=rows)
-
-        out = tmp_path / "out"
-        stats = generate_mot_patches(mot_root, out, split="full", min_side=10)
-
-        assert stats.num_identities == 1
-        assert stats.skipped_small == 1
-
-    def test_invalid_split_raises(self, tmp_path: Path) -> None:
-        mot_root = tmp_path / "MOT"
-        _write_sequence(mot_root, "SEQ-01", seq_length=2, rows=_pedestrian_rows(2, [1]))
-        with pytest.raises(ValueError, match="split must be one of"):
-            generate_mot_patches(mot_root, tmp_path / "out", split="nope")

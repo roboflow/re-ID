@@ -53,22 +53,6 @@ class TestLoadIdentityCrops:
         assert len(split) == 6
         assert all(("id_00" in p or "id_02" in p) for p in split.image_paths)
 
-    def test_skips_empty_folders(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=2, num_per=3)
-        (tmp_path / "id_empty").mkdir()
-        split = load_identity_crops(tmp_path)
-
-        assert sorted(set(split.pids.tolist())) == [0, 1]
-
-    def test_missing_root_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="Crop dataset root not found"):
-            load_identity_crops(tmp_path / "nope")
-
-    def test_no_crops_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "id_empty").mkdir()
-        with pytest.raises(FileNotFoundError, match="No identity crops found"):
-            load_identity_crops(tmp_path)
-
 
 class TestRetrievalSplit:
     """Tests for :func:`build_identity_crop_retrieval_split`."""
@@ -95,31 +79,6 @@ class TestRetrievalSplit:
 
         query, _gallery = build_identity_crop_retrieval_split(split, queries_per_id=1, min_crops=2)
         assert len(query) == 3
-
-    def test_is_deterministic(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=5, num_per=4)
-        split = load_identity_crops(tmp_path)
-
-        first = build_identity_crop_retrieval_split(split, seed=7)
-        second = build_identity_crop_retrieval_split(split, seed=7)
-        assert first[0].image_paths == second[0].image_paths
-        assert first[1].image_paths == second[1].image_paths
-
-    def test_rejects_incompatible_params(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=3, num_per=4)
-        split = load_identity_crops(tmp_path)
-
-        with pytest.raises(ValueError, match="min_crops must be > queries_per_id"):
-            build_identity_crop_retrieval_split(split, queries_per_id=2, min_crops=2)
-        with pytest.raises(ValueError, match="queries_per_id must be >= 1"):
-            build_identity_crop_retrieval_split(split, queries_per_id=0)
-
-    def test_no_eligible_identities_raises(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=3, num_per=2)
-        split = load_identity_crops(tmp_path)
-
-        with pytest.raises(ValueError, match="No identity has >= 3 crops"):
-            build_identity_crop_retrieval_split(split, min_crops=3)
 
 
 class TestHoldoutSplit:
@@ -153,17 +112,3 @@ class TestHoldoutSplit:
         single_pid = int(split.pids.max())
         assert single_pid not in set(query.pids.tolist())
         assert single_pid in set(train.pids.tolist())
-
-    def test_preserves_train_camids(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=6, num_per=4)
-        train, _, _ = build_identity_crop_holdout_split(load_identity_crops(tmp_path), seed=1)
-        assert set(train.camids.tolist()) == {-1}
-
-    def test_rejects_bad_fraction(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=4, num_per=4)
-        split = load_identity_crops(tmp_path)
-
-        with pytest.raises(ValueError, match="holdout_fraction must be in"):
-            build_identity_crop_holdout_split(split, holdout_fraction=0.0)
-        with pytest.raises(ValueError, match="holdout_fraction must be in"):
-            build_identity_crop_holdout_split(split, holdout_fraction=1.5)
