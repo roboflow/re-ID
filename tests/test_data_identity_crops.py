@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 from PIL import Image
 
 from reid.data import (
@@ -59,9 +58,7 @@ class TestRetrievalSplit:
 
     def test_uses_all_eligible_identities(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=8, num_per=4)
-        query, gallery = build_identity_crop_retrieval_split(
-            load_identity_crops(tmp_path), queries_per_id=1
-        )
+        query, gallery = build_identity_crop_retrieval_split(load_identity_crops(tmp_path), queries_per_id=1)
 
         assert len(query) == 8
         assert len(gallery) == 8 * 3
@@ -106,9 +103,7 @@ class TestHoldoutSplit:
         )
         split = load_identity_crops(tmp_path)
 
-        train, query, _ = build_identity_crop_holdout_split(
-            split, holdout_fraction=1.0, min_crops=2, seed=0
-        )
+        train, query, _ = build_identity_crop_holdout_split(split, holdout_fraction=1.0, min_crops=2, seed=0)
         single_pid = int(split.pids.max())
         assert single_pid not in set(query.pids.tolist())
         assert single_pid in set(train.pids.tolist())

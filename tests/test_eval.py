@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 import supervision as sv
 
+
 class TestDistanceMatrix:
     """Tests for :func:`reid.eval.evaluator._distance_matrix`."""
 

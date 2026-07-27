@@ -72,9 +72,7 @@ class ReIDPreprocessing:
         object.__setattr__(self, "interpolation", interpolation)
 
         if self.resize_mode not in ("stretch", "letterbox"):
-            raise ValueError(
-                f"Unknown resize_mode {self.resize_mode!r}. Choose from: ['letterbox', 'stretch']."
-            )
+            raise ValueError(f"Unknown resize_mode {self.resize_mode!r}. Choose from: ['letterbox', 'stretch'].")
 
     def describe(self) -> str:
         """Human-readable one-line summary."""
