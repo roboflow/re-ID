@@ -159,9 +159,10 @@ def _crop_rows_from_sequence(
     image_ext: str,
     stats: PatchGenerationStats,
     identities: set[str],
+    strip_detector_suffix: bool = True,
 ) -> None:
     """Crop one sequence and update ``stats`` / ``identities`` in place."""
-    base = _sequence_base_name(seq_name)
+    base = _sequence_base_name(seq_name) if strip_detector_suffix else seq_name
     gt_rows = _load_gt_rows(gt_path)
     if len(gt_rows) == 0:
         return
@@ -248,7 +249,9 @@ def generate_mot_patches(
         min_visibility: Minimum GT visibility to keep a box.
         min_side: Minimum crop short side in pixels.
         prefer_detector: Preferred MOT17 detector variant when de-duplicating.
-        dedupe_detectors: Keep one detector variant per base sequence.
+        dedupe_detectors: Keep one detector variant per base sequence. When
+            ``False``, each variant keeps its full directory name in crop paths
+            so FRCNN/DPM/SDP outputs do not overwrite each other.
         image_ext: Frame file extension.
 
     Returns:
@@ -292,6 +295,7 @@ def generate_mot_patches(
             image_ext=image_ext,
             stats=stats,
             identities=identities,
+            strip_detector_suffix=dedupe_detectors,
         )
 
     stats.num_identities = len(identities)

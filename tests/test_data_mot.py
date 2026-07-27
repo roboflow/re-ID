@@ -20,9 +20,7 @@ _FRAME_H, _FRAME_W = 128, 64
 
 def test_sequence_qualified_track_key_disambiguates_raw_ids() -> None:
     """Raw MOT track IDs restart per sequence; keys must not collide."""
-    assert sequence_qualified_track_key("MOT17-02-FRCNN", 1) != sequence_qualified_track_key(
-        "MOT17-04-FRCNN", 1
-    )
+    assert sequence_qualified_track_key("MOT17-02-FRCNN", 1) != sequence_qualified_track_key("MOT17-04-FRCNN", 1)
     assert sequence_qualified_track_key("MOT17-02-FRCNN", 1) == "MOT17-02-FRCNN_1"
 
 
@@ -121,3 +119,17 @@ class TestGenerateMotPatches:
         assert stats.sequences == ["MOT17-02"]
         assert stats.num_identities == 1
         assert stats.num_crops == 2
+
+    def test_dedupe_false_keeps_separate_detector_identity_folders(self, tmp_path: Path) -> None:
+        mot_root = tmp_path / "MOT"
+        _write_sequence(mot_root, "MOT17-02-FRCNN", seq_length=2, rows=_pedestrian_rows(2, [1]))
+        _write_sequence(mot_root, "MOT17-02-SDP", seq_length=2, rows=_pedestrian_rows(2, [1]))
+
+        out = tmp_path / "out"
+        stats = generate_mot_patches(mot_root, out, split="full", dedupe_detectors=False)
+
+        identity_dirs = sorted(p.name for p in out.iterdir() if p.is_dir())
+        assert identity_dirs == ["MOT17-02-FRCNN_1", "MOT17-02-SDP_1"]
+        assert stats.num_identities == 2
+        assert stats.num_crops == 4
+        assert set(stats.sequences) == {"MOT17-02-FRCNN", "MOT17-02-SDP"}
