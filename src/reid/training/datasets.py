@@ -150,8 +150,7 @@ class ReIDTrainDataset(Dataset):
 
         self.transform = transform if transform is not None else build_train_transform()
         self._label_by_identity = {
-            identity_name_from_crop_path(path): label
-            for path, label in zip(self.image_paths, self.labels, strict=True)
+            identity_name_from_crop_path(path): label for path, label in zip(self.image_paths, self.labels, strict=True)
         }
 
     @classmethod
@@ -178,9 +177,7 @@ class ReIDTrainDataset(Dataset):
             image_paths.append(path)
             labels.append(label)
         if not image_paths:
-            raise ValueError(
-                "No validation crops share identity folder names with the training map."
-            )
+            raise ValueError("No validation crops share identity folder names with the training map.")
         return cls(
             transform=transform,
             image_paths=image_paths,

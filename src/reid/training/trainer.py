@@ -84,10 +84,7 @@ class TrainConfig:
 
     def __post_init__(self) -> None:
         if self.epoch_length not in ("identities", "samples"):
-            raise ValueError(
-                f"Unknown epoch_length {self.epoch_length!r}. "
-                "Choose from: ['identities', 'samples']."
-            )
+            raise ValueError(f"Unknown epoch_length {self.epoch_length!r}. Choose from: ['identities', 'samples'].")
         if self.log_interval < 0:
             raise ValueError(f"log_interval must be >= 0, got {self.log_interval}.")
         if self.triplet_weight > 0 and (self.p < 2 or self.k < 2):
@@ -198,8 +195,6 @@ def _build_trainable_backbone(
 
 
 def _clone_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
-    import torch
-
     return {key: value.detach().cpu().clone() for key, value in module.state_dict().items()}
 
 
@@ -272,7 +267,6 @@ def _build_val_loader(
     preprocessing: ReIDPreprocessing,
     device: torch.device,
 ) -> DataLoader:
-    import torch
     from torch.utils.data import DataLoader
 
     from reid.training.datasets import (
@@ -295,10 +289,7 @@ def _build_val_loader(
     )
     n_val_ids = len(set(val_dataset.labels))
     if n_val_ids < config.p:
-        raise ValueError(
-            f"Validation needs at least p={config.p} overlapping identities with train, "
-            f"got {n_val_ids}."
-        )
+        raise ValueError(f"Validation needs at least p={config.p} overlapping identities with train, got {n_val_ids}.")
     logger.info(
         "Val crops (overlapping identities): %d identities, %d crops",
         n_val_ids,
