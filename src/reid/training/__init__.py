@@ -4,22 +4,16 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""ReID fine-tuning: crop datasets, PK sampling, losses, and the trainer.
+"""ReID fine-tuning via :func:`train_reid`.
 
 Crop loading and query/gallery partitioning live in :mod:`reid.data.identity_crops`;
-MOT crop generation lives in :mod:`reid.data.mot`. This package owns the
-torch-side training loop and its dataset plumbing.
+MOT crop generation lives in :mod:`reid.data.mot`. Custom loops can import
+:class:`~reid.training.datasets.ReIDTrainDataset`,
+:class:`~reid.training.datasets.PKSampler`, and
+:class:`~reid.training.losses.ReIDLoss` from their defining modules.
 """
 
 from typing import TYPE_CHECKING
-
-from reid.training.datasets import (
-    PKSampler,
-    ReIDTrainDataset,
-    build_eval_transform,
-    build_train_transform,
-)
-from reid.training.losses import ReIDLoss
 
 if TYPE_CHECKING:
     from reid.training.trainer import (
@@ -29,13 +23,8 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
-    "PKSampler",
-    "ReIDLoss",
-    "ReIDTrainDataset",
     "TrainConfig",
     "TrainResult",
-    "build_eval_transform",
-    "build_train_transform",
     "train_reid",
 ]
 
