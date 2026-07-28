@@ -29,6 +29,8 @@ def _write_sequence(
     name: str,
     seq_length: int,
     rows: list[list[float]],
+    *,
+    frame_width: int = 6,
 ) -> Path:
     """Create a minimal MOT sequence (seqinfo.ini, img1/ frames, gt/gt.txt)."""
     sequence_dir = root / name
@@ -39,7 +41,7 @@ def _write_sequence(
 
     for frame in range(1, seq_length + 1):
         image = np.full((_FRAME_H, _FRAME_W, 3), frame % 256, dtype=np.uint8)
-        cv2.imwrite(str(sequence_dir / "img1" / f"{frame:06d}.jpg"), image)
+        cv2.imwrite(str(sequence_dir / "img1" / f"{frame:0{frame_width}d}.jpg"), image)
 
     lines = [",".join(str(value) for value in row) for row in rows]
     (sequence_dir / "gt" / "gt.txt").write_text("\n".join(lines) + "\n")
@@ -133,3 +135,20 @@ class TestGenerateMotPatches:
         assert stats.num_identities == 2
         assert stats.num_crops == 4
         assert set(stats.sequences) == {"MOT17-02-FRCNN", "MOT17-02-SDP"}
+
+    def test_reads_eight_digit_frame_stems(self, tmp_path: Path) -> None:
+        mot_root = tmp_path / "MOT"
+        _write_sequence(
+            mot_root,
+            "dancetrack0001",
+            seq_length=2,
+            rows=_pedestrian_rows(2, [1]),
+            frame_width=8,
+        )
+
+        out = tmp_path / "out"
+        stats = generate_mot_patches(mot_root, out, split="full")
+
+        assert stats.num_identities == 1
+        assert stats.num_crops == 2
+        assert stats.skipped_degenerate == 0

@@ -147,6 +147,20 @@ def _dedupe_detector_variants(
     return [by_base[base] for base in sorted(by_base)]
 
 
+def _frame_image_path(image_dir: Path, frame: int, image_ext: str) -> Path:
+    """Resolve ``img1`` path for ``frame``.
+
+    MOT17 uses 6-digit stems (``000001.jpg``); DanceTrack / SportsMOT use 8-digit
+    stems (``00000001.jpg``). Prefer an existing file when both conventions are
+    checked.
+    """
+    for width in (6, 8):
+        path = image_dir / f"{frame:0{width}d}.{image_ext}"
+        if path.exists():
+            return path
+    return image_dir / f"{frame:06d}.{image_ext}"
+
+
 def _crop_rows_from_sequence(
     seq_name: str,
     gt_path: Path,
@@ -189,7 +203,7 @@ def _crop_rows_from_sequence(
 
         frame = int(row[_COL_FRAME])
         if frame not in frame_cache:
-            image_path = image_dir / f"{frame:06d}.{image_ext}"
+            image_path = _frame_image_path(image_dir, frame, image_ext)
             frame_cache[frame] = cv2.imread(str(image_path)) if image_path.exists() else None
         image = frame_cache[frame]
         if image is None:
