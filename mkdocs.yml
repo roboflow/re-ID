@@ -28,4 +28,5 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guides:
+    - Fine-tune on tracking crops: learn/train.md
     - ReID Metrics: learn/metrics.md

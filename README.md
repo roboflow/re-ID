@@ -137,36 +137,33 @@ Metrics (CMC Rank-k, mAP, mINP), junk filtering, and cosine vs Euclidean distanc
 
 To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-domain checkpoints; OSNet x1.0 Market-1501 uses euclidean), run [`notebooks/eval_reid.ipynb`](notebooks/eval_reid.ipynb).
 
-## Fine-tuning on MOT crops
+## Fine-tuning on tracking crops
 
-The data layer follows a single flow: `source format -> loader -> ReIDSplit -> optional partitioning -> Dataset/evaluator`. Crop loading and partitioning live in `reid.data`; MOT crop generation lives in `reid.data.mot`. `reid.training` fine-tunes an encoder on a crop `ReIDSplit` and stays a submodule import so `import reid` does not pull the trainer.
+**Full guide:** [`docs/learn/train.md`](docs/learn/train.md). Crops → `train_reid` → reload → BoT-SORT.
 
-`generate_mot_patches` reads MOT sequences and writes `output_dir/<seq>_<id>/<seq>_<frame>.jpg`. The default `split="train_half"` keeps crops frame-disjoint from the standard MOT17 val-half tracking evaluation, and MOT17 detector variants collapse to one base sequence.
+Three steps:
 
 ```python
+from reid import ReIDModel
 from reid.data.mot import generate_mot_patches
 from reid.training import TrainConfig, train_reid
 
-generate_mot_patches("/path/to/MOT17/train", "/path/to/crops", split="train_half")
+generate_mot_patches("/path/to/MOT17/train", "/path/to/crops/train", split="train_half")
 
 result = train_reid(
-    "/path/to/crops",
-    TrainConfig(epochs=30, epoch_length="samples"),
-    architecture="osnet_x1_0",
+    "/path/to/crops/train",
+    TrainConfig(epochs=30, num_workers=0),
     pretrained="osnet_x1_0_msmt17_combineall",
     output_dir="/path/to/checkpoint",
+    val_data="/path/to/crops/val",
 )
-
-from reid import ReIDModel
 
 model = ReIDModel.from_pretrained("/path/to/checkpoint")
 ```
 
-`train_reid` accepts either a crop dataset path or a `ReIDSplit`. A path is loaded with `reid.data.load_identity_crops`; pass a `ReIDSplit` directly when you have already loaded or partitioned the crops. It optimizes label-smoothed cross-entropy plus a batch-hard triplet term (optional center loss) with a PK sampler, and resolves architecture, warm-start weights, and preprocessing through the same `resolve_load_plan` entry point as `ReIDModel.from_pretrained`. Warm-start is a partial load: the fresh classifier head is not in the source checkpoint, so no strict state-dict match is enforced. Optional `val_data` evaluates CE + triplet each epoch on crops whose identity folder names overlap the training set and keeps the lowest-`val_total` weights when `output_dir` is set. When `output_dir` is set, the tuned encoder is written via `save_pretrained` and reloads with `ReIDModel.from_pretrained`.
+Epoch length is an identity/crop budget: `(identities_per_epoch * crops_per_identity) // (p * k)` batches. Defaults cover all identities with `k` crops each. Optional `val_data` needs the same identity folder names as train. On Colab/Jupyter, set `num_workers=0`.
 
-`TrainConfig.epoch_length` chooses how many PK batches make one epoch: `"identities"` (default) uses `num_identities // p`; `"samples"` uses `max(1, num_samples // (p * k))`, a FastReID-style step budget. Prefer `"samples"` for MOT-style folders with many images per identity (longer wall-clock per epoch). Dataset helpers (`ReIDTrainDataset`, `PKSampler`, `build_train_transform`) and `ReIDLoss` are public on `reid.training` for custom loops.
-
-To measure retrieval on held-out identities without cross-sequence leakage, `reid.data.build_identity_crop_holdout_split` takes a crop `ReIDSplit` and reserves a fraction of identities for a query/gallery split, returning the remaining crops as a train split. Query and gallery crops use synthetic camera ids 0 and 1 so single-camera MOT folders still produce valid retrieval pairs under gallery eval. The MOT17 notebook instead uses temporally held-out frames of the same sequences (IDs may overlap) because the target is tracking adaptation; see [`docs/learn/metrics.md`](docs/learn/metrics.md). See [`notebooks/train_reid_mot17.ipynb`](notebooks/train_reid_mot17.ipynb) for the walkthrough.
+End-to-end MOT17 walkthrough: [`notebooks/train_reid_mot17.ipynb`](notebooks/train_reid_mot17.ipynb).
 
 ## Weight cache
 

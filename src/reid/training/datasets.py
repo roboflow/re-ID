@@ -28,11 +28,7 @@ if TYPE_CHECKING:
 
     import torch
 
-# How many PK batches make one epoch:
-# - identities: num_identities // p (short; current default)
-# - samples: max(1, num_samples // (p * k)) (FastReID-style step budget)
-EpochLength = Literal["identities", "samples"]
-_EPOCH_LENGTH_CHOICES: tuple[str, ...] = ("identities", "samples")
+IdentitiesPerEpoch = int | Literal["all"]
 
 
 def build_train_transform(
@@ -205,31 +201,46 @@ class ReIDTrainDataset(Dataset):
 
 
 def _resolve_pk_num_batches(
-    num_samples: int,
     num_identities: int,
     p: int,
     k: int,
-    epoch_length: EpochLength,
+    *,
+    identities_per_epoch: IdentitiesPerEpoch = "all",
+    crops_per_identity: int,
 ) -> int:
-    """Return how many PK batches one epoch should contain."""
-    if epoch_length == "identities":
-        return num_identities // p
-    if epoch_length == "samples":
-        return max(1, num_samples // (p * k))
-    choices = ", ".join(repr(choice) for choice in _EPOCH_LENGTH_CHOICES)
-    raise ValueError(f"Unknown epoch_length {epoch_length!r}. Choose from: [{choices}].")
+    """Return how many PK batches one epoch should contain.
+
+    Budget is ``identities_per_epoch * crops_per_identity`` crop draws, packed into
+    batches of size ``p * k``.
+    """
+    if p <= 0 or k <= 0:
+        raise ValueError(f"p and k must be positive, got p={p}, k={k}.")
+    if crops_per_identity < 1:
+        raise ValueError(f"crops_per_identity must be >= 1, got {crops_per_identity}.")
+    n_identities = num_identities if identities_per_epoch == "all" else identities_per_epoch
+    if not isinstance(n_identities, int) or n_identities < 1:
+        raise ValueError(
+            f"identities_per_epoch must be 'all' or an int >= 1, got {identities_per_epoch!r}."
+        )
+    if n_identities < p:
+        raise ValueError(
+            f"identities_per_epoch must be >= p={p} (got {n_identities} "
+            f"from identities_per_epoch={identities_per_epoch!r}, "
+            f"num_identities={num_identities})."
+        )
+    return max(1, (n_identities * crops_per_identity) // (p * k))
 
 
 class PKSampler(Sampler[list[int]]):
     """Sample ``P`` identities x ``K`` instances per batch for triplet mining.
 
-    ``epoch_length`` controls how many batches make one epoch:
+    Epoch length is an identity/crop budget, not a full pass over every frame:
 
-    - ``"identities"``: ``num_identities // p`` (default; short when many images
-      per identity).
-    - ``"samples"``: ``max(1, num_samples // (p * k))`` — a FastReID-style step
-      budget ≈ one pass over the dataset in PK batch units. Identities are
-      reshuffled within the epoch when a pass over the ID list is exhausted.
+    ``batches = (identities_per_epoch * crops_per_identity) // (p * k)``
+
+    With defaults (``identities_per_epoch="all"``, ``crops_per_identity=k``) this
+    is ``num_identities // p``. Identities are reshuffled within the epoch when
+    a pass over the ID list is exhausted.
     """
 
     def __init__(
@@ -239,7 +250,8 @@ class PKSampler(Sampler[list[int]]):
         k: int,
         seed: int | None = None,
         *,
-        epoch_length: EpochLength = "identities",
+        identities_per_epoch: IdentitiesPerEpoch = "all",
+        crops_per_identity: int | None = None,
     ) -> None:
         """Initialize the PK sampler.
 
@@ -248,7 +260,10 @@ class PKSampler(Sampler[list[int]]):
             p: Identities per batch.
             k: Instances per identity per batch.
             seed: Optional shuffle seed.
-            epoch_length: How many batches constitute one epoch.
+            identities_per_epoch: Identity slots to cover per epoch (``"all"``
+                uses every label in ``labels``).
+            crops_per_identity: Crop draws per identity slot per epoch. ``None``
+                uses ``k``.
         """
         if p <= 0 or k <= 0:
             raise ValueError(f"p and k must be positive, got p={p}, k={k}.")
@@ -257,7 +272,8 @@ class PKSampler(Sampler[list[int]]):
         self.k = k
         self.batch_size = p * k
         self.seed = seed
-        self.epoch_length = epoch_length
+        self.identities_per_epoch = identities_per_epoch
+        self.crops_per_identity = k if crops_per_identity is None else crops_per_identity
         self._epoch = 0
 
         self._indices_by_label: dict[int, list[int]] = defaultdict(list)
@@ -269,11 +285,11 @@ class PKSampler(Sampler[list[int]]):
             raise ValueError(f"PKSampler needs at least p={p} identities, got {len(self._labels)}.")
 
         self._num_batches = _resolve_pk_num_batches(
-            num_samples=len(labels),
             num_identities=len(self._labels),
             p=p,
             k=k,
-            epoch_length=epoch_length,
+            identities_per_epoch=identities_per_epoch,
+            crops_per_identity=self.crops_per_identity,
         )
 
     def __len__(self) -> int:

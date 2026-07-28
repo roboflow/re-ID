@@ -94,7 +94,7 @@ class TestPKSampler:
         _make_crops(tmp_path, num_ids=5, num_per=4)
         dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
         p, k = 2, 3
-        sampler = PKSampler(dataset.labels, p=p, k=k, seed=123, epoch_length="identities")
+        sampler = PKSampler(dataset.labels, p=p, k=k, seed=123)
 
         batches = list(sampler)
         assert len(sampler) == 5 // p
@@ -106,28 +106,22 @@ class TestPKSampler:
             assert len(label_counts) == p
             assert all(count == k for count in label_counts.values())
 
-    def test_samples_epoch_is_longer_with_many_images_per_id(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=4, num_per=20)
+    def test_epoch_budget_scales_with_identities_and_crops(self, tmp_path: Path) -> None:
+        _make_crops(tmp_path, num_ids=8, num_per=10)
         dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
-        p, k = 2, 4
+        p, k = 2, 2
 
-        identity_sampler = PKSampler(dataset.labels, p=p, k=k, seed=0, epoch_length="identities")
-        samples_sampler = PKSampler(dataset.labels, p=p, k=k, seed=0, epoch_length="samples")
+        default = PKSampler(dataset.labels, p=p, k=k, seed=0)
+        deeper = PKSampler(dataset.labels, p=p, k=k, seed=0, crops_per_identity=2 * k)
+        shorter = PKSampler(dataset.labels, p=p, k=k, seed=0, identities_per_epoch=4)
 
-        assert len(identity_sampler) == 4 // p
-        assert len(samples_sampler) == len(dataset) // (p * k)
-        assert len(samples_sampler) > len(identity_sampler)
-
-        samples_batches = list(samples_sampler)
-        assert len(samples_batches) == len(samples_sampler)
-        for batch in samples_batches:
-            assert len(batch) == p * k
-            label_counts = Counter(dataset.labels[i] for i in batch)
-            assert len(label_counts) == p
-            assert all(count == k for count in label_counts.values())
+        assert len(default) == 8 // p
+        assert len(deeper) == 2 * len(default)
+        assert len(shorter) == 4 // p
 
     def test_rejects_too_few_identities(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=2, num_per=4)
         dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
         with pytest.raises(ValueError, match="at least p="):
             PKSampler(dataset.labels, p=4, k=2)
+

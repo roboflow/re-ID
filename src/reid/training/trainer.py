@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from reid.data import ReIDSplit, load_identity_crops
 from reid.preprocessing import ReIDPreprocessing
-from reid.training.datasets import EpochLength
+from reid.training.datasets import IdentitiesPerEpoch
 
 if TYPE_CHECKING:
     import torch
@@ -54,10 +54,12 @@ class TrainConfig:
         device: Torch device string, or ``"auto"``.
         seed: RNG seed.
         log_interval: Log every N optimizer steps.
-        epoch_length: How many PK batches make one epoch. ``"identities"`` uses
-            ``num_identities // p`` (default). ``"samples"`` uses
-            ``max(1, num_samples // (p * k))`` — a FastReID-style step budget
-            suited to MOT folders with many images per identity.
+        identities_per_epoch: Identity slots to cover per epoch. ``"all"`` uses
+            every training identity. An int may be smaller (smoke runs) or larger
+            (multiple passes) than the dataset size.
+        crops_per_identity: Crop draws per identity slot per epoch. ``None`` uses
+            ``k``. Epoch batches are
+            ``(identities_per_epoch * crops_per_identity) // (p * k)``.
     """
 
     epochs: int = 30
@@ -80,11 +82,20 @@ class TrainConfig:
     device: str = "auto"
     seed: int = 42
     log_interval: int = 20
-    epoch_length: EpochLength = "identities"
+    identities_per_epoch: IdentitiesPerEpoch = "all"
+    crops_per_identity: int | None = None
 
     def __post_init__(self) -> None:
-        if self.epoch_length not in ("identities", "samples"):
-            raise ValueError(f"Unknown epoch_length {self.epoch_length!r}. Choose from: ['identities', 'samples'].")
+        if self.identities_per_epoch != "all" and (
+            not isinstance(self.identities_per_epoch, int) or self.identities_per_epoch < 1
+        ):
+            raise ValueError(
+                f"identities_per_epoch must be 'all' or an int >= 1, got {self.identities_per_epoch!r}."
+            )
+        if self.crops_per_identity is None:
+            self.crops_per_identity = self.k
+        elif self.crops_per_identity < 1:
+            raise ValueError(f"crops_per_identity must be >= 1, got {self.crops_per_identity}.")
         if self.log_interval < 0:
             raise ValueError(f"log_interval must be >= 0, got {self.log_interval}.")
         if self.triplet_weight > 0 and (self.p < 2 or self.k < 2):
@@ -92,6 +103,18 @@ class TrainConfig:
                 "Batch-hard triplet mining needs p >= 2 and k >= 2 "
                 f"(got p={self.p}, k={self.k}, triplet_weight={self.triplet_weight})."
             )
+
+    def num_batches(self, num_identities: int) -> int:
+        """PK batches per epoch for a dataset with ``num_identities`` labels."""
+        from reid.training.datasets import _resolve_pk_num_batches
+
+        return _resolve_pk_num_batches(
+            num_identities,
+            self.p,
+            self.k,
+            identities_per_epoch=self.identities_per_epoch,
+            crops_per_identity=int(self.crops_per_identity),
+        )
 
 
 @dataclass
@@ -300,7 +323,8 @@ def _build_val_loader(
         p=config.p,
         k=config.k,
         seed=config.seed,
-        epoch_length=config.epoch_length,
+        identities_per_epoch=config.identities_per_epoch,
+        crops_per_identity=config.crops_per_identity,
     )
     return DataLoader(
         val_dataset,
@@ -377,7 +401,8 @@ def train_reid(
         p=config.p,
         k=config.k,
         seed=config.seed,
-        epoch_length=config.epoch_length,
+        identities_per_epoch=config.identities_per_epoch,
+        crops_per_identity=config.crops_per_identity,
     )
     loader = DataLoader(
         dataset,
