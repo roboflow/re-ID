@@ -16,7 +16,7 @@ Fine-tune a ReID encoder on per-identity person crops, then reload the checkpoin
 - Check training loss and gallery mAP / Rank-1
 - Load fine-tuned weights into BoT-SORT
 
-For a runnable MOT17 walkthrough (download, train, retrieval, tracking A/B), see [`notebooks/train_reid_mot17.ipynb`](../../notebooks/train_reid_mot17.ipynb).
+Runnable notebooks: [`train_reid_mot17.ipynb`](../../notebooks/train_reid_mot17.ipynb) (MOT17 train / val tracking A/B) and [`train_reid_dancetrack.ipynb`](../../notebooks/train_reid_dancetrack.ipynb) (DanceTrack train, val metrics, Codabench test).
 
 ---
 
@@ -169,7 +169,7 @@ finetuned = ReIDModel.from_pretrained("/path/to/checkpoint")
 
 for label, model in [("baseline", baseline), ("finetuned", finetuned)]:
     m = ReIDEvaluator(model).evaluate(query, gallery).metrics
-    print(label, f"mAP={m.map:.1f}% Rank-1={m.rank1:.1f}%")
+    print(label, f"mAP={m.mean_average_precision:.1f}% Rank-1={m.rank1:.1f}%")
 ```
 
 On the MOT17 notebook protocol (train on `mot17/train` crops, retrieve on `mot17/val` crops), scenes and IDs can overlap across time. Treat mAP / Rank-1 as a temporal diagnostic, not an open-set ReID score like Market-1501. For identity-disjoint holdout, partition with `build_identity_crop_holdout_split` before training. Metric definitions: [ReID Metrics](metrics.md).
@@ -193,3 +193,27 @@ tracker = BoTSORTTracker(reid_model=reid_model, appearance_threshold=0.2)
 MOT17 val-half eval in the study uses appearance threshold `0.2` (Table 8). Tracking HOTA / IDF1 on detector crops is the main domain-adaptation signal; gallery mAP alone does not predict ID switches.
 
 The MOT17 notebook compares BoT-SORT with baseline ReID vs fine-tuned ReID on the seven val sequences.
+
+---
+
+## 6. Fine-tune results
+
+Numbers below come from the DanceTrack Colab notebook: OSNet warm-started from MSMT17, trained on DanceTrack train-half GT crops, best epoch by val loss on train val-half, then BoT-SORT on YOLOX dets with `appearance_threshold=0.25`.
+
+### DanceTrack test (Codabench)
+
+| Tracker | HOTA | IDF1 | MOTA |
+| :------ | :--: | :--: | :--: |
+| BoT-SORT default (trackers DanceTrack Codabench baseline) | 57.8 | 57.9 | 92.2 |
+| BoT-SORT + OSNet DanceTrack FT ([notebook](../../notebooks/train_reid_dancetrack.ipynb)) | 58.5 | 58.9 | 92.1 |
+
+Delta vs default: +0.7 HOTA, +1.0 IDF1, MOTA -0.1.
+
+### DanceTrack val retrieval (official val GT crops)
+
+| Encoder | mAP | Rank-1 |
+| :------ | :-: | :----: |
+| OSNet MSMT17 (baseline) | 23.8 | 94.5 |
+| OSNet DanceTrack FT (best val loss) | 28.9 | 97.8 |
+
+MOT17 Codabench test numbers will land here after the MOT17 notebook grows a submit cell. Until then, use the MOT17 notebook's local val tracking A/B for domain-adaptation deltas.
