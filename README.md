@@ -5,15 +5,12 @@ from detection boxes or image crops, and evaluates galleries with standard ReID
 metrics (mAP, CMC / Rank-k). Use it to match the same identity across cameras
 or clips.
 
-[![Gallery retrieval promo](docs/assets/gallery_retrieval_promo.jpg)](docs/assets/gallery_retrieval_promo.mp4)
-
-<video width="100%" controls muted loop playsinline preload="metadata" poster="docs/assets/gallery_retrieval_promo.jpg" aria-label="Gallery retrieval promo: query a soccer player and rank gallery crops by cosine distance">
+<video width="100%" controls muted loop playsinline preload="metadata" aria-label="Gallery retrieval promo: query a soccer player and rank gallery crops by cosine distance">
   <source src="docs/assets/gallery_retrieval_promo.mp4" type="video/mp4">
 </video>
 
 Gallery retrieval with OSNet: query a player, rank crops from other clips by
-cosine distance (↓ lower is better). Click the poster if your viewer does not
-autoplay the video.
+cosine distance (↓ lower is better).
 
 ## Install
 
