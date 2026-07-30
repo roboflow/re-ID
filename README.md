@@ -2,6 +2,12 @@
 
 Re-identification models and gallery evaluation for appearance embeddings. This package ports the model loading, preprocessing, inference, and Market/MSMT evaluation stack from [Roboflow Trackers](https://github.com/roboflow/trackers) as a standalone library.
 
+<video width="100%" controls muted loop playsinline preload="metadata" aria-label="Gallery retrieval promo: query a soccer player and rank gallery crops by cosine distance">
+  <source src="https://github.com/roboflow/re-ID/raw/main/docs/assets/gallery_retrieval_promo.mp4" type="video/mp4">
+</video>
+
+Gallery retrieval with OSNet: query a player, rank crops from other clips by cosine distance (↓ lower is better).
+
 ## Install
 
 ```bash
