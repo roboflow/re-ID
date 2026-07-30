@@ -1,14 +1,27 @@
 # re-ID
 
-Re-identification models and gallery evaluation for appearance embeddings. This package ports the model loading, preprocessing, inference, and Market/MSMT evaluation stack from [Roboflow Trackers](https://github.com/roboflow/trackers) as a standalone library.
+`reid` loads person re-identification encoders, extracts appearance embeddings
+from detection boxes or image crops, and evaluates galleries with standard ReID
+metrics (mAP, CMC / Rank-k). Use it to match the same identity across cameras
+or clips.
 
-<video width="100%" controls muted loop playsinline preload="metadata" aria-label="Gallery retrieval promo: query a soccer player and rank gallery crops by cosine distance">
-  <source src="https://github.com/roboflow/re-ID/raw/main/docs/assets/gallery_retrieval_promo.mp4" type="video/mp4">
+[![Gallery retrieval promo](docs/assets/gallery_retrieval_promo.jpg)](docs/assets/gallery_retrieval_promo.mp4)
+
+<video width="100%" controls muted loop playsinline preload="metadata" poster="docs/assets/gallery_retrieval_promo.jpg" aria-label="Gallery retrieval promo: query a soccer player and rank gallery crops by cosine distance">
+  <source src="docs/assets/gallery_retrieval_promo.mp4" type="video/mp4">
 </video>
 
-Gallery retrieval with OSNet: query a player, rank crops from other clips by cosine distance (↓ lower is better).
+Gallery retrieval with OSNet: query a player, rank crops from other clips by
+cosine distance (↓ lower is better). Click the poster if your viewer does not
+autoplay the video.
 
 ## Install
+
+```bash
+pip install "reid>=0.1.0.dev0"
+```
+
+From a clone:
 
 ```bash
 pip install -e ".[dev]"
@@ -20,7 +33,7 @@ Or with uv:
 uv sync --all-extras
 ```
 
-Once published, install from PyPI with `pip install reid`; import as `reid`.
+Import as `reid`.
 
 ## Quick start
 
