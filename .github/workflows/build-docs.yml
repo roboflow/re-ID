@@ -3,13 +3,6 @@ name: Build and deploy documentation
 on:
   push:
     branches: [main, develop]
-    paths:
-      - "docs/**"
-      - "src/**"
-      - "mkdocs.yml"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/build-docs.yml"
   pull_request:
     branches: [main, develop]
     paths:
