@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
     paths:
       - "docs/**"
+      - "src/**"
       - "mkdocs.yml"
       - "pyproject.toml"
       - "uv.lock"
@@ -13,6 +14,7 @@ on:
     branches: [main, develop]
     paths:
       - "docs/**"
+      - "src/**"
       - "mkdocs.yml"
       - "pyproject.toml"
       - "uv.lock"
