@@ -19,7 +19,4 @@ from reid import (
 )
 ```
 
-`ReIDModel` extracts embeddings, `ReIDEvaluator` evaluates query/gallery
-splits, and `ReIDPreprocessing` records the model input recipe. See the
-[loading guide](../guides/loading.md) and [evaluation guide](../guides/evaluation.md)
-for runnable examples.
+`ReIDModel` extracts embeddings, `ReIDEvaluator` evaluates query/gallery splits, and `ReIDPreprocessing` records the model input recipe. See the [loading guide](../guides/loading.md) and [evaluation guide](../guides/evaluation.md) for runnable examples.

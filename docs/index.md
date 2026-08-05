@@ -5,8 +5,7 @@ description: Re-identification models and gallery evaluation for appearance embe
 
 # Re-ID
 
-Re-ID provides appearance-embedding models and gallery evaluation tools for
-person re-identification workflows.
+Re-ID provides appearance-embedding models and gallery evaluation tools for person re-identification workflows.
 
 ## Install
 
@@ -29,5 +28,4 @@ embeddings = model.extract_features(detections, frame)
 print(embeddings.shape)  # (1, 512)
 ```
 
-Continue with the [model-loading guide](guides/loading.md) or see how to
-[evaluate a query/gallery split](guides/evaluation.md).
+Continue with the [model-loading guide](guides/loading.md) or see how to [evaluate a query/gallery split](guides/evaluation.md).

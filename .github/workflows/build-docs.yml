@@ -1,15 +1,8 @@
-name: Build and deploy documentation
+name: Documentation
 
 on:
   push:
     branches: [main, develop]
-    paths:
-      - "docs/**"
-      - "src/**"
-      - "mkdocs.yml"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/build-docs.yml"
   pull_request:
     branches: [main, develop]
     paths:
@@ -28,7 +21,7 @@ permissions:
 
 jobs:
   build:
-    name: Build documentation
+    name: Build docs
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -47,11 +40,6 @@ jobs:
       - name: Build documentation
         run: uv run mkdocs build --strict
 
-      - name: Configure GitHub Pages
-        id: pages
-        if: github.event_name == 'push'
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
-
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
@@ -59,7 +47,7 @@ jobs:
           path: site
 
   deploy:
-    name: Deploy documentation
+    name: Deploy docs
     if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
@@ -71,6 +59,10 @@ jobs:
       pages: write
       id-token: write
     steps:
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
