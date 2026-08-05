@@ -4,7 +4,7 @@ site_author: Roboflow
 site_description: Re-identification models and gallery evaluation for appearance embeddings.
 repo_name: roboflow/re-ID
 repo_url: https://github.com/roboflow/re-ID
-edit_uri: https://github.com/roboflow/re-ID/tree/main/docs
+edit_uri: edit/main/docs/
 
 theme:
   name: material
