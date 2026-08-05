@@ -1,4 +1,5 @@
 site_name: Re-ID
+site_url: https://roboflow.github.io/re-ID/
 site_author: Roboflow
 site_description: Re-identification models and gallery evaluation for appearance embeddings.
 repo_name: roboflow/re-ID
