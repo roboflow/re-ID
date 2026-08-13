@@ -219,9 +219,7 @@ def _resolve_pk_num_batches(
         raise ValueError(f"crops_per_identity must be >= 1, got {crops_per_identity}.")
     n_identities = num_identities if identities_per_epoch == "all" else identities_per_epoch
     if not isinstance(n_identities, int) or n_identities < 1:
-        raise ValueError(
-            f"identities_per_epoch must be 'all' or an int >= 1, got {identities_per_epoch!r}."
-        )
+        raise ValueError(f"identities_per_epoch must be 'all' or an int >= 1, got {identities_per_epoch!r}.")
     if n_identities < p:
         raise ValueError(
             f"identities_per_epoch must be >= p={p} (got {n_identities} "

@@ -16,7 +16,7 @@ Fine-tune a ReID encoder on per-identity person crops, then reload the checkpoin
 - Check training loss and gallery mAP / Rank-1
 - Load fine-tuned weights into BoT-SORT
 
-Runnable notebooks: [`train_reid_mot17.ipynb`](../../notebooks/train_reid_mot17.ipynb) (MOT17 train / val tracking A/B) and [`train_reid_dancetrack.ipynb`](../../notebooks/train_reid_dancetrack.ipynb) (DanceTrack train, val metrics, Codabench test).
+Runnable notebooks: [`train_reid_mot17.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/train_reid_mot17.ipynb) (MOT17 train / val tracking A/B) and [`train_reid_dancetrack.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/train_reid_dancetrack.ipynb) (DanceTrack train, val metrics, Codabench test).
 
 ---
 
@@ -137,15 +137,15 @@ print(result.best_epoch, result.best_val_total)
 model = ReIDModel.from_pretrained("/path/to/checkpoint")
 ```
 
-| Field | Role | MOT17 starting point |
-| :---- | :--- | :------------------- |
-| `pretrained` | Warm-start alias or local checkpoint | `osnet_x1_0_msmt17_combineall` |
-| `p`, `k` | PK batch: identities × crops | `8`, `4` (use `4`, `4` for FastReID 384×128) |
-| `epochs` | Training length | 30 to 40 for OSNet |
-| `freeze_backbone_epochs` | Train head only first | 3 to 5 when warm-starting |
-| `identities_per_epoch` | Identity slots per epoch | `"all"` (default) |
-| `crops_per_identity` | Crop draws per identity slot | `k` when omitted |
-| `num_workers` | DataLoader workers | `0` in notebooks / Colab |
+| Field                    | Role                                 | MOT17 starting point                         |
+| :----------------------- | :----------------------------------- | :------------------------------------------- |
+| `pretrained`             | Warm-start alias or local checkpoint | `osnet_x1_0_msmt17_combineall`               |
+| `p`, `k`                 | PK batch: identities × crops         | `8`, `4` (use `4`, `4` for FastReID 384×128) |
+| `epochs`                 | Training length                      | 30 to 40 for OSNet                           |
+| `freeze_backbone_epochs` | Train head only first                | 3 to 5 when warm-starting                    |
+| `identities_per_epoch`   | Identity slots per epoch             | `"all"` (default)                            |
+| `crops_per_identity`     | Crop draws per identity slot         | `k` when omitted                             |
+| `num_workers`            | DataLoader workers                   | `0` in notebooks / Colab                     |
 
 **Epoch budget.** Batches per epoch are `(identities_per_epoch * crops_per_identity) // (p * k)`. Defaults (`"all"` identities, `crops_per_identity=k`) give about `num_identities // p` batches (about 25 for ~200 MOT17 identities with `p=8`). Raise `crops_per_identity` to deepen an epoch without visiting every frame. Lower `identities_per_epoch` for smoke tests.
 
@@ -201,9 +201,9 @@ Numbers below come from the DanceTrack Colab notebook: OSNet warm-started from M
 
 ### DanceTrack test (Codabench)
 
-| Tracker | HOTA | IDF1 | MOTA |
-| :------ | :--: | :--: | :--: |
-| BoT-SORT default (trackers DanceTrack Codabench baseline) | 57.8 | 57.9 | 92.2 |
-| BoT-SORT + OSNet DanceTrack FT ([notebook](../../notebooks/train_reid_dancetrack.ipynb)) | 58.5 | 58.9 | 92.1 |
+| Tracker                                                                                                                        | HOTA | IDF1 | MOTA |
+| :----------------------------------------------------------------------------------------------------------------------------- | :--: | :--: | :--: |
+| BoT-SORT default (trackers DanceTrack Codabench baseline)                                                                      | 57.8 | 57.9 | 92.2 |
+| BoT-SORT + OSNet DanceTrack FT ([notebook](https://github.com/roboflow/re-ID/blob/main/notebooks/train_reid_dancetrack.ipynb)) | 58.5 | 58.9 | 92.1 |
 
 Delta vs default: +0.7 HOTA, +1.0 IDF1, MOTA -0.1.

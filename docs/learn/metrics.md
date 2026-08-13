@@ -49,7 +49,7 @@ Scores are percentages. A typical printout looks like:
 mAP: ...%  Rank-1: ...%  Rank-5: ...%  Rank-10: ...%  mINP: ...%  (n=3368)
 ```
 
-The default alias (`osnet_x1_0_msmt17_combineall`) is trained on MSMT17 with train and test combined, so Market-1501 scores here measure **cross-domain** transfer (Rank-1 around 61 in [`notebooks/eval_reid.ipynb`](../../notebooks/eval_reid.ipynb)). To match the torchreid OSNet x1.0 **same-domain** Market-1501 zoo targets (Rank-1 94.2, mAP 82.6, euclidean), load that checkpoint with `ReIDModel.from_pretrained(path, architecture="osnet_x1_0")`. Full Market-1501 and MSMT17 recipes are in the same notebook.
+The default alias (`osnet_x1_0_msmt17_combineall`) is trained on MSMT17 with train and test combined, so Market-1501 scores here measure **cross-domain** transfer (Rank-1 around 61 in [`notebooks/eval_reid.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb)). To match the torchreid OSNet x1.0 **same-domain** Market-1501 zoo targets (Rank-1 94.2, mAP 82.6, euclidean), load that checkpoint with `ReIDModel.from_pretrained(path, architecture="osnet_x1_0")`. Full Market-1501 and MSMT17 recipes are in the same notebook.
 
 ---
 
@@ -57,12 +57,12 @@ The default alias (`osnet_x1_0_msmt17_combineall`) is trained on MSMT17 with tra
 
 For each **query** image you sort the **gallery** by embedding distance (lower is closer). A gallery image is a **match** when it shares the query person ID and comes from a **different** camera.
 
-| Term | Meaning |
-| :--- | :--- |
-| Query | Probe crop whose identity you want to find |
-| Gallery | Candidate crops to search |
-| Match | Same person ID, different camera ID |
-| Junk | Same person and same camera, or labeled distractors (see below) |
+| Term    | Meaning                                                         |
+| :------ | :-------------------------------------------------------------- |
+| Query   | Probe crop whose identity you want to find                      |
+| Gallery | Candidate crops to search                                       |
+| Match   | Same person ID, different camera ID                             |
+| Junk    | Same person and same camera, or labeled distractors (see below) |
 
 Junk entries are removed from the ranked list before scoring. They never count as hits or as distractors that inflate rank.
 
@@ -97,12 +97,12 @@ Unlike Rank-1, mAP cares about **all** valid gallery matches for that identity, 
 
 mINP penalizes models that bury hard positive gallery images deep in the ranking even when Rank-1 and mAP look strong.
 
-| Metric | Sensitive to | Typical use |
-| :----- | :----------- | :---------- |
-| Rank-1 | First hit only | Quick sanity check; often reported with mAP |
-| Rank-5 / Rank-10 | Early list quality | CMC curves; `max_rank` must be at least 10 |
-| mAP | Full match set | Primary gallery benchmark score |
-| mINP | Hardest (last) match | Complements mAP when hard positives matter |
+| Metric           | Sensitive to         | Typical use                                 |
+| :--------------- | :------------------- | :------------------------------------------ |
+| Rank-1           | First hit only       | Quick sanity check; often reported with mAP |
+| Rank-5 / Rank-10 | Early list quality   | CMC curves; `max_rank` must be at least 10  |
+| mAP              | Full match set       | Primary gallery benchmark score             |
+| mINP             | Hardest (last) match | Complements mAP when hard positives matter  |
 
 ---
 
@@ -110,10 +110,10 @@ mINP penalizes models that bury hard positive gallery images deep in the ranking
 
 `ReIDEvaluator.evaluate(..., distance=...)` builds a query × gallery distance matrix before calling the metric functions.
 
-| `distance` | Behavior |
-| :--------- | :------- |
+| `distance`           | Behavior                                        |
+| :------------------- | :---------------------------------------------- |
 | `"cosine"` (default) | Cosine distance after L2-normalizing embeddings |
-| `"euclidean"` | Euclidean distance on the raw embedding vectors |
+| `"euclidean"`        | Euclidean distance on the raw embedding vectors |
 
 The torchreid model zoo reports OSNet x1.0 same-domain numbers with **euclidean** distance (94.2 / 82.6 on Market-1501). Match whatever distance a published table used before comparing, and do not mix distance choices across runs you want to compare.
 

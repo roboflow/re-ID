@@ -1,8 +1,20 @@
 # re-ID
 
-Re-identification models and gallery evaluation for appearance embeddings. This package ports the model loading, preprocessing, inference, and Market/MSMT evaluation stack from [Roboflow Trackers](https://github.com/roboflow/trackers) as a standalone library.
+`reid` loads person re-identification encoders, extracts appearance embeddings from detection boxes or image crops, and evaluates galleries with standard ReID metrics (mAP, CMC / Rank-k). Use it to match the same identity across cameras or clips.
+
+<video width="100%" controls muted loop playsinline preload="metadata" aria-label="Gallery retrieval promo: query a soccer player and rank gallery crops by cosine distance">
+  <source src="https://github.com/user-attachments/assets/036a7949-2206-49fc-9a1b-89f9d3c51f20" type="video/mp4">
+</video>
+
+Gallery retrieval with OSNet: query a player, rank crops from other clips by cosine distance (↓ lower is better).
 
 ## Install
+
+```bash
+pip install "reid>=0.1.0.dev0"
+```
+
+From a clone:
 
 ```bash
 pip install -e ".[dev]"
@@ -14,7 +26,7 @@ Or with uv:
 uv sync --all-extras
 ```
 
-Once published, install from PyPI with `pip install reid`; import as `reid`.
+Import as `reid`.
 
 ## Quick start
 
@@ -38,61 +50,36 @@ embeddings = model.extract_features_from_paths(["/path/to/crop.jpg"])
 
 Use `ReIDModel.from_pretrained(...)`. Pick the form that matches what you have:
 
-1. **Curated alias** (or no argument): `ReIDModel.from_pretrained()` or
-   `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")`.
-   Resolves architecture and weights URL; preprocessing comes from that
-   architecture's `default_preprocessing()`. Other shipped aliases include
-   `fastreid_mot17_sbs50`.
+1. **Curated alias** (or no argument): `ReIDModel.from_pretrained()` or `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")`. Resolves architecture and weights URL; preprocessing comes from that architecture's `default_preprocessing()`. Other shipped aliases include `fastreid_mot17_sbs50`.
 
-2. **Saved directory or HF repo with `reid_config.json`**:
-   `ReIDModel.from_pretrained("/path/to/export")` or
-   `ReIDModel.from_pretrained("hf://org/repo")`.
-   Use after `save_pretrained`. The config records architecture and
-   preprocessing; weights live in `weights.safetensors` next to it.
+2. **Saved directory or HF repo with `reid_config.json`**: `ReIDModel.from_pretrained("/path/to/export")` or `ReIDModel.from_pretrained("hf://org/repo")`. Use after `save_pretrained`. The config records architecture and preprocessing; weights live in `weights.safetensors` next to it.
 
-3. **Bare checkpoint file** plus `architecture=`:
-   `ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")`
-   (also `hf://.../file.pth` and `gd://...`).
-   Preprocessing comes from that architecture's `default_preprocessing()`
-   unless you pass `preprocessing=`.
+3. **Bare checkpoint file** plus `architecture=`: `ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")` (also `hf://.../file.pth` and `gd://...`). Preprocessing comes from that architecture's `default_preprocessing()` unless you pass `preprocessing=`.
 
-4. **Architecture only** (random init):
-   `ReIDModel.from_pretrained(architecture="osnet_x1_0")`.
-   Useful for tests, scaffolding, or before training attaches weights.
+4. **Architecture only** (random init): `ReIDModel.from_pretrained(architecture="osnet_x1_0")`. Useful for tests, scaffolding, or before training attaches weights.
 
 ### Preprocessing and config
 
-Each architecture class owns its default crop/tensor recipe as a
-`default_preprocessing()` classmethod (`OSNet.default_preprocessing()`,
-`FastReIDSBSResNeSt50.default_preprocessing()`). OSNet uses 256x128 stretch;
-FastReID SBS uses 384x128 stretch (BoT-SORT FastReIDInterface). String dispatch
-is `architectures.default_preprocessing_for_architecture`.
+Each architecture class owns its default crop/tensor recipe as a `default_preprocessing()` classmethod (`OSNet.default_preprocessing()`, `FastReIDSBSResNeSt50.default_preprocessing()`). OSNet uses 256x128 stretch; FastReID SBS uses 384x128 stretch (BoT-SORT FastReIDInterface). String dispatch is `architectures.default_preprocessing_for_architecture`.
 
-`ReIDPreprocessing` fields (also what `reid_config.json` stores under
-`"preprocessing"`):
+`ReIDPreprocessing` fields (also what `reid_config.json` stores under `"preprocessing"`):
 
-| Field | Meaning | Typical |
-| --- | --- | --- |
-| `input_size` | `(H, W)` | OSNet `(256, 128)`; FastReID `(384, 128)` |
-| `resize_mode` | `stretch` or `letterbox` | `stretch` |
-| `interpolation` | OpenCV resize | `bilinear` |
-| `to_rgb` | BGR→RGB swap for video-frame crops only; on-disk RGB paths are unchanged | `True` |
-| `mean` / `std` | tensor Normalize | ImageNet |
-| `pad_value` | letterbox pad | `114` |
+| Field           | Meaning                                                                  | Typical                                   |
+| --------------- | ------------------------------------------------------------------------ | ----------------------------------------- |
+| `input_size`    | `(H, W)`                                                                 | OSNet `(256, 128)`; FastReID `(384, 128)` |
+| `resize_mode`   | `stretch` or `letterbox`                                                 | `stretch`                                 |
+| `interpolation` | OpenCV resize                                                            | `bilinear`                                |
+| `to_rgb`        | BGR→RGB swap for video-frame crops only; on-disk RGB paths are unchanged | `True`                                    |
+| `mean` / `std`  | tensor Normalize                                                         | ImageNet                                  |
+| `pad_value`     | letterbox pad                                                            | `114`                                     |
 
-Embedding L2 norm is not a preprocessing field: extract returns raw vectors;
-cosine distance normalizes inside `ReIDEvaluator`.
+Embedding L2 norm is not a preprocessing field: extract returns raw vectors; cosine distance normalizes inside `ReIDEvaluator`.
 
-`save_pretrained` writes `architecture` and `preprocessing` into
-`reid_config.json`, with weights beside it in `weights.safetensors`. Domain
-warnings stay on curated aliases at load time; they are not written into saved
-configs.
+`save_pretrained` writes `architecture` and `preprocessing` into `reid_config.json`, with weights beside it in `weights.safetensors`. Domain warnings stay on curated aliases at load time; they are not written into saved configs.
 
 ## Package layout
 
-The public API is exported from the top-level `reid` package; advanced helpers
-live in submodules. Discovery helpers: `list_aliases()`, `list_architectures()`.
-Constants: `DEFAULT_MODEL`, `FASTREID_MOT17_SBS50`.
+The public API is exported from the top-level `reid` package; advanced helpers live in submodules. Discovery helpers: `list_aliases()`, `list_architectures()`. Constants: `DEFAULT_MODEL`, `FASTREID_MOT17_SBS50`.
 
 ```
 src/reid/
@@ -107,18 +94,13 @@ src/reid/
 └── training/           # fine-tuning loop (datasets, losses, trainer)
 ```
 
-- **Architectures** know how to build a net and expose preprocessing via
-  `default_preprocessing()` on the architecture class.
-- **Catalog** is only the small allowlist of named recipes (alias →
-  architecture + weights URL + domain warning). Preprocessing for aliases is
-  derived from the architecture at load time. Curated aliases require a 100%
-  state-dict match at load time (enforced in `resolve_load_plan`).
+- **Architectures** know how to build a net and expose preprocessing via `default_preprocessing()` on the architecture class.
+- **Catalog** is only the small allowlist of named recipes (alias → architecture + weights URL + domain warning). Preprocessing for aliases is derived from the architecture at load time. Curated aliases require a 100% state-dict match at load time (enforced in `resolve_load_plan`).
 
 ## Adding a new architecture
 
 1. Implement under `src/reid/architectures/` (or use `timm:<name>`).
-2. Add a `@classmethod default_preprocessing()` on the architecture class,
-   documenting the input size / resize / colour contract for that checkpoint family.
+2. Add a `@classmethod default_preprocessing()` on the architecture class, documenting the input size / resize / colour contract for that checkpoint family.
 3. Register build + preprocessing dispatch in `architectures/registry.py`.
 4. Optionally add a curated alias in `catalog.ALIASES`.
 

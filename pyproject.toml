@@ -1,6 +1,6 @@
 [project]
 name = "reid"
-version = "0.1.0"
+version = "0.1.0.dev0"
 description = "Re-identification model stack for appearance embeddings"
 readme = "README.md"
 authors = [
@@ -38,6 +38,12 @@ dev = [
     "pre-commit>=4.2.0",
 ]
 
+[dependency-groups]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.11",
+]
+
 [build-system]
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
@@ -67,3 +73,7 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[tool.codespell]
+skip = "*.pth,*.svg"
+ignore-words-list = "mot"

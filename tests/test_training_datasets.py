@@ -124,4 +124,3 @@ class TestPKSampler:
         dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
         with pytest.raises(ValueError, match="at least p="):
             PKSampler(dataset.labels, p=4, k=2)
-
