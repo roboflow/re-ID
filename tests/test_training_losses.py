@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import pytest
 import torch
 
 from reid.training.losses import BatchHardTripletLoss, ReIDLoss
@@ -43,3 +44,17 @@ class TestReIDLoss:
         assert loss_fn.center is None
         total.backward()
         assert embeddings.grad is not None
+
+    def test_center_adds_a_weighted_term_and_trainable_centers(self) -> None:
+        loss_fn = ReIDLoss(num_classes=4, feature_dim=8, use_center=True, center_weight=0.1)
+        embeddings = torch.randn(8, 8, requires_grad=True)
+        logits = torch.randn(8, 4)
+        labels = torch.tensor([0, 0, 1, 1, 2, 2, 3, 3])
+        total, components = loss_fn(embeddings, logits, labels)
+
+        assert set(components) == {"ce", "triplet", "center", "total"}
+        expected = components["ce"] + loss_fn.triplet_weight * components["triplet"] + 0.1 * components["center"]
+        assert total.item() == pytest.approx(expected, rel=1e-5)
+
+        total.backward()
+        assert loss_fn.center.centers.grad is not None

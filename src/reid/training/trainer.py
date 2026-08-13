@@ -72,9 +72,15 @@ class TrainConfig:
         margin: Batch-hard triplet margin.
         label_smoothing: Cross-entropy label smoothing.
         triplet_weight: Weight on the triplet term.
-        use_center: Enable optional center loss.
-        center_weight: Weight on the center term when enabled.
-        center_lr: Dedicated Adam LR for center parameters.
+        use_center: Enable the optional center loss term.
+        center_weight: Weight on the center term in the total loss. Controls how
+            hard the term pulls embeddings toward their class center; it does not
+            affect how the centers themselves are learned (see ``center_lr``).
+        center_lr: Adam learning rate for the center parameters, which ride in a
+            dedicated group of the main optimizer. Bag of Tricks instead trains
+            centers with SGD and rescales their gradients by ``1 / center_weight``;
+            Adam normalizes gradient magnitude, so ``center_weight`` cancels out of
+            the center update and only ``center_lr`` governs how fast centers move.
         freeze_backbone_epochs: Freeze backbone (except head) for this many epochs.
         num_workers: DataLoader workers.
         amp: Use CUDA autocast + GradScaler when on GPU.

@@ -69,7 +69,12 @@ class BatchHardTripletLoss(nn.Module):
 
 
 class CenterLoss(nn.Module):
-    """Center loss: pull embeddings toward learnable class centers."""
+    """Center loss: pull embeddings toward learnable class centers.
+
+    Centers start from ``randn`` and are learned by the caller's optimizer, so
+    they only become meaningful class prototypes once they have had enough steps
+    to travel from that initialisation onto the embedding manifold.
+    """
 
     def __init__(self, num_classes: int, feature_dim: int) -> None:
         super().__init__()

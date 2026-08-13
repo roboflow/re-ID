@@ -146,10 +146,15 @@ model = ReIDModel.from_pretrained("/path/to/checkpoint")
 | `identities_per_epoch`   | Identity slots per epoch             | `"all"` (default)                            |
 | `crops_per_identity`     | Crop draws per identity slot         | `k` when omitted                             |
 | `num_workers`            | DataLoader workers                   | `0` in notebooks / Colab                     |
+| `use_center`             | Add the center-loss term             | `False` (see below)                          |
 
 **Epoch budget.** Batches per epoch are `(identities_per_epoch * crops_per_identity) // (p * k)`. Defaults (`"all"` identities, `crops_per_identity=k`) give about `num_identities // p` batches (about 25 for ~200 MOT17 identities with `p=8`). Raise `crops_per_identity` to deepen an epoch without visiting every frame. Lower `identities_per_epoch` for smoke tests.
 
 With `val_data` set, `output_dir` stores the best-epoch checkpoint (`weights.safetensors` and `reid_config.json`). `result.history` has per-epoch train (and val) losses: plot `total` / `val_total` and confirm they trend down before trusting the run.
+
+**Center loss (opt-in).** `train_reid` optimizes cross-entropy plus a batch-hard triplet term. `use_center=True` adds the third Bag-of-Tricks term, which pulls embeddings toward a learnable per-identity center. It is off by default because batch-hard triplet already enforces intra-class compactness, so the two terms largely overlap.
+
+Two differences from the Bag-of-Tricks reference are worth knowing before you compare runs. Centers here share the main Adam optimizer rather than getting their own SGD optimizer, and Adam normalizes gradient magnitude — so `center_weight` changes how hard the term pulls the embeddings but does not change how fast the centers themselves move. Only `center_lr` does that, and it needs to stay large (the `0.5` default): centers start from `randn` and must travel a long way onto the embedding manifold, so at `0.01` they barely leave their initialisation within a typical run.
 
 ---
 
