@@ -97,6 +97,8 @@ class ReIDModel:
         backbone: Feature-extractor module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
         device: Device the backbone runs on.
         preprocessing: Crop and embedding preprocessing.
+        architecture: Registered architecture name, required by
+            ``save_pretrained``. ``None`` for a raw ``nn.Module`` backbone.
     """
 
     def __init__(
@@ -104,6 +106,7 @@ class ReIDModel:
         backbone: nn.Module,
         device: torch.device,
         preprocessing: ReIDPreprocessing,
+        architecture: str | None = None,
     ) -> None:
         self._backbone = backbone
         # Encoders are inference-only; force eval() so callers that pass a raw
@@ -112,9 +115,7 @@ class ReIDModel:
         self._device = device
         self._preprocessing = preprocessing
         self._transforms = preprocessing.build_transform()
-        # Set by from_pretrained() to enable save_pretrained(); None if the
-        # model was constructed directly with a raw nn.Module architecture.
-        self._architecture: str | None = None
+        self._architecture = architecture
         logger.info("ReIDModel preprocessing: %s", preprocessing.describe())
 
     @property
@@ -181,10 +182,12 @@ class ReIDModel:
 
         backbone.to(resolved_device)
 
-        instance = cls(backbone, resolved_device, plan.preprocessing)
-        # Store the architecture name (string only) to enable save_pretrained.
-        instance._architecture = plan.architecture if isinstance(plan.architecture, str) else None
-        return instance
+        return cls(
+            backbone,
+            resolved_device,
+            plan.preprocessing,
+            architecture=plan.architecture if isinstance(plan.architecture, str) else None,
+        )
 
     def save_pretrained(self, directory: str) -> None:
         """Persist ``weights.safetensors`` and ``reid_config.json`` for later loads.

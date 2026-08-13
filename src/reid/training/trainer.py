@@ -9,24 +9,51 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Protocol, runtime_checkable
 
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+
+from reid.architectures import build_architecture
 from reid.data import ReIDSplit, load_identity_crops
+from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
+from reid.model import ReIDModel, _select_device
 from reid.preprocessing import ReIDPreprocessing
-from reid.training.datasets import IdentitiesPerEpoch
-
-if TYPE_CHECKING:
-    import torch
-    from torch import nn
-    from torch.utils.data import DataLoader
-
-    from reid.model import ReIDModel
-    from reid.training.datasets import ReIDTrainDataset
-    from reid.training.losses import ReIDLoss
+from reid.training.datasets import (
+    IdentitiesPerEpoch,
+    PKSampler,
+    ReIDTrainDataset,
+    _resolve_pk_num_batches,
+    build_eval_transform,
+    build_train_transform,
+)
+from reid.training.losses import ReIDLoss
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class TrainableBackbone(Protocol):
+    """Contract a backbone must satisfy to be fine-tuned by :func:`train_reid`.
+
+    Satisfied by :class:`~reid.architectures.osnet.OSNet` and
+    :class:`~reid.architectures.fastreid_sbs.FastReIDSBSResNeSt50` when built
+    with ``num_classes > 0``.
+    """
+
+    feature_dim: int
+
+    def forward_embeddings_logits(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return ``(embeddings, logits)`` for a batch of crops."""
+        ...
+
+    def set_backbone_frozen(self, frozen: bool) -> None:
+        """Freeze or unfreeze the trunk, keeping the training head trainable."""
+        ...
 
 
 @dataclass
@@ -104,8 +131,6 @@ class TrainConfig:
 
     def num_batches(self, num_identities: int) -> int:
         """PK batches per epoch for a dataset with ``num_identities`` labels."""
-        from reid.training.datasets import _resolve_pk_num_batches
-
         return _resolve_pk_num_batches(
             num_identities,
             self.p,
@@ -127,37 +152,7 @@ class TrainResult:
     best_val_total: float | None = None
 
 
-def _forward_embeddings_logits(
-    backbone: nn.Module,
-    images: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return ``(embeddings, logits)`` from a trainable ReID backbone.
-
-    Supported architectures implement ``forward_embeddings_logits`` (OSNet and
-    FastReID SBS ResNeSt50).
-    """
-    forward_train = getattr(backbone, "forward_embeddings_logits", None)
-    if not callable(forward_train):
-        raise TypeError(
-            "train_reid expects a backbone with forward_embeddings_logits(images) "
-            f"-> (embeddings, logits). Supported: OSNet, FastReID SBS. "
-            f"Got {type(backbone).__name__}."
-        )
-    return forward_train(images)
-
-
-def _set_backbone_frozen(backbone: nn.Module, frozen: bool) -> None:
-    """Freeze/unfreeze the trunk while keeping the training head trainable."""
-    set_frozen = getattr(backbone, "set_backbone_frozen", None)
-    if not callable(set_frozen):
-        raise TypeError(
-            "train_reid expects a backbone with set_backbone_frozen(frozen). "
-            f"Supported: OSNet, FastReID SBS. Got {type(backbone).__name__}."
-        )
-    set_frozen(frozen)
-
-
-def _build_lr_lambda(config: TrainConfig):
+def _build_lr_lambda(config: TrainConfig) -> Callable[[int], float]:
     def lr_lambda(epoch: int) -> float:
         if config.warmup_epochs > 0 and epoch < config.warmup_epochs:
             return float(epoch + 1) / float(config.warmup_epochs)
@@ -183,8 +178,6 @@ def _resolve_training_recipe(
     carries a classifier head that inference checkpoints do not contain, so the
     warm-start is a deliberately partial load (see :func:`_build_trainable_backbone`).
     """
-    from reid.loaders import resolve_load_plan
-
     plan = resolve_load_plan(pretrained, architecture, preprocessing)
     return plan.architecture, plan.weights, plan.preprocessing
 
@@ -195,11 +188,18 @@ def _build_trainable_backbone(
     num_classes: int,
     device: torch.device,
 ) -> nn.Module:
-    """Build a backbone with a classifier head and optional warm-start weights."""
-    from reid.architectures import build_architecture
-    from reid.loaders import load_state_dict, resolve_weights
+    """Build a backbone with a classifier head and optional warm-start weights.
 
+    Raises:
+        TypeError: If the architecture does not satisfy :class:`TrainableBackbone`.
+    """
     backbone = build_architecture(arch_name, num_classes=num_classes)
+    if not isinstance(backbone, TrainableBackbone):
+        raise TypeError(
+            "train_reid needs a backbone implementing forward_embeddings_logits(images), "
+            "set_backbone_frozen(frozen), and feature_dim. Supported: OSNet, FastReID SBS. "
+            f"Got {type(backbone).__name__}."
+        )
     if weights_source is not None:
         local_path = resolve_weights(weights_source)
         # Warm-start is a partial load by design: the classifier head is fresh
@@ -227,21 +227,19 @@ def _run_epoch(
     device: torch.device,
     use_amp: bool,
     optimizer: torch.optim.Optimizer | None,
-    scaler: torch.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler,
     log_interval: int,
     epoch: int,
     step: int,
     frozen_backbone: bool = False,
 ) -> tuple[dict[str, float], int]:
     """Run one train or eval epoch. When ``optimizer`` is set, apply gradients."""
-    import torch
-
     train_mode = optimizer is not None
     if train_mode:
         backbone.train()
         # ``backbone.train()`` would undo trunk ``eval()`` from freeze; re-apply.
         if frozen_backbone:
-            _set_backbone_frozen(backbone, True)
+            backbone.set_backbone_frozen(True)
     else:
         backbone.eval()
 
@@ -251,16 +249,14 @@ def _run_epoch(
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
 
-        if train_mode:
-            assert optimizer is not None and scaler is not None
+        if optimizer is not None:
             optimizer.zero_grad(set_to_none=True)
 
         with torch.autocast(device_type=device.type, enabled=use_amp):
-            embeddings, logits = _forward_embeddings_logits(backbone, images)
+            embeddings, logits = backbone.forward_embeddings_logits(images)
             loss, components = loss_fn(embeddings, logits, labels)
 
-        if train_mode:
-            assert optimizer is not None and scaler is not None
+        if optimizer is not None:
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -288,14 +284,7 @@ def _build_val_loader(
     preprocessing: ReIDPreprocessing,
     device: torch.device,
 ) -> DataLoader:
-    from torch.utils.data import DataLoader
-
-    from reid.training.datasets import (
-        PKSampler,
-        ReIDTrainDataset,
-        build_eval_transform,
-    )
-
+    """Build a PK-sampled val loader over crops sharing train identity folders."""
     val_split = val_data if isinstance(val_data, ReIDSplit) else load_identity_crops(val_data)
     eval_transform = build_eval_transform(
         input_size=preprocessing.input_size,
@@ -365,17 +354,6 @@ def train_reid(
     Returns:
         :class:`TrainResult`.
     """
-    import torch
-    from torch.utils.data import DataLoader
-
-    from reid.model import ReIDModel, _select_device
-    from reid.training.datasets import (
-        PKSampler,
-        ReIDTrainDataset,
-        build_train_transform,
-    )
-    from reid.training.losses import ReIDLoss
-
     config = config or TrainConfig()
     device = _select_device(config.device)
     torch.manual_seed(config.seed)
@@ -415,15 +393,9 @@ def train_reid(
 
     backbone = _build_trainable_backbone(arch_name, weights_source, num_classes, device)
     backbone.to(device).train()
-    if not hasattr(backbone, "feature_dim"):
-        raise TypeError(
-            f"Trainable backbone {type(backbone).__name__} must expose feature_dim "
-            "(embedding size for losses / center loss)."
-        )
-    feat_dim = int(backbone.feature_dim)
     loss_fn = ReIDLoss(
         num_classes,
-        feat_dim,
+        int(backbone.feature_dim),
         margin=config.margin,
         label_smoothing=config.label_smoothing,
         triplet_weight=config.triplet_weight,
@@ -432,7 +404,7 @@ def train_reid(
     ).to(device)
 
     param_groups: list[dict] = [{"params": backbone.parameters()}]
-    if config.use_center and loss_fn.center is not None:
+    if loss_fn.center is not None:
         param_groups.append(
             {
                 "params": loss_fn.center.parameters(),
@@ -456,7 +428,7 @@ def train_reid(
     for epoch in range(config.epochs):
         sampler.set_epoch(epoch)
         frozen = epoch < config.freeze_backbone_epochs
-        _set_backbone_frozen(backbone, frozen=frozen)
+        backbone.set_backbone_frozen(frozen)
 
         epoch_mean, step = _run_epoch(
             backbone=backbone,
@@ -487,7 +459,7 @@ def train_reid(
                     device=device,
                     use_amp=use_amp,
                     optimizer=None,
-                    scaler=None,
+                    scaler=scaler,
                     log_interval=config.log_interval,
                     epoch=epoch,
                     step=step,
@@ -519,8 +491,12 @@ def train_reid(
         )
 
     backbone.eval()
-    model = ReIDModel(backbone, device, resolved_preprocessing)
-    model._architecture = arch_name if isinstance(arch_name, str) else None
+    model = ReIDModel(
+        backbone,
+        device,
+        resolved_preprocessing,
+        architecture=arch_name if isinstance(arch_name, str) else None,
+    )
 
     saved_dir = None
     if output_dir is not None:

@@ -18,6 +18,7 @@ from PIL import Image
 
 from reid.architectures import build_architecture
 from reid.training import TrainConfig, train_reid
+from reid.training.trainer import TrainableBackbone
 
 
 def _make_crops(root: Path, num_ids: int, num_per: int) -> None:
@@ -36,6 +37,17 @@ class TestTrainConfig:
     def test_rejects_degenerate_pk_with_triplet(self) -> None:
         with pytest.raises(ValueError, match="p >= 2 and k >= 2"):
             TrainConfig(p=1, k=4, triplet_weight=1.0)
+
+
+class TestTrainableBackbone:
+    """Tests for the backbone contract :func:`train_reid` requires."""
+
+    def test_shipped_architecture_satisfies_contract(self) -> None:
+        backbone = build_architecture("osnet_x0_25", num_classes=4)
+        assert isinstance(backbone, TrainableBackbone)
+
+    def test_plain_module_does_not_satisfy_contract(self) -> None:
+        assert not isinstance(torch.nn.Linear(4, 4), TrainableBackbone)
 
 
 class TestBackboneFreeze:

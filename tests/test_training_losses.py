@@ -33,7 +33,7 @@ class TestReIDLoss:
     """Tests for :class:`ReIDLoss`."""
 
     def test_default_excludes_center_and_backprops(self) -> None:
-        loss_fn = ReIDLoss(num_classes=4, feat_dim=8)
+        loss_fn = ReIDLoss(num_classes=4, feature_dim=8)
         embeddings = torch.randn(8, 8, requires_grad=True)
         logits = torch.randn(8, 4)
         labels = torch.tensor([0, 0, 1, 1, 2, 2, 3, 3])

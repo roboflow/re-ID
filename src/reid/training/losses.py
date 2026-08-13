@@ -71,11 +71,11 @@ class BatchHardTripletLoss(nn.Module):
 class CenterLoss(nn.Module):
     """Center loss: pull embeddings toward learnable class centers."""
 
-    def __init__(self, num_classes: int, feat_dim: int) -> None:
+    def __init__(self, num_classes: int, feature_dim: int) -> None:
         super().__init__()
         self.num_classes = num_classes
-        self.feat_dim = feat_dim
-        self.centers = nn.Parameter(torch.randn(num_classes, feat_dim))
+        self.feature_dim = feature_dim
+        self.centers = nn.Parameter(torch.randn(num_classes, feature_dim))
 
     def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """Compute center loss."""
@@ -89,7 +89,7 @@ class ReIDLoss(nn.Module):
     def __init__(
         self,
         num_classes: int,
-        feat_dim: int,
+        feature_dim: int,
         *,
         margin: float = 0.3,
         label_smoothing: float = 0.1,
@@ -102,9 +102,8 @@ class ReIDLoss(nn.Module):
         self.cross_entropy = CrossEntropyLabelSmooth(num_classes, label_smoothing)
         self.triplet = BatchHardTripletLoss(margin=margin, normalize=normalize_triplet)
         self.triplet_weight = triplet_weight
-        self.use_center = use_center
         self.center_weight = center_weight if use_center else 0.0
-        self.center = CenterLoss(num_classes, feat_dim) if use_center else None
+        self.center = CenterLoss(num_classes, feature_dim) if use_center else None
 
     def forward(
         self,

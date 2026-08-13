@@ -15,6 +15,16 @@ from typing import TYPE_CHECKING, Literal
 
 from PIL import Image
 from torch.utils.data import Dataset, Sampler
+from torchvision.transforms import (
+    ColorJitter,
+    Compose,
+    InterpolationMode,
+    Normalize,
+    RandomErasing,
+    RandomHorizontalFlip,
+    Resize,
+    ToTensor,
+)
 
 from reid.data import ReIDSplit
 from reid.preprocessing import (
@@ -35,19 +45,8 @@ def build_train_transform(
     input_size: tuple[int, int] = REID_INPUT_SIZE,
     mean: tuple[float, float, float] = IMAGENET_MEAN,
     std: tuple[float, float, float] = IMAGENET_STD,
-):
+) -> Compose:
     """Training augmentations matching inference geometry (resize, flip, jitter, erase)."""
-    from torchvision.transforms import (
-        ColorJitter,
-        Compose,
-        InterpolationMode,
-        Normalize,
-        RandomErasing,
-        RandomHorizontalFlip,
-        Resize,
-        ToTensor,
-    )
-
     return Compose(
         [
             Resize(input_size, interpolation=InterpolationMode.BILINEAR),
@@ -64,16 +63,8 @@ def build_eval_transform(
     input_size: tuple[int, int] = REID_INPUT_SIZE,
     mean: tuple[float, float, float] = IMAGENET_MEAN,
     std: tuple[float, float, float] = IMAGENET_STD,
-):
+) -> Compose:
     """Deterministic resize + normalize for validation (no augmentation)."""
-    from torchvision.transforms import (
-        Compose,
-        InterpolationMode,
-        Normalize,
-        Resize,
-        ToTensor,
-    )
-
     return Compose(
         [
             Resize(input_size, interpolation=InterpolationMode.BILINEAR),

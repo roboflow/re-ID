@@ -14,10 +14,20 @@ from __future__ import annotations
 
 import configparser
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+
+class MOTSplit(str, Enum):
+    """Frame range selected from each MOT sequence."""
+
+    TRAIN_HALF = "train_half"
+    VAL_HALF = "val_half"
+    FULL = "full"
+
 
 # MOT17 sequences are released three times, once per public detector. The
 # frames and ground truth are identical across variants, so we keep only one
@@ -35,8 +45,6 @@ _COL_BBOX = slice(2, 6)
 _COL_CONF = 6
 _COL_CLASS = 7
 _COL_VISIBILITY = 8
-
-_VALID_SPLITS = ("train_half", "val_half", "full")
 
 
 def sequence_qualified_track_key(sequence: str, track_id: int) -> str:
@@ -109,14 +117,14 @@ def _train_half_cutoff(sequence_dir: Path, gt_rows: np.ndarray) -> int:
 
 def _select_split_mask(
     gt_rows: np.ndarray,
-    split: str,
+    split: MOTSplit,
     cutoff: int,
 ) -> np.ndarray:
     """Boolean mask selecting rows whose frame belongs to ``split``."""
     frames = gt_rows[:, _COL_FRAME]
-    if split == "train_half":
+    if split is MOTSplit.TRAIN_HALF:
         return frames <= cutoff
-    if split == "val_half":
+    if split is MOTSplit.VAL_HALF:
         return frames > cutoff
     return np.ones(len(gt_rows), dtype=bool)
 
@@ -167,7 +175,7 @@ def _crop_rows_from_sequence(
     image_dir: Path,
     output_dir: Path,
     *,
-    split: str,
+    split: MOTSplit,
     min_visibility: float,
     min_side: int,
     image_ext: str,
@@ -181,7 +189,7 @@ def _crop_rows_from_sequence(
     if len(gt_rows) == 0:
         return
 
-    if split == "full":
+    if split is MOTSplit.FULL:
         cutoff = int(gt_rows[:, _COL_FRAME].max()) if len(gt_rows) else 0
     else:
         cutoff = _train_half_cutoff(image_dir.parent, gt_rows)
@@ -245,7 +253,7 @@ def generate_mot_patches(
     mot_root: str | Path,
     output_dir: str | Path,
     *,
-    split: str = "train_half",
+    split: MOTSplit | str = MOTSplit.TRAIN_HALF,
     sequences: list[str] | None = None,
     min_visibility: float = 0.0,
     min_side: int = 0,
@@ -258,7 +266,7 @@ def generate_mot_patches(
     Args:
         mot_root: MOT root with sequence folders (``gt/gt.txt``, ``img1/``).
         output_dir: Destination crop root.
-        split: ``"train_half"``, ``"val_half"``, or ``"full"``.
+        split: Frame range per sequence; a :class:`MOTSplit` or its string value.
         sequences: Optional sequence names to process.
         min_visibility: Minimum GT visibility to keep a box.
         min_side: Minimum crop short side in pixels.
@@ -271,8 +279,11 @@ def generate_mot_patches(
     Returns:
         :class:`PatchGenerationStats`.
     """
-    if split not in _VALID_SPLITS:
-        raise ValueError(f"split must be one of {_VALID_SPLITS}, got {split!r}.")
+    try:
+        split = MOTSplit(split)
+    except ValueError as error:
+        choices = sorted(member.value for member in MOTSplit)
+        raise ValueError(f"Unknown split {split!r}. Choose from: {choices}") from error
 
     mot_root = Path(mot_root)
     if not mot_root.is_dir():
