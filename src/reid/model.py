@@ -192,6 +192,9 @@ class ReIDModel:
     def save_pretrained(self, directory: str) -> None:
         """Persist ``weights.safetensors`` and ``reid_config.json`` for later loads.
 
+        Only inference weights are written; a training ``classifier`` head, if
+        present, is dropped.
+
         Args:
             directory: Output directory (created if missing).
 
@@ -209,7 +212,13 @@ class ReIDModel:
         os.makedirs(directory, exist_ok=True)
 
         weights_path = os.path.join(directory, "weights.safetensors")
-        state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
+        # Inference artifact only: the training classifier head is skipped by
+        # every load path and its identity->label map is not persisted.
+        state_dict = {
+            key: value.detach().cpu()
+            for key, value in self._backbone.state_dict().items()
+            if not key.startswith("classifier.")
+        }
         save_file(state_dict, weights_path)
 
         card = ModelCard(

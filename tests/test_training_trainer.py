@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,7 @@ import pytest
 import supervision as sv
 import torch
 from PIL import Image
+from safetensors import safe_open
 
 from reid.architectures import build_architecture
 from reid.training import TrainConfig, train_reid
@@ -37,6 +39,15 @@ class TestTrainConfig:
     def test_rejects_degenerate_pk_with_triplet(self) -> None:
         with pytest.raises(ValueError, match="p >= 2 and k >= 2"):
             TrainConfig(p=1, k=4, triplet_weight=1.0)
+
+    def test_crops_per_identity_follows_k_after_replace(self) -> None:
+        base = TrainConfig(p=8, k=4)
+        swept = dataclasses.replace(base, k=8)
+
+        assert base.crops_per_identity is None
+        assert base.num_batches(320) == 40
+        assert swept.num_batches(320) == 40
+        assert dataclasses.replace(base, crops_per_identity=8).num_batches(320) == 80
 
 
 class TestTrainableBackbone:
@@ -100,6 +111,11 @@ class TestTrainReid:
         assert result.best_epoch is None
         assert (out_dir / "weights.safetensors").exists()
         assert (out_dir / "reid_config.json").exists()
+
+        with safe_open(out_dir / "weights.safetensors", framework="pt") as saved:
+            saved_keys = set(saved.keys())
+        assert not any(key.startswith("classifier.") for key in saved_keys)
+        assert saved_keys == {key for key in result.model._backbone.state_dict() if not key.startswith("classifier.")}
 
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
         detections = sv.Detections(xyxy=np.array([[10, 10, 40, 80]], dtype=float))

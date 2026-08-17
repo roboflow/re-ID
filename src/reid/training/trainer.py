@@ -123,9 +123,7 @@ class TrainConfig:
             not isinstance(self.identities_per_epoch, int) or self.identities_per_epoch < 1
         ):
             raise ValueError(f"identities_per_epoch must be 'all' or an int >= 1, got {self.identities_per_epoch!r}.")
-        if self.crops_per_identity is None:
-            self.crops_per_identity = self.k
-        elif self.crops_per_identity < 1:
+        if self.crops_per_identity is not None and self.crops_per_identity < 1:
             raise ValueError(f"crops_per_identity must be >= 1, got {self.crops_per_identity}.")
         if self.log_interval < 0:
             raise ValueError(f"log_interval must be >= 0, got {self.log_interval}.")
@@ -142,7 +140,7 @@ class TrainConfig:
             self.p,
             self.k,
             identities_per_epoch=self.identities_per_epoch,
-            crops_per_identity=int(self.crops_per_identity),
+            crops_per_identity=self.k if self.crops_per_identity is None else self.crops_per_identity,
         )
 
 
