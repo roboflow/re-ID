@@ -198,10 +198,14 @@ def _crop_rows_from_sequence(
     keep &= gt_rows[:, _COL_CLASS].astype(int) == _PEDESTRIAN_CLASS
     keep &= gt_rows[:, _COL_CONF] > 0
     rows = gt_rows[keep]
+    # MOT GT is identity-major; visit frame-major so each frame is decoded once
+    # and only the current frame is held in memory.
+    rows = rows[np.argsort(rows[:, _COL_FRAME], kind="stable")]
 
     seq_crops = 0
     seq_identities: set[str] = set()
-    frame_cache: dict[int, np.ndarray | None] = {}
+    cached_frame = -1
+    image: np.ndarray | None = None
 
     for row in rows:
         visibility = row[_COL_VISIBILITY] if len(row) > _COL_VISIBILITY else 1.0
@@ -210,10 +214,10 @@ def _crop_rows_from_sequence(
             continue
 
         frame = int(row[_COL_FRAME])
-        if frame not in frame_cache:
+        if frame != cached_frame:
             image_path = _frame_image_path(image_dir, frame, image_ext)
-            frame_cache[frame] = cv2.imread(str(image_path)) if image_path.exists() else None
-        image = frame_cache[frame]
+            image = cv2.imread(str(image_path)) if image_path.exists() else None
+            cached_frame = frame
         if image is None:
             stats.skipped_degenerate += 1
             continue
