@@ -290,11 +290,7 @@ def _build_val_loader(
 ) -> DataLoader:
     """Build a PK-sampled val loader over crops sharing train identity folders."""
     val_split = val_data if isinstance(val_data, ReIDSplit) else load_identity_crops(val_data)
-    eval_transform = build_eval_transform(
-        input_size=preprocessing.input_size,
-        mean=preprocessing.mean,
-        std=preprocessing.std,
-    )
+    eval_transform = build_eval_transform(preprocessing)
     val_dataset = ReIDTrainDataset.from_identity_label_map(
         val_split,
         train_dataset.label_by_identity,
@@ -367,11 +363,7 @@ def train_reid(
     arch_name, weights_source, resolved_preprocessing = _resolve_training_recipe(
         architecture, pretrained, preprocessing
     )
-    transform = build_train_transform(
-        input_size=resolved_preprocessing.input_size,
-        mean=resolved_preprocessing.mean,
-        std=resolved_preprocessing.std,
-    )
+    transform = build_train_transform(resolved_preprocessing)
     dataset = ReIDTrainDataset(split, transform=transform)
     num_classes = dataset.num_classes
     logger.info("Crop dataset: %d identities, %d crops", num_classes, len(dataset))

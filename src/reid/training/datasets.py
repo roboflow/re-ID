@@ -13,25 +13,20 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset, Sampler
 from torchvision.transforms import (
     ColorJitter,
     Compose,
-    InterpolationMode,
     Normalize,
     RandomErasing,
     RandomHorizontalFlip,
-    Resize,
     ToTensor,
 )
 
 from reid.data import ReIDSplit
-from reid.preprocessing import (
-    IMAGENET_MEAN,
-    IMAGENET_STD,
-    REID_INPUT_SIZE,
-)
+from reid.preprocessing import ReIDPreprocessing
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -41,35 +36,43 @@ if TYPE_CHECKING:
 IdentitiesPerEpoch = int | Literal["all"]
 
 
-def build_train_transform(
-    input_size: tuple[int, int] = REID_INPUT_SIZE,
-    mean: tuple[float, float, float] = IMAGENET_MEAN,
-    std: tuple[float, float, float] = IMAGENET_STD,
-) -> Compose:
+class _ResizeCrop:
+    """Resize a PIL crop with :meth:`ReIDPreprocessing.resize_crop`.
+
+    Reusing the inference resize keeps ``resize_mode`` / ``interpolation`` and
+    the OpenCV resampler identical between training and serving.
+    """
+
+    def __init__(self, preprocessing: ReIDPreprocessing) -> None:
+        self.preprocessing = preprocessing
+
+    def __call__(self, image: Image.Image) -> Image.Image:
+        return Image.fromarray(self.preprocessing.resize_crop(np.asarray(image)))
+
+
+def build_train_transform(preprocessing: ReIDPreprocessing | None = None) -> Compose:
     """Training augmentations matching inference geometry (resize, flip, jitter, erase)."""
+    preprocessing = preprocessing or ReIDPreprocessing()
     return Compose(
         [
-            Resize(input_size, interpolation=InterpolationMode.BILINEAR),
+            _ResizeCrop(preprocessing),
             RandomHorizontalFlip(p=0.5),
             ColorJitter(brightness=0.2, contrast=0.15, saturation=0.15, hue=0.0),
             ToTensor(),
-            Normalize(mean=list(mean), std=list(std)),
+            Normalize(mean=list(preprocessing.mean), std=list(preprocessing.std)),
             RandomErasing(p=0.5, value="random"),
         ]
     )
 
 
-def build_eval_transform(
-    input_size: tuple[int, int] = REID_INPUT_SIZE,
-    mean: tuple[float, float, float] = IMAGENET_MEAN,
-    std: tuple[float, float, float] = IMAGENET_STD,
-) -> Compose:
+def build_eval_transform(preprocessing: ReIDPreprocessing | None = None) -> Compose:
     """Deterministic resize + normalize for validation (no augmentation)."""
+    preprocessing = preprocessing or ReIDPreprocessing()
     return Compose(
         [
-            Resize(input_size, interpolation=InterpolationMode.BILINEAR),
+            _ResizeCrop(preprocessing),
             ToTensor(),
-            Normalize(mean=list(mean), std=list(std)),
+            Normalize(mean=list(preprocessing.mean), std=list(preprocessing.std)),
         ]
     )
 
