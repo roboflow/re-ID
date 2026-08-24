@@ -124,6 +124,19 @@ class TestTrainReid:
         embeddings = result.model.extract_features(detections, frame)
         assert embeddings.shape == (1, 512)
 
+    def test_warm_start_rejects_mismatched_checkpoint(self, tmp_path: Path) -> None:
+        """A checkpoint matching ~0% of the architecture must raise, not train from random init."""
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        wrong_ckpt = tmp_path / "wrong.pth"
+        torch.save({"backbone.stem.weight": torch.randn(4, 3, 3, 3)}, wrong_ckpt)
+        config = TrainConfig(
+            epochs=1, p=2, k=2, warmup_epochs=0, num_workers=0, amp=False, device="cpu", log_interval=0
+        )
+
+        with pytest.raises(ValueError, match="matched only"):
+            train_reid(data_root, config, architecture="osnet_x0_25", pretrained=str(wrong_ckpt))
+
     def test_preprocessing_round_trips_through_save(self, tmp_path: Path) -> None:
         data_root = tmp_path / "crops"
         _make_crops(data_root, num_ids=4, num_per=4)

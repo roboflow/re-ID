@@ -206,14 +206,15 @@ def _build_trainable_backbone(
         )
     if weights_source is not None:
         local_path = resolve_weights(weights_source)
-        # Warm-start is a partial load by design: the classifier head is fresh
-        # (num_classes differs from any source checkpoint), so no strict
-        # required_match_fraction is enforced.
+        # Warm-start is a partial load by design: the classifier head is fresh,
+        # so a couple of keys always miss. The 0.5 floor still rejects a
+        # checkpoint that does not match the architecture at all.
         load_state_dict(
             backbone,
             local_path,
             device,
             architecture=arch_name if isinstance(arch_name, str) else None,
+            required_match_fraction=0.5,
         )
         logger.info("Warm-start from %s", weights_source)
     return backbone
