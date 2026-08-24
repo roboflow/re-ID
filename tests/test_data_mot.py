@@ -103,13 +103,35 @@ class TestGenerateMotPatches:
         _write_sequence(mot_root, "SEQ-01", seq_length=2, rows=rows)
 
         out = tmp_path / "out"
-        stats = generate_mot_patches(mot_root, out, split="full", min_visibility=0.5, min_side=10)
+        stats = generate_mot_patches(mot_root, out, split="full", class_ids=[1], min_visibility=0.5, min_side=10)
 
         assert stats.num_identities == 1
         assert sorted(p.name for p in out.iterdir() if p.is_dir()) == ["SEQ-01_1"]
         assert stats.num_crops == 2
         assert stats.skipped_low_visibility == 1
         assert stats.skipped_small == 1
+
+    def test_class_ids_none_keeps_every_class(self, tmp_path: Path) -> None:
+        mot_root = tmp_path / "MOT"
+        rows = [_box(1, 1, cls=1), _box(1, 2, cls=2), _box(1, 3, cls=7)]
+        _write_sequence(mot_root, "SEQ-01", seq_length=1, rows=rows)
+
+        out = tmp_path / "out"
+        stats = generate_mot_patches(mot_root, out, split="full")
+
+        assert stats.num_identities == 3
+        assert stats.num_crops == 3
+
+    def test_class_ids_selects_requested_classes(self, tmp_path: Path) -> None:
+        mot_root = tmp_path / "MOT"
+        rows = [_box(1, 1, cls=1), _box(1, 2, cls=2), _box(1, 3, cls=7)]
+        _write_sequence(mot_root, "SEQ-01", seq_length=1, rows=rows)
+
+        out = tmp_path / "out"
+        stats = generate_mot_patches(mot_root, out, split="full", class_ids=[1, 7])
+
+        assert sorted(p.name for p in out.iterdir() if p.is_dir()) == ["SEQ-01_1", "SEQ-01_3"]
+        assert stats.num_identities == 2
 
     def test_detector_variants_are_deduplicated(self, tmp_path: Path) -> None:
         mot_root = tmp_path / "MOT"

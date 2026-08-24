@@ -130,7 +130,7 @@ from reid import ReIDModel
 from reid.data.mot import generate_mot_patches
 from reid.training import TrainConfig, train_reid
 
-generate_mot_patches("/path/to/MOT17/train", "/path/to/crops/train", split="train_half")
+generate_mot_patches("/path/to/MOT17/train", "/path/to/crops/train", split="train_half", class_ids=[1])
 
 result = train_reid(
     "/path/to/crops/train",

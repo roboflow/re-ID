@@ -81,6 +81,7 @@ train_stats = generate_mot_patches(
     "/path/to/mot17/train",
     "/path/to/crops/train",
     split="full",
+    class_ids=[1],
 )
 print(train_stats.num_identities, train_stats.num_crops)
 ```
@@ -92,6 +93,7 @@ val_stats = generate_mot_patches(
     "/path/to/mot17/val",
     "/path/to/crops/val",
     split="full",
+    class_ids=[1],
 )
 ```
 
@@ -99,7 +101,9 @@ If you already have identity folders from another source, skip this step and pas
 
 `val_data` matches crops by identity folder name. Trackers' `mot17/val` holds later frames of the same sequences, so names like `MOT17-02_5` line up with train. If train and val share no folder names, training raises.
 
-Optional filters: `min_visibility` drops occluded boxes; `min_side` drops tiny crops. Defaults keep all GT rows that pass class and confidence checks.
+Optional filters: `class_ids` keeps only the listed ground-truth classes; `min_visibility` drops occluded boxes; `min_side` drops tiny crops. Apart from the confidence flag, the defaults keep every GT row.
+
+Class ids are dataset-specific, so `generate_mot_patches` assumes no taxonomy: `class_ids=None` (the default) crops every class. MOT17 needs `class_ids=[1]`, since it reserves other ids for vehicles, static persons, distractors, and occluders — training on those would treat furniture and reflections as identities. DanceTrack and SportsMOT label every box `1`, so the default is already correct there.
 
 ---
 

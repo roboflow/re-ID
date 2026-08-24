@@ -13,6 +13,7 @@ val-half tracking evaluation.
 from __future__ import annotations
 
 import configparser
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -33,9 +34,6 @@ class MOTSplit(str, Enum):
 # frames and ground truth are identical across variants, so we keep only one
 # variant per base sequence to avoid emitting triplicate crops.
 _DETECTOR_SUFFIXES = ("-FRCNN", "-DPM", "-SDP")
-
-# MOT Challenge class id for the "pedestrian" category we train re-ID on.
-_PEDESTRIAN_CLASS = 1
 
 # Column layout of a MOT ground-truth row:
 # frame, id, bb_left, bb_top, bb_width, bb_height, conf/flag, class, visibility
@@ -186,6 +184,7 @@ def _crop_rows_from_sequence(
     output_dir: Path,
     *,
     split: MOTSplit,
+    class_ids: Sequence[int] | None,
     min_visibility: float,
     min_side: int,
     image_ext: str,
@@ -210,7 +209,8 @@ def _crop_rows_from_sequence(
         cutoff = _train_half_cutoff(image_dir.parent)
 
     keep = _select_split_mask(gt_rows, split, cutoff)
-    keep &= gt_rows[:, _COL_CLASS].astype(int) == _PEDESTRIAN_CLASS
+    if class_ids is not None:
+        keep &= np.isin(gt_rows[:, _COL_CLASS].astype(int), np.asarray(class_ids, dtype=int))
     keep &= gt_rows[:, _COL_CONF] > 0
     rows = gt_rows[keep]
     # MOT GT is identity-major; visit frame-major so each frame is decoded once
@@ -274,6 +274,7 @@ def generate_mot_patches(
     *,
     split: MOTSplit | str = MOTSplit.TRAIN_HALF,
     sequences: list[str] | None = None,
+    class_ids: Sequence[int] | None = None,
     min_visibility: float = 0.0,
     min_side: int = 0,
     prefer_detector: str = "FRCNN",
@@ -287,6 +288,11 @@ def generate_mot_patches(
         output_dir: Destination crop root.
         split: Frame range per sequence; a :class:`MOTSplit` or its string value.
         sequences: Optional sequence names to process.
+        class_ids: Ground-truth class ids to crop. ``None`` keeps every class.
+            Class ids are dataset-specific: MOT17 marks pedestrians as ``1`` and
+            reserves other ids for vehicles, static persons, distractors, and
+            occluders, so pass ``[1]`` there. DanceTrack and SportsMOT label every
+            box ``1``, so the default already keeps exactly the tracked subjects.
         min_visibility: Minimum GT visibility to keep a box.
         min_side: Minimum crop short side in pixels.
         prefer_detector: Preferred MOT17 detector variant when de-duplicating.
@@ -342,6 +348,7 @@ def generate_mot_patches(
             sequence_dir / "img1",
             output_dir,
             split=split,
+            class_ids=class_ids,
             min_visibility=min_visibility,
             min_side=min_side,
             image_ext=image_ext,
