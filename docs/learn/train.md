@@ -35,7 +35,7 @@ from reid.training import TrainConfig, train_reid
 
 ## 1. Get MOT-format sequences
 
-Each sequence folder needs `gt/gt.txt` and `img1/*.jpg` (optional `seqinfo.ini`):
+Each sequence folder needs `gt/gt.txt`, `img1/*.jpg`, and `seqinfo.ini` (required by the `train_half` / `val_half` splits to place the frame cutoff):
 
 ```text
 mot17/train/

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 
 from reid.data.mot import generate_mot_patches, sequence_qualified_track_key
 
@@ -152,3 +153,26 @@ class TestGenerateMotPatches:
         assert stats.num_identities == 1
         assert stats.num_crops == 2
         assert stats.skipped_degenerate == 0
+
+    def test_wrong_image_ext_raises_instead_of_empty_output(self, tmp_path: Path) -> None:
+        mot_root = tmp_path / "MOT"
+        _write_sequence(mot_root, "SEQ-01", seq_length=2, rows=_pedestrian_rows(2, [1]))
+
+        with pytest.raises(RuntimeError, match="image_ext='png'"):
+            generate_mot_patches(mot_root, tmp_path / "out", split="full", image_ext="png")
+
+    def test_half_split_requires_seqinfo(self, tmp_path: Path) -> None:
+        mot_root = tmp_path / "MOT"
+        sequence_dir = _write_sequence(mot_root, "SEQ-01", seq_length=4, rows=_pedestrian_rows(4, [1, 2]))
+        (sequence_dir / "seqinfo.ini").unlink()
+
+        with pytest.raises(FileNotFoundError, match="seqLength"):
+            generate_mot_patches(mot_root, tmp_path / "out", split="train_half")
+
+    def test_min_visibility_requires_visibility_column(self, tmp_path: Path) -> None:
+        mot_root = tmp_path / "MOT"
+        rows = [row[:8] for row in _pedestrian_rows(2, [1])]
+        _write_sequence(mot_root, "SEQ-01", seq_length=2, rows=rows)
+
+        with pytest.raises(ValueError, match="visibility column"):
+            generate_mot_patches(mot_root, tmp_path / "out", split="full", min_visibility=0.5)

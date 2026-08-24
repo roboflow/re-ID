@@ -70,6 +70,7 @@ class PatchGenerationStats:
     skipped_low_visibility: int = 0
     skipped_small: int = 0
     skipped_degenerate: int = 0
+    skipped_missing_frame: int = 0
 
 
 def _sequence_base_name(name: str) -> str:
@@ -94,7 +95,7 @@ def _read_seq_length(sequence_dir: Path) -> int | None:
 
 
 def _load_gt_rows(gt_path: Path) -> np.ndarray:
-    """Load a MOT ground-truth file as a ``(N, >=9)`` float array.
+    """Load a MOT ground-truth file as a ``(N, >=8)`` float array.
 
     Parsed directly so crop generation can read the visibility column, which
     tracking-oriented MOT loaders typically drop.
@@ -107,11 +108,20 @@ def _load_gt_rows(gt_path: Path) -> np.ndarray:
     return rows
 
 
-def _train_half_cutoff(sequence_dir: Path, gt_rows: np.ndarray) -> int:
-    """Return ``L // 2``, the last frame index belonging to the train-half."""
+def _train_half_cutoff(sequence_dir: Path) -> int:
+    """Return ``L // 2``, the last frame index belonging to the train-half.
+
+    Raises:
+        FileNotFoundError: If ``seqinfo.ini`` is missing or lacks ``seqLength``;
+            guessing the length from annotated frames would silently move the
+            train/val cutoff.
+    """
     length = _read_seq_length(sequence_dir)
     if length is None:
-        length = int(gt_rows[:, _COL_FRAME].max()) if len(gt_rows) else 0
+        raise FileNotFoundError(
+            f"Cannot read seqLength from {sequence_dir / 'seqinfo.ini'}; "
+            "the train_half/val_half splits need it to place the frame cutoff."
+        )
     return length // 2
 
 
@@ -188,11 +198,16 @@ def _crop_rows_from_sequence(
     gt_rows = _load_gt_rows(gt_path)
     if len(gt_rows) == 0:
         return
+    if min_visibility > 0 and gt_rows.shape[1] <= _COL_VISIBILITY:
+        raise ValueError(
+            f"min_visibility={min_visibility} needs a visibility column, but {gt_path} has "
+            f"{gt_rows.shape[1]} columns. Use min_visibility=0 for ground truth without visibility."
+        )
 
     if split is MOTSplit.FULL:
         cutoff = int(gt_rows[:, _COL_FRAME].max()) if len(gt_rows) else 0
     else:
-        cutoff = _train_half_cutoff(image_dir.parent, gt_rows)
+        cutoff = _train_half_cutoff(image_dir.parent)
 
     keep = _select_split_mask(gt_rows, split, cutoff)
     keep &= gt_rows[:, _COL_CLASS].astype(int) == _PEDESTRIAN_CLASS
@@ -219,7 +234,7 @@ def _crop_rows_from_sequence(
             image = cv2.imread(str(image_path)) if image_path.exists() else None
             cached_frame = frame
         if image is None:
-            stats.skipped_degenerate += 1
+            stats.skipped_missing_frame += 1
             continue
 
         height, width = image.shape[:2]
@@ -282,6 +297,14 @@ def generate_mot_patches(
 
     Returns:
         :class:`PatchGenerationStats`.
+
+    Raises:
+        FileNotFoundError: If ``mot_root``, a requested sequence, or the
+            ``seqinfo.ini`` needed by the half splits is missing.
+        ValueError: If ``split`` is unknown, or ``min_visibility`` is set on
+            ground truth without a visibility column.
+        RuntimeError: If no crops are produced (wrong ``image_ext``, or the
+            split/filters exclude every box).
     """
     try:
         split = MOTSplit(split)
@@ -328,4 +351,15 @@ def generate_mot_patches(
         )
 
     stats.num_identities = len(identities)
+    if stats.num_crops == 0:
+        skipped = {
+            "missing_frame": stats.skipped_missing_frame,
+            "low_visibility": stats.skipped_low_visibility,
+            "small": stats.skipped_small,
+            "degenerate": stats.skipped_degenerate,
+        }
+        raise RuntimeError(
+            f"No crops produced from {mot_root} (skipped: {skipped}). "
+            f"Check image_ext={image_ext!r} matches the frame files and that the split/filters keep any boxes."
+        )
     return stats
