@@ -18,7 +18,9 @@ import torch
 from PIL import Image
 from safetensors import safe_open
 
+from reid import ReIDModel
 from reid.architectures import build_architecture
+from reid.preprocessing import ReIDPreprocessing
 from reid.training import TrainConfig, train_reid
 from reid.training.trainer import TrainableBackbone
 
@@ -121,6 +123,28 @@ class TestTrainReid:
         detections = sv.Detections(xyxy=np.array([[10, 10, 40, 80]], dtype=float))
         embeddings = result.model.extract_features(detections, frame)
         assert embeddings.shape == (1, 512)
+
+    def test_preprocessing_round_trips_through_save(self, tmp_path: Path) -> None:
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        config = TrainConfig(
+            epochs=1, p=2, k=2, warmup_epochs=0, num_workers=0, amp=False, device="cpu", log_interval=0
+        )
+        preprocessing = ReIDPreprocessing(resize_mode="letterbox", interpolation="bicubic")
+        out_dir = tmp_path / "checkpoint"
+
+        train_reid(
+            data_root,
+            config,
+            architecture="osnet_x0_25",
+            pretrained=None,
+            preprocessing=preprocessing,
+            output_dir=out_dir,
+        )
+        reloaded = ReIDModel.from_pretrained(str(out_dir))
+
+        assert reloaded._preprocessing.resize_mode == "letterbox"
+        assert reloaded._preprocessing.interpolation == preprocessing.interpolation
 
     def test_center_loss_is_reported_and_optimized(self, tmp_path: Path) -> None:
         data_root = tmp_path / "crops"

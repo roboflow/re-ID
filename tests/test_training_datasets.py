@@ -13,12 +13,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from reid.data import ReIDSplit, load_identity_crops
+from reid.preprocessing import ReIDPreprocessing
 from reid.training.datasets import (
     PKSampler,
     ReIDTrainDataset,
+    build_eval_transform,
     build_train_transform,
 )
 
@@ -31,6 +34,25 @@ def _make_crops(root: Path, num_ids: int = 4, num_per: int = 6) -> None:
         for j in range(num_per):
             array = (rng.random((48, 24, 3)) * 255).astype("uint8")
             Image.fromarray(array).save(identity_dir / f"{j}.jpg")
+
+
+class TestTransforms:
+    """Training transforms must resize exactly like inference."""
+
+    def test_eval_transform_matches_inference_resize(self) -> None:
+        """Training-side resize honours ``resize_mode`` / ``interpolation`` exactly like ``resize_crop``."""
+        preprocessing = ReIDPreprocessing(resize_mode="letterbox", interpolation="bicubic")
+        crop = (np.random.default_rng(0).random((200, 50, 3)) * 255).astype("uint8")
+
+        tensor = build_eval_transform(preprocessing)(Image.fromarray(crop))
+        pixels = (
+            tensor * torch.tensor(preprocessing.std)[:, None, None] + torch.tensor(preprocessing.mean)[:, None, None]
+        ) * 255
+
+        expected = torch.from_numpy(preprocessing.resize_crop(crop)).permute(2, 0, 1).float()
+        assert torch.allclose(pixels, expected, atol=0.5)
+        # A 200x50 crop letterboxed into 256x128 scales to 256x64, so columns 64+ are padding.
+        assert torch.all(pixels[:, :, 64:] == preprocessing.pad_value)
 
 
 class TestReIDTrainDataset:
