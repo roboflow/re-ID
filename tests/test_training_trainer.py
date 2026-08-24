@@ -124,6 +124,19 @@ class TestTrainReid:
         embeddings = result.model.extract_features(detections, frame)
         assert embeddings.shape == (1, 512)
 
+    def test_history_lr_is_the_trained_lr(self, tmp_path: Path) -> None:
+        """history['lr'] reports the LR the epoch trained at, not the post-step value."""
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        config = TrainConfig(
+            epochs=2, p=2, k=2, lr=0.1, warmup_epochs=2, num_workers=0, amp=False, device="cpu", log_interval=0
+        )
+
+        result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=None)
+
+        assert result.history[0]["lr"] == pytest.approx(0.05)
+        assert result.history[1]["lr"] == pytest.approx(0.1)
+
     def test_warm_start_rejects_mismatched_checkpoint(self, tmp_path: Path) -> None:
         """A checkpoint matching ~0% of the architecture must raise, not train from random init."""
         data_root = tmp_path / "crops"

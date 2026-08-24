@@ -440,9 +440,10 @@ def train_reid(
             step=step,
             frozen_backbone=frozen,
         )
-        scheduler.step()
         epoch_mean["epoch"] = epoch
+        # Record before scheduler.step() so this is the LR the epoch trained at.
         epoch_mean["lr"] = optimizer.param_groups[0]["lr"]
+        scheduler.step()
 
         if val_loader is not None:
             val_sampler = val_loader.batch_sampler
