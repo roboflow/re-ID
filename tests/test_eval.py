@@ -67,6 +67,19 @@ class TestComputeReidMetrics:
         assert metrics.rank1 == pytest.approx(0.0)
         assert metrics.rank5 == pytest.approx(100.0)
 
+    def test_max_rank_below_ten_raises(self) -> None:
+        from reid.eval.metrics import compute_reid_metrics
+
+        with pytest.raises(ValueError, match="max_rank"):
+            compute_reid_metrics(
+                np.array([[0.1, 0.2]], dtype=np.float32),
+                q_pids=np.array([1]),
+                g_pids=np.array([1, 2]),
+                q_camids=np.array([0]),
+                g_camids=np.array([1, 0]),
+                max_rank=5,
+            )
+
     def test_computes_map_cmc_and_minp_on_controlled_ranking(self) -> None:
         """One query, two true gallery matches after junk removal.
 
