@@ -137,6 +137,37 @@ class TestTrainReid:
         assert result.history[0]["lr"] == pytest.approx(0.05)
         assert result.history[1]["lr"] == pytest.approx(0.1)
 
+    def test_learns_separable_toy_identities(self, tmp_path: Path) -> None:
+        """Two epochs on colour-coded identities must cut the loss well below its start.
+
+        Loss ratio is the discriminator: ~0.67 when the loop trains, ~0.98 with
+        updates disabled. Retrieval is deliberately not asserted — a random
+        backbone already retrieves solid colours perfectly.
+        """
+        rng = np.random.default_rng(0)
+        data_root = tmp_path / "crops"
+        for i, color in enumerate([(255, 40, 40), (40, 255, 40), (40, 40, 255), (255, 255, 40)]):
+            identity_dir = data_root / f"id_{i}"
+            identity_dir.mkdir(parents=True)
+            for j in range(8):
+                crop = np.full((64, 32, 3), color, dtype=np.float32) + rng.normal(0, 20, (64, 32, 3))
+                Image.fromarray(np.clip(crop, 0, 255).astype("uint8")).save(identity_dir / f"{j}.jpg")
+
+        config = TrainConfig(
+            epochs=2,
+            p=4,
+            k=4,
+            warmup_epochs=0,
+            num_workers=0,
+            amp=False,
+            device="cpu",
+            log_interval=0,
+            identities_per_epoch=16,
+        )
+        result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=None)
+
+        assert result.history[-1]["total"] < 0.85 * result.history[0]["total"]
+
     def test_warm_start_rejects_mismatched_checkpoint(self, tmp_path: Path) -> None:
         """A checkpoint matching ~0% of the architecture must raise, not train from random init."""
         data_root = tmp_path / "crops"
