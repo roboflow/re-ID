@@ -29,6 +29,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from reid.architectures.encoder import TrainableEncoder
 from reid.preprocessing import ReIDPreprocessing
 
 FASTREID_SBS_ARCHITECTURE = "fastreid_sbs_resnest50"
@@ -72,7 +73,7 @@ class GeneralizedMeanPooling(nn.Module):
         return x.pow(1.0 / self.p)
 
 
-class FastReIDSBSResNeSt50(nn.Module):
+class FastReIDSBSResNeSt50(TrainableEncoder):
     """ResNeSt50 SBS re-ID encoder matching BoT-SORT / FastReID MOT17 checkpoints.
 
     Inference path: patched ``timm`` ResNeSt-50 → GeM (:attr:`pool`) → BNNeck
@@ -83,6 +84,8 @@ class FastReIDSBSResNeSt50(nn.Module):
     :func:`reid.training.train_reid` (same layout as FastReID ``EmbeddingHead``;
     classifier keys are dropped again on inference load).
     """
+
+    _head_modules = frozenset({"pool", "bottleneck", "classifier"})
 
     @classmethod
     def default_preprocessing(cls) -> ReIDPreprocessing:
@@ -122,25 +125,8 @@ class FastReIDSBSResNeSt50(nn.Module):
         x = self.pool(x).flatten(1)
         return self.bottleneck(x)
 
-    def forward_embeddings_logits(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return ``(embeddings, logits)`` for CE + triplet training."""
-        if not hasattr(self, "classifier"):
-            raise TypeError(
-                "FastReIDSBSResNeSt50 was built without a classifier head "
-                "(num_classes=0). Pass num_classes>0 for training."
-            )
-        embeddings = self.forward(x)
-        return embeddings, self.classifier(embeddings)
-
-    def set_backbone_frozen(self, frozen: bool) -> None:
-        """Freeze/unfreeze the ResNeSt trunk; keep pool / BNNeck / classifier trainable.
-
-        When frozen, the trunk is switched to ``eval()`` so BatchNorm running
-        statistics stop updating. Unfreezing restores trunk ``train()``.
-        """
-        for param in self.backbone.parameters():
-            param.requires_grad = not frozen
-        self.backbone.train(not frozen)
+    def _embed(self, x: torch.Tensor) -> torch.Tensor:
+        return self.forward(x)
 
 
 def build_fastreid_sbs_resnest50(*, num_classes: int = 0, pretrained: bool = False) -> FastReIDSBSResNeSt50:

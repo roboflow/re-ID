@@ -17,6 +17,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from reid.architectures.encoder import TrainableEncoder
 from reid.preprocessing import ReIDPreprocessing
 
 # --------------------------------------------------------------------------- #
@@ -152,7 +153,7 @@ class OSBlock(nn.Module):
 # --------------------------------------------------------------------------- #
 
 
-class OSNet(nn.Module):
+class OSNet(TrainableEncoder):
     """Omni-Scale Network for instance re-identification.
 
     Architecture from:
@@ -171,6 +172,8 @@ class OSNet(nn.Module):
         channels: Channel widths ``[stem, stage1, stage2, stage3]``.
         feature_dim: Dimensionality of the final embedding vector.
     """
+
+    _head_modules = frozenset({"fc", "classifier"})
 
     @classmethod
     def default_preprocessing(cls) -> ReIDPreprocessing:
