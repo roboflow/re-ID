@@ -198,7 +198,7 @@ reid_model = ReIDModel.from_pretrained("/path/to/checkpoint")
 tracker = BoTSORTTracker(reid_model=reid_model, appearance_threshold=0.2)
 ```
 
-MOT17 val-half eval in the study uses appearance threshold `0.2` (Table 8). Tracking HOTA / IDF1 on detector crops is the main domain-adaptation signal; gallery mAP alone does not predict ID switches.
+The MOT17 notebook fixes `appearance_threshold=0.2` for the val-half A/B (the BoT-SORT paper selects 0.25 on the same split; Aharon et al., 2022, [arXiv:2206.14651](https://arxiv.org/abs/2206.14651)). Tracking HOTA / IDF1 on detector crops is the main domain-adaptation signal; gallery mAP alone does not predict ID switches.
 
 The MOT17 notebook compares BoT-SORT with baseline ReID vs fine-tuned ReID on the seven val sequences.
 

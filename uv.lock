@@ -1909,8 +1909,8 @@ requires-dist = [
     { name = "safetensors", specifier = ">=0.4" },
     { name = "supervision", specifier = ">=0.26.1" },
     { name = "timm", specifier = ">=1.0" },
-    { name = "torch", specifier = ">=2.0" },
-    { name = "torchvision", specifier = ">=0.15" },
+    { name = "torch", specifier = ">=2.3" },
+    { name = "torchvision", specifier = ">=0.18" },
 ]
 provides-extras = ["dev"]
 

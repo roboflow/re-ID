@@ -21,8 +21,7 @@ from safetensors import safe_open
 from reid import ReIDModel
 from reid.architectures import build_architecture
 from reid.preprocessing import ReIDPreprocessing
-from reid.training import TrainConfig, train_reid
-from reid.training.trainer import TrainableBackbone
+from reid.training import TrainableBackbone, TrainConfig, train_reid
 
 
 def _make_crops(root: Path, num_ids: int, num_per: int) -> None:
@@ -124,6 +123,9 @@ class TestTrainReid:
         embeddings = result.model.extract_features(detections, frame)
         assert embeddings.shape == (1, 512)
 
+        reloaded = ReIDModel.from_pretrained(str(out_dir)).extract_features(detections, frame)
+        np.testing.assert_allclose(reloaded, embeddings, atol=1e-5)
+
     def test_history_lr_is_the_trained_lr(self, tmp_path: Path) -> None:
         """history['lr'] reports the LR the epoch trained at, not the post-step value."""
         data_root = tmp_path / "crops"
@@ -136,6 +138,34 @@ class TestTrainReid:
 
         assert result.history[0]["lr"] == pytest.approx(0.05)
         assert result.history[1]["lr"] == pytest.approx(0.1)
+
+    def test_freeze_backbone_epochs_keeps_trunk_fixed(self, tmp_path: Path) -> None:
+        """With every epoch frozen, warm-started trunk weights must not move while the head trains."""
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        reference = build_architecture("osnet_x0_25", num_classes=0)
+        checkpoint = tmp_path / "reference.pth"
+        torch.save(reference.state_dict(), checkpoint)
+        config = TrainConfig(
+            epochs=1,
+            p=2,
+            k=2,
+            warmup_epochs=0,
+            num_workers=0,
+            amp=False,
+            device="cpu",
+            log_interval=0,
+            freeze_backbone_epochs=1,
+        )
+
+        result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=str(checkpoint))
+
+        trained = result.model._backbone.state_dict()
+        source = reference.state_dict()
+        trunk = [key for key in trained if key in source and not key.startswith("fc.")]
+        assert trunk
+        assert all(torch.equal(trained[key], source[key]) for key in trunk)
+        assert any(not torch.equal(trained[key], source[key]) for key in trained if key.startswith("fc."))
 
     def test_learns_separable_toy_identities(self, tmp_path: Path) -> None:
         """Two epochs on colour-coded identities must cut the loss well below its start.
@@ -252,7 +282,7 @@ class TestTrainReid:
         assert "val_total" in result.history[0]
         assert "val_ce" in result.history[0]
         assert "val_triplet" in result.history[0]
-        assert result.best_epoch is not None
-        assert result.best_val_total is not None
-        assert result.best_epoch in {0, 1}
+        val_totals = [epoch["val_total"] for epoch in result.history]
+        assert result.best_epoch == int(np.argmin(val_totals))
+        assert result.best_val_total == pytest.approx(min(val_totals))
         assert (out_dir / "weights.safetensors").exists()
