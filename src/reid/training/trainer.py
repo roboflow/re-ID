@@ -19,6 +19,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
+from reid.architectures.timm_encoder import TimmEncoder, remap_state_dict_onto_timm_encoder
 from reid.data import ReIDSplit, load_identity_crops
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.model import ReIDModel, _select_device
@@ -40,9 +41,10 @@ logger = logging.getLogger(__name__)
 class TrainableBackbone(Protocol):
     """Contract a backbone must satisfy to be fine-tuned by :func:`train_reid`.
 
-    Satisfied by :class:`~reid.architectures.osnet.OSNet` and
-    :class:`~reid.architectures.fastreid_sbs.FastReIDSBSResNeSt50` when built
-    with ``num_classes > 0``.
+    Satisfied by :class:`~reid.architectures.osnet.OSNet`,
+    :class:`~reid.architectures.fastreid_sbs.FastReIDSBSResNeSt50`, and
+    :class:`~reid.architectures.timm_encoder.TimmEncoder` (``timm:<name>``)
+    when built with ``num_classes > 0``.
     """
 
     feature_dim: int
@@ -197,11 +199,13 @@ def _build_trainable_backbone(
     Raises:
         TypeError: If the architecture does not satisfy :class:`TrainableBackbone`.
     """
-    backbone = build_architecture(arch_name, num_classes=num_classes)
+    # timm trunks default to ImageNet weights when there is nothing to warm-start
+    # from; OSNet / FastReID ignore the flag (their weights load explicitly).
+    backbone = build_architecture(arch_name, num_classes=num_classes, pretrained=weights_source is None)
     if not isinstance(backbone, TrainableBackbone):
         raise TypeError(
             "train_reid needs a backbone implementing forward_embeddings_logits(images), "
-            "set_backbone_frozen(frozen), and feature_dim. Supported: OSNet, FastReID SBS. "
+            "set_backbone_frozen(frozen), and feature_dim. Supported: OSNet, FastReID SBS, timm:<name>. "
             f"Got {type(backbone).__name__}."
         )
     if weights_source is not None:
@@ -214,6 +218,7 @@ def _build_trainable_backbone(
             local_path,
             device,
             architecture=arch_name if isinstance(arch_name, str) else None,
+            remap=remap_state_dict_onto_timm_encoder if isinstance(backbone, TimmEncoder) else None,
             required_match_fraction=0.5,
         )
         logger.info("Warm-start from %s", weights_source)
@@ -340,7 +345,8 @@ def train_reid(
             filter identities on the loader when you need a subset.
         config: Training hyper-parameters.
         architecture: Backbone name override. When set with ``pretrained=None``,
-            the backbone is randomly initialised (no warm-start).
+            OSNet / FastReID backbones start randomly initialised while
+            ``timm:<name>`` trunks load their ImageNet weights.
         pretrained: Weights source / alias to warm-start from. When
             ``architecture`` is omitted, ``None`` resolves to the default curated
             alias (warm-start included). When ``architecture`` is set, ``None``

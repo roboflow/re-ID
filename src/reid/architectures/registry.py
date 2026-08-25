@@ -20,6 +20,7 @@ from reid.architectures.fastreid_sbs import (
     remap_fastreid_sbs_state_dict,
 )
 from reid.architectures.osnet import OSNet, build_osnet
+from reid.architectures.timm_encoder import TimmEncoder
 from reid.preprocessing import ReIDPreprocessing
 
 _OSNET_VARIANTS: dict[str, str] = {
@@ -61,7 +62,9 @@ def build_architecture(
 
     if architecture.startswith(_TIMM_PREFIX):
         name = architecture[len(_TIMM_PREFIX) :]
-        return timm.create_model(name, pretrained=pretrained, num_classes=num_classes)
+        if num_classes > 0:
+            return TimmEncoder(name, num_classes=num_classes, pretrained=pretrained)
+        return timm.create_model(name, pretrained=pretrained, num_classes=0)
 
     if architecture in _OSNET_VARIANTS:
         return build_osnet(variant=_OSNET_VARIANTS[architecture], num_classes=num_classes)

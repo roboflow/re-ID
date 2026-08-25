@@ -139,6 +139,35 @@ class TestTrainReid:
         assert result.history[0]["lr"] == pytest.approx(0.05)
         assert result.history[1]["lr"] == pytest.approx(0.1)
 
+    def test_timm_backbone_trains_and_round_trips(self, tmp_path: Path) -> None:
+        """timm trunks train behind TimmEncoder and reload into the plain timm model."""
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        raw = build_architecture("timm:resnet18", num_classes=0)
+        checkpoint = tmp_path / "resnet18.pth"
+        torch.save(raw.state_dict(), checkpoint)
+        config = TrainConfig(
+            epochs=1, p=2, k=2, warmup_epochs=0, num_workers=0, amp=False, device="cpu", log_interval=0
+        )
+        out_dir = tmp_path / "checkpoint"
+
+        result = train_reid(
+            data_root,
+            config,
+            architecture="timm:resnet18",
+            pretrained=str(checkpoint),
+            output_dir=out_dir,
+        )
+        reloaded = ReIDModel.from_pretrained(str(out_dir))
+
+        frame = np.zeros((96, 64, 3), dtype=np.uint8)
+        detections = sv.Detections(xyxy=np.array([[8, 8, 40, 88]], dtype=float))
+        np.testing.assert_allclose(
+            reloaded.extract_features(detections, frame),
+            result.model.extract_features(detections, frame),
+            atol=1e-5,
+        )
+
     def test_freeze_backbone_epochs_keeps_trunk_fixed(self, tmp_path: Path) -> None:
         """With every epoch frozen, warm-started trunk weights must not move while the head trains."""
         data_root = tmp_path / "crops"
