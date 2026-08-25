@@ -19,10 +19,8 @@ from torch.utils.data import Dataset, Sampler
 from torchvision.transforms import (
     ColorJitter,
     Compose,
-    Normalize,
     RandomErasing,
     RandomHorizontalFlip,
-    ToTensor,
 )
 
 from reid.data import ReIDSplit
@@ -58,8 +56,7 @@ def build_train_transform(preprocessing: ReIDPreprocessing | None = None) -> Com
             _ResizeCrop(preprocessing),
             RandomHorizontalFlip(p=0.5),
             ColorJitter(brightness=0.2, contrast=0.15, saturation=0.15, hue=0.0),
-            ToTensor(),
-            Normalize(mean=list(preprocessing.mean), std=list(preprocessing.std)),
+            *preprocessing.build_transform().transforms,
             RandomErasing(p=0.5, value="random"),
         ]
     )
@@ -68,13 +65,7 @@ def build_train_transform(preprocessing: ReIDPreprocessing | None = None) -> Com
 def build_eval_transform(preprocessing: ReIDPreprocessing | None = None) -> Compose:
     """Deterministic resize + normalize for validation (no augmentation)."""
     preprocessing = preprocessing or ReIDPreprocessing()
-    return Compose(
-        [
-            _ResizeCrop(preprocessing),
-            ToTensor(),
-            Normalize(mean=list(preprocessing.mean), std=list(preprocessing.std)),
-        ]
-    )
+    return Compose([_ResizeCrop(preprocessing), *preprocessing.build_transform().transforms])
 
 
 def identity_name_from_crop_path(path: str | Path) -> str:

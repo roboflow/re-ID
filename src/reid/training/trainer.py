@@ -287,6 +287,28 @@ def _run_epoch(
     return epoch_mean, step
 
 
+def _build_pk_loader(
+    dataset: ReIDTrainDataset,
+    config: TrainConfig,
+    device: torch.device,
+) -> DataLoader:
+    """PK-sampled loader over ``dataset`` using the config's batch recipe."""
+    sampler = PKSampler(
+        dataset.labels,
+        p=config.p,
+        k=config.k,
+        seed=config.seed,
+        identities_per_epoch=config.identities_per_epoch,
+        crops_per_identity=config.crops_per_identity,
+    )
+    return DataLoader(
+        dataset,
+        batch_sampler=sampler,
+        num_workers=config.num_workers,
+        pin_memory=(device.type == "cuda"),
+    )
+
+
 def _build_val_loader(
     val_data: ReIDSplit | str | Path,
     train_dataset: ReIDTrainDataset,
@@ -311,20 +333,7 @@ def _build_val_loader(
         n_val_ids,
         len(val_dataset),
     )
-    val_sampler = PKSampler(
-        val_dataset.labels,
-        p=config.p,
-        k=config.k,
-        seed=config.seed,
-        identities_per_epoch=config.identities_per_epoch,
-        crops_per_identity=config.crops_per_identity,
-    )
-    return DataLoader(
-        val_dataset,
-        batch_sampler=val_sampler,
-        num_workers=config.num_workers,
-        pin_memory=(device.type == "cuda"),
-    )
+    return _build_pk_loader(val_dataset, config, device)
 
 
 def train_reid(
@@ -375,20 +384,7 @@ def train_reid(
     num_classes = dataset.num_classes
     logger.info("Crop dataset: %d identities, %d crops", num_classes, len(dataset))
 
-    sampler = PKSampler(
-        dataset.labels,
-        p=config.p,
-        k=config.k,
-        seed=config.seed,
-        identities_per_epoch=config.identities_per_epoch,
-        crops_per_identity=config.crops_per_identity,
-    )
-    loader = DataLoader(
-        dataset,
-        batch_sampler=sampler,
-        num_workers=config.num_workers,
-        pin_memory=(device.type == "cuda"),
-    )
+    loader = _build_pk_loader(dataset, config, device)
 
     val_loader = None
     if val_data is not None:
@@ -429,7 +425,7 @@ def train_reid(
     best_center_state: dict[str, torch.Tensor] | None = None
 
     for epoch in range(config.epochs):
-        sampler.set_epoch(epoch)
+        loader.batch_sampler.set_epoch(epoch)
         frozen = epoch < config.freeze_backbone_epochs
         backbone.set_backbone_frozen(frozen)
 
@@ -468,11 +464,8 @@ def train_reid(
                     epoch=epoch,
                     step=step,
                 )
-            epoch_mean["val_ce"] = val_mean["ce"]
-            epoch_mean["val_triplet"] = val_mean["triplet"]
-            epoch_mean["val_total"] = val_mean["total"]
-            if "center" in val_mean:
-                epoch_mean["val_center"] = val_mean["center"]
+            for key, value in val_mean.items():
+                epoch_mean[f"val_{key}"] = value
 
             if best_val_total is None or val_mean["total"] < best_val_total:
                 best_val_total = val_mean["total"]
