@@ -265,31 +265,6 @@ class OSNet(TrainableEncoder):
         pooled = self.global_avgpool(features).flatten(1)
         return self.fc(pooled)
 
-    def forward_embeddings_logits(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return ``(embeddings, logits)`` for CE + triplet training."""
-        if not hasattr(self, "classifier"):
-            raise TypeError(
-                "OSNet was built without a classifier head (num_classes=0). Pass num_classes>0 for training."
-            )
-        embeddings = self._embed(x)
-        return embeddings, self.classifier(embeddings)
-
-    def set_backbone_frozen(self, frozen: bool) -> None:
-        """Freeze/unfreeze trunk params; keep ``fc`` / ``classifier`` trainable.
-
-        When frozen, trunk modules are switched to ``eval()`` so BatchNorm
-        running statistics stop updating. Unfreezing restores trunk ``train()``.
-        """
-        head = {"fc", "classifier"}
-        for name, param in self.named_parameters():
-            top = name.split(".", 1)[0]
-            param.requires_grad = (top in head) or (not frozen)
-
-        for name, module in self.named_children():
-            if name in head:
-                continue
-            module.train(not frozen)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run a forward pass.
 
