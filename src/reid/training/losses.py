@@ -72,7 +72,12 @@ class CenterLoss(nn.Module):
 
 
 class ReIDLoss(nn.Module):
-    """Combined CE + triplet (+ optional center) ReID objective."""
+    """Combined CE + triplet (+ optional center) ReID objective.
+
+    ``label_smoothing`` must be in ``[0, 1)``: at ``1.0`` the target is uniform,
+    so cross-entropy stops depending on the label, and torch accepts a negative
+    value silently even though it puts negative mass on the true class.
+    """
 
     def __init__(
         self,
@@ -87,7 +92,6 @@ class ReIDLoss(nn.Module):
         normalize_triplet: bool = True,
     ) -> None:
         super().__init__()
-        # torch accepts negative label_smoothing silently; keep the tighter range.
         if not 0.0 <= label_smoothing < 1.0:
             raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}.")
         self.num_classes = num_classes
