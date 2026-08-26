@@ -204,7 +204,7 @@ def _crop_rows_from_sequence(
         )
 
     if split is MOTSplit.FULL:
-        cutoff = int(gt_rows[:, _COL_FRAME].max()) if len(gt_rows) else 0
+        cutoff = int(gt_rows[:, _COL_FRAME].max())
     else:
         cutoff = _train_half_cutoff(image_dir.parent)
 
