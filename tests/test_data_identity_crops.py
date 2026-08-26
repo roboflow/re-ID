@@ -33,7 +33,7 @@ def _make_crops(root: Path, num_ids: int, num_per: int, *, prefix: str = "id") -
 
 
 class TestLoadIdentityCrops:
-    """Tests for :func:`load_identity_crops`."""
+    """Crop-folder loading: dense PID remapping, whitelists, and empty-input errors."""
 
     def test_assigns_contiguous_pids_and_neg_camids(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=3, num_per=4)
@@ -72,7 +72,7 @@ class TestLoadIdentityCrops:
 
 
 class TestRetrievalSplit:
-    """Tests for :func:`build_identity_crop_retrieval_split`."""
+    """Query/gallery retrieval split: eligibility, determinism, and parameter guards."""
 
     def test_uses_all_eligible_identities(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=8, num_per=4)
@@ -123,7 +123,7 @@ class TestRetrievalSplit:
 
 
 class TestHoldoutSplit:
-    """Tests for :func:`build_identity_crop_holdout_split`."""
+    """Identity holdout split: identity-disjoint train/holdout partitions and fraction guards."""
 
     def test_is_identity_disjoint_from_train(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=10, num_per=4)

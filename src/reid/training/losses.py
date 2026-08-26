@@ -31,12 +31,6 @@ class CrossEntropyLabelSmooth(nn.Module):
         return (-targets * log_probs).sum(dim=1).mean()
 
 
-def _pairwise_euclidean(embeddings: torch.Tensor) -> torch.Tensor:
-    """Return the ``(B, B)`` pairwise Euclidean distance matrix."""
-    distances = torch.cdist(embeddings, embeddings, p=2)
-    return distances.clamp(min=1e-12)
-
-
 class BatchHardTripletLoss(nn.Module):
     """Batch-hard triplet loss (hardest positive/negative per anchor).
 
@@ -54,7 +48,7 @@ class BatchHardTripletLoss(nn.Module):
         if self.normalize:
             embeddings = F.normalize(embeddings, p=2, dim=1)
 
-        distances = _pairwise_euclidean(embeddings)
+        distances = torch.cdist(embeddings, embeddings, p=2).clamp(min=1e-12)
         same = labels.unsqueeze(0) == labels.unsqueeze(1)
         different = ~same
         positive_mask = same.clone()

@@ -58,7 +58,7 @@ def _pedestrian_rows(seq_length: int, identities: list[int]) -> list[list[float]
 
 
 class TestGenerateMotPatches:
-    """Tests for :func:`generate_mot_patches`."""
+    """MOT ground-truth cropping: splits, filters, dedupe, and loud failures."""
 
     def test_train_half_is_frame_disjoint_from_val_half(self, tmp_path: Path) -> None:
         mot_root = tmp_path / "MOT"

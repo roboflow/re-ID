@@ -21,7 +21,7 @@ import supervision as sv
 
 
 class TestDistanceMatrix:
-    """Tests for :func:`reid.eval.evaluator._distance_matrix`."""
+    """Query x gallery distance matrix in cosine and euclidean metrics."""
 
     def test_cosine_and_euclidean_shapes(self) -> None:
         from reid.eval.evaluator import _distance_matrix
@@ -36,7 +36,7 @@ class TestDistanceMatrix:
 
 
 class TestComputeReidMetrics:
-    """Tests for :func:`reid.eval.metrics.compute_reid_metrics`."""
+    """mAP / CMC / mINP computation and input validation."""
 
     def test_market1501_pid_zero_is_junk_in_gallery(self) -> None:
         from reid.eval.datasets import MARKET1501_GALLERY_JUNK_PIDS
@@ -109,7 +109,7 @@ class TestComputeReidMetrics:
 
 
 class TestReIDEvaluator:
-    """Tests for :class:`reid.eval.evaluator.ReIDEvaluator`."""
+    """``ReIDEvaluator`` end-to-end retrieval scoring."""
 
     def test_reuses_provided_query_embeddings_only(self, tmp_path: Path) -> None:
         from reid.eval.datasets import ReIDSplit
@@ -206,7 +206,7 @@ class TestReIDEvaluator:
 
 
 class TestMarket1501Loader:
-    """Tests for :func:`load_market1501`."""
+    """Market-1501 folder parsing."""
 
     def test_load_market1501_from_temp_tree(self, tmp_path) -> None:
         from reid.eval.datasets import (
@@ -230,7 +230,7 @@ class TestMarket1501Loader:
 
 
 class TestMSMT17Loader:
-    """Tests for :func:`load_msmt17`."""
+    """MSMT17 list-file parsing."""
 
     def test_load_msmt17_from_temp_lists(self, tmp_path) -> None:
         from reid.eval.datasets import load_msmt17

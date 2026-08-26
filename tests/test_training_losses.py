@@ -15,7 +15,7 @@ from reid.training.losses import BatchHardTripletLoss, ReIDLoss
 
 
 class TestBatchHardTripletLoss:
-    """Tests for :class:`BatchHardTripletLoss`."""
+    """Batch-hard triplet mining behavior."""
 
     def test_zero_for_well_separated_clusters(self) -> None:
         loss_fn = BatchHardTripletLoss(margin=0.3, normalize=False)
@@ -31,7 +31,7 @@ class TestBatchHardTripletLoss:
 
 
 class TestReIDLoss:
-    """Tests for :class:`ReIDLoss`."""
+    """Combined CE + triplet (+ center) objective and its reported components."""
 
     def test_default_excludes_center_and_backprops(self) -> None:
         loss_fn = ReIDLoss(num_classes=4, feature_dim=8)

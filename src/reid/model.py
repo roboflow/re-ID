@@ -4,7 +4,13 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""ReID appearance encoder: loading, inference, and checkpoint I/O."""
+"""ReID appearance encoder: loading, inference, and checkpoint I/O.
+
+Array-type boundary: torch tensors stay inside the model and the training
+loop; embeddings cross to ``numpy`` once, on the way out of
+:meth:`ReIDModel._embed_batch`, because ``supervision`` and ``trackers``
+consume numpy. Everything downstream (``reid.eval``) is numpy throughout.
+"""
 
 from __future__ import annotations
 

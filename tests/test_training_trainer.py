@@ -35,7 +35,7 @@ def _make_crops(root: Path, num_ids: int, num_per: int) -> None:
 
 
 class TestTrainConfig:
-    """Tests for :class:`TrainConfig` validation."""
+    """``TrainConfig`` validation and epoch-budget arithmetic."""
 
     def test_rejects_degenerate_pk_with_triplet(self) -> None:
         with pytest.raises(ValueError, match="p >= 2 and k >= 2"):
@@ -52,7 +52,7 @@ class TestTrainConfig:
 
 
 class TestTrainableBackbone:
-    """Tests for the backbone contract :func:`train_reid` requires."""
+    """The backbone contract ``train_reid`` requires."""
 
     def test_shipped_architecture_satisfies_contract(self) -> None:
         backbone = build_architecture("osnet_x0_25", num_classes=4)
@@ -63,7 +63,7 @@ class TestTrainableBackbone:
 
 
 class TestBackboneFreeze:
-    """Tests for architecture ``set_backbone_frozen`` used by training."""
+    """Architecture ``set_backbone_frozen`` behavior used by training."""
 
     def test_frozen_trunk_keeps_batchnorm_stats_fixed(self) -> None:
         backbone = build_architecture("osnet_x0_25", num_classes=4)
@@ -81,7 +81,7 @@ class TestBackboneFreeze:
 
 
 class TestTrainReid:
-    """End-to-end smoke for :func:`train_reid`."""
+    """End-to-end ``train_reid`` smoke tests."""
 
     def test_saves_and_embeds(self, tmp_path: Path) -> None:
         data_root = tmp_path / "crops"

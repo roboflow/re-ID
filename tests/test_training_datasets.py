@@ -56,7 +56,7 @@ class TestTransforms:
 
 
 class TestReIDTrainDataset:
-    """Tests for :class:`ReIDTrainDataset`."""
+    """Crop dataset construction and dense label remapping."""
 
     def test_reads_split_and_labels(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=4, num_per=5)
@@ -110,7 +110,7 @@ class TestReIDTrainDataset:
 
 
 class TestPKSampler:
-    """Tests for :class:`PKSampler`."""
+    """PK batch structure and epoch budgets."""
 
     def test_batch_structure(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=5, num_per=4)
