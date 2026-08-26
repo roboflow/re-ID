@@ -41,7 +41,13 @@ class BatchHardTripletLoss(nn.Module):
         masked[~different] = float("inf")
         hardest_negative = masked.min(dim=1).values
 
-        return F.relu(self.margin + hardest_positive - hardest_negative).mean()
+        # ranking the mined pairs is max(0, margin + positive - negative)
+        return F.margin_ranking_loss(
+            hardest_negative,
+            hardest_positive,
+            torch.ones_like(hardest_positive),
+            margin=self.margin,
+        )
 
 
 class CenterLoss(nn.Module):
@@ -61,7 +67,8 @@ class CenterLoss(nn.Module):
     def forward(self, embeddings: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """Compute center loss."""
         centers_batch = self.centers.index_select(0, labels)
-        return (embeddings - centers_batch).pow(2).sum(dim=1).clamp(min=1e-12).mean() / 2.0
+        # Wen et al.: mean over the batch of half the squared distance to the class center.
+        return F.mse_loss(embeddings, centers_batch, reduction="sum") / (2 * embeddings.size(0))
 
 
 class ReIDLoss(nn.Module):
