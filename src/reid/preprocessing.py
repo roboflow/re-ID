@@ -14,6 +14,7 @@ from typing import Literal
 
 import cv2
 import numpy as np
+from PIL import Image as PILImage
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 # ImageNet statistics — shared by every OSNet / timm ImageNet-pretrained backbone.
@@ -127,6 +128,14 @@ class ReIDPreprocessing:
 
         return cv2.resize(crop, (target_w, target_h), interpolation=interpolation)
 
+    def resize_transform(self) -> ResizeCrop:
+        """Transform applying :meth:`resize_crop` to an RGB PIL crop."""
+        return ResizeCrop(self)
+
+    def build_crop_transform(self) -> Compose:
+        """Full crop pipeline for an RGB PIL image: resize then tensor normalisation."""
+        return Compose([self.resize_transform(), *self.build_transform().transforms])
+
     def build_transform(self):
         """Tensor normalisation for a crop already at ``input_size`` (RGB PIL in)."""
         return Compose(
@@ -171,3 +180,17 @@ class ReIDPreprocessing:
         if "pad_value" in data:
             kwargs["pad_value"] = data["pad_value"]
         return cls(**kwargs)
+
+
+class ResizeCrop:
+    """Resize an RGB PIL crop with :meth:`ReIDPreprocessing.resize_crop`.
+
+    Keeps ``resize_mode`` / ``interpolation`` and the OpenCV resampler identical
+    between training and serving.
+    """
+
+    def __init__(self, preprocessing: ReIDPreprocessing) -> None:
+        self.preprocessing = preprocessing
+
+    def __call__(self, image: PILImage.Image) -> PILImage.Image:
+        return PILImage.fromarray(self.preprocessing.resize_crop(np.asarray(image)))

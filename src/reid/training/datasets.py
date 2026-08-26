@@ -13,9 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-import numpy as np
-from PIL import Image
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Sampler
 from torchvision.transforms import (
     ColorJitter,
     Compose,
@@ -24,6 +22,7 @@ from torchvision.transforms import (
 )
 
 from reid.data import ReIDSplit
+from reid.datasets import CropDataset
 from reid.preprocessing import ReIDPreprocessing
 
 if TYPE_CHECKING:
@@ -34,26 +33,12 @@ if TYPE_CHECKING:
 IdentitiesPerEpoch = int | Literal["all"]
 
 
-class _ResizeCrop:
-    """Resize a PIL crop with :meth:`ReIDPreprocessing.resize_crop`.
-
-    Reusing the inference resize keeps ``resize_mode`` / ``interpolation`` and
-    the OpenCV resampler identical between training and serving.
-    """
-
-    def __init__(self, preprocessing: ReIDPreprocessing) -> None:
-        self.preprocessing = preprocessing
-
-    def __call__(self, image: Image.Image) -> Image.Image:
-        return Image.fromarray(self.preprocessing.resize_crop(np.asarray(image)))
-
-
 def build_train_transform(preprocessing: ReIDPreprocessing | None = None) -> Compose:
     """Training augmentations matching inference geometry (resize, flip, jitter, erase)."""
     preprocessing = preprocessing or ReIDPreprocessing()
     return Compose(
         [
-            _ResizeCrop(preprocessing),
+            preprocessing.resize_transform(),
             RandomHorizontalFlip(p=0.5),
             ColorJitter(brightness=0.2, contrast=0.15, saturation=0.15, hue=0.0),
             *preprocessing.build_transform().transforms,
@@ -65,7 +50,7 @@ def build_train_transform(preprocessing: ReIDPreprocessing | None = None) -> Com
 def build_eval_transform(preprocessing: ReIDPreprocessing | None = None) -> Compose:
     """Deterministic resize + normalize for validation (no augmentation)."""
     preprocessing = preprocessing or ReIDPreprocessing()
-    return Compose([_ResizeCrop(preprocessing), *preprocessing.build_transform().transforms])
+    return preprocessing.build_crop_transform()
 
 
 def identity_name_from_crop_path(path: str | Path) -> str:
@@ -73,7 +58,7 @@ def identity_name_from_crop_path(path: str | Path) -> str:
     return Path(path).parent.name
 
 
-class ReIDTrainDataset(Dataset):
+class ReIDTrainDataset(CropDataset):
     """Crop dataset over a :class:`ReIDSplit`, with dense training labels.
 
     The dataset does not touch the filesystem to discover identities; it consumes
@@ -180,9 +165,7 @@ class ReIDTrainDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
-        with Image.open(self.image_paths[index]) as img:
-            image = img.convert("RGB")
-        return self.transform(image), self.labels[index]
+        return super().__getitem__(index), self.labels[index]
 
 
 def _resolve_pk_num_batches(

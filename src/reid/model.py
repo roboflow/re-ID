@@ -17,50 +17,22 @@ from __future__ import annotations
 import logging
 import os
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import supervision as sv
 import torch
 import torch.nn as nn
-from PIL import Image as PILImage
 from safetensors.torch import save_file
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
+from reid.datasets import CropDataset
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
 logger = logging.getLogger(__name__)
-
-
-class _CropPathDataset(Dataset):
-    """Reads crop images from disk and applies preprocessing on worker processes.
-
-    Images on disk are assumed RGB (PIL ``convert("RGB")``); see
-    :meth:`ReIDPreprocessing.prepare_crop_array`.
-    """
-
-    def __init__(
-        self,
-        image_paths: Sequence[str],
-        preprocessing: ReIDPreprocessing,
-        transforms: Callable[[np.ndarray], torch.Tensor],
-    ) -> None:
-        self._image_paths = list(image_paths)
-        self._preprocessing = preprocessing
-        self._transforms = transforms
-
-    def __len__(self) -> int:
-        return len(self._image_paths)
-
-    def __getitem__(self, index: int) -> torch.Tensor:
-        with PILImage.open(self._image_paths[index]) as img:
-            rgb = img.convert("RGB")
-        arr = self._preprocessing.prepare_crop_array(np.asarray(rgb), from_bgr_frame=False)
-        resized = self._preprocessing.resize_crop(arr)
-        return self._transforms(resized)
 
 
 def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -285,7 +257,7 @@ class ReIDModel:
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
 
-        dataset = _CropPathDataset(image_paths, self._preprocessing, self._transforms)
+        dataset = CropDataset(image_paths, self._preprocessing.build_crop_transform())
         loader = DataLoader(
             dataset,
             batch_size=batch_size,
