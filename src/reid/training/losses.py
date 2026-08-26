@@ -13,24 +13,6 @@ import torch.nn.functional as F
 from torch import nn
 
 
-class CrossEntropyLabelSmooth(nn.Module):
-    """Cross-entropy with label smoothing."""
-
-    def __init__(self, num_classes: int, epsilon: float = 0.1) -> None:
-        super().__init__()
-        if not 0.0 <= epsilon < 1.0:
-            raise ValueError(f"epsilon must be in [0, 1), got {epsilon}.")
-        self.num_classes = num_classes
-        self.epsilon = epsilon
-
-    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        """Compute smoothed cross-entropy."""
-        log_probs = F.log_softmax(logits, dim=1)
-        targets = torch.zeros_like(log_probs).scatter_(1, labels.unsqueeze(1), 1)
-        targets = (1 - self.epsilon) * targets + self.epsilon / self.num_classes
-        return (-targets * log_probs).sum(dim=1).mean()
-
-
 class BatchHardTripletLoss(nn.Module):
     """Batch-hard triplet loss (hardest positive/negative per anchor).
 
@@ -98,7 +80,10 @@ class ReIDLoss(nn.Module):
         normalize_triplet: bool = True,
     ) -> None:
         super().__init__()
-        self.cross_entropy = CrossEntropyLabelSmooth(num_classes, label_smoothing)
+        # torch accepts negative label_smoothing silently; keep the tighter range.
+        if not 0.0 <= label_smoothing < 1.0:
+            raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}.")
+        self.cross_entropy = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.triplet = BatchHardTripletLoss(margin=margin, normalize=normalize_triplet)
         self.triplet_weight = triplet_weight
         self.center_weight = center_weight if use_center else 0.0
