@@ -53,6 +53,20 @@ class TestReIDLoss:
         # Embeddings reach the graph only through the triplet term.
         assert embeddings.grad.abs().sum() > 0
 
+    def test_rejects_label_smoothing_outside_the_unit_interval(self) -> None:
+        """torch accepts a negative label_smoothing silently; ReIDLoss must not."""
+        for bad in (-0.1, 1.0):
+            with pytest.raises(ValueError, match="label_smoothing must be in"):
+                ReIDLoss(num_classes=4, feature_dim=8, label_smoothing=bad)
+
+    def test_rejects_logits_that_do_not_match_num_classes(self) -> None:
+        """Smoothing spreads over the logits width, so a mismatch must not pass silently."""
+        loss_fn = ReIDLoss(num_classes=10, feature_dim=8)
+        embeddings, _, labels = _pk_batch()
+
+        with pytest.raises(ValueError, match="logits must be"):
+            loss_fn(embeddings, torch.randn(8, 6), labels)
+
     def test_center_adds_a_weighted_term_and_trainable_centers(self) -> None:
         loss_fn = ReIDLoss(num_classes=4, feature_dim=8, use_center=True, center_weight=0.1)
         embeddings, logits, labels = _pk_batch()

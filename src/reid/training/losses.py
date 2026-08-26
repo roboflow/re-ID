@@ -90,6 +90,7 @@ class ReIDLoss(nn.Module):
         # torch accepts negative label_smoothing silently; keep the tighter range.
         if not 0.0 <= label_smoothing < 1.0:
             raise ValueError(f"label_smoothing must be in [0, 1), got {label_smoothing}.")
+        self.num_classes = num_classes
         self.cross_entropy = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.triplet = BatchHardTripletLoss(margin=margin, normalize=normalize_triplet)
         self.triplet_weight = triplet_weight
@@ -102,7 +103,15 @@ class ReIDLoss(nn.Module):
         logits: torch.Tensor,
         labels: torch.Tensor,
     ) -> tuple[torch.Tensor, dict[str, float]]:
-        """Return ``(total_loss, component_dict)``."""
+        """Return ``(total_loss, component_dict)``.
+
+        Raises:
+            ValueError: If ``logits`` is not ``(B, num_classes)`` wide; label
+                smoothing spreads over the logits width, so a mismatch would
+                silently smooth against the wrong class count.
+        """
+        if logits.shape[1] != self.num_classes:
+            raise ValueError(f"logits must be (batch, {self.num_classes}), got width {logits.shape[1]}.")
         ce = self.cross_entropy(logits, labels)
         triplet = self.triplet(embeddings, labels)
         total = ce + self.triplet_weight * triplet
