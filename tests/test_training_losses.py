@@ -14,6 +14,14 @@ import torch
 from reid.training.losses import BatchHardTripletLoss, ReIDLoss
 
 
+def _pk_batch() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """A PK-shaped batch: 8 crops over 4 identities, 8-dim embeddings, 4 logits."""
+    embeddings = torch.randn(8, 8, requires_grad=True)
+    logits = torch.randn(8, 4)
+    labels = torch.tensor([0, 0, 1, 1, 2, 2, 3, 3])
+    return embeddings, logits, labels
+
+
 class TestBatchHardTripletLoss:
     """Batch-hard triplet mining behavior."""
 
@@ -35,21 +43,20 @@ class TestReIDLoss:
 
     def test_default_excludes_center_and_backprops(self) -> None:
         loss_fn = ReIDLoss(num_classes=4, feature_dim=8)
-        embeddings = torch.randn(8, 8, requires_grad=True)
-        logits = torch.randn(8, 4)
-        labels = torch.tensor([0, 0, 1, 1, 2, 2, 3, 3])
+        embeddings, logits, labels = _pk_batch()
+
         total, components = loss_fn(embeddings, logits, labels)
+        total.backward()
 
         assert set(components) == {"ce", "triplet", "total"}
         assert loss_fn.center is None
-        total.backward()
-        assert embeddings.grad is not None
+        # Embeddings reach the graph only through the triplet term.
+        assert embeddings.grad.abs().sum() > 0
 
     def test_center_adds_a_weighted_term_and_trainable_centers(self) -> None:
         loss_fn = ReIDLoss(num_classes=4, feature_dim=8, use_center=True, center_weight=0.1)
-        embeddings = torch.randn(8, 8, requires_grad=True)
-        logits = torch.randn(8, 4)
-        labels = torch.tensor([0, 0, 1, 1, 2, 2, 3, 3])
+        embeddings, logits, labels = _pk_batch()
+
         total, components = loss_fn(embeddings, logits, labels)
 
         assert set(components) == {"ce", "triplet", "center", "total"}
