@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import random
-from collections import defaultdict
 from typing import TYPE_CHECKING, Literal
 
 from torch.utils.data import Sampler
@@ -21,7 +20,13 @@ from torchvision.transforms import (
 )
 
 from reid.crop_dataset import CropDataset
-from reid.data import ReIDSplit, identity_name_from_crop_path
+from reid.data import (
+    ReIDSplit,
+    dense_labels_from_split,
+    identity_name_from_crop_path,
+    indices_by_label,
+    labels_from_identity_map,
+)
 from reid.preprocessing import ReIDPreprocessing
 
 if TYPE_CHECKING:
@@ -100,24 +105,9 @@ class ReIDTrainDataset(CropDataset):
         split: ReIDSplit,
         transform: Callable[[Image.Image], torch.Tensor] | None = None,
     ) -> ReIDTrainDataset:
-        """Build from a :class:`ReIDSplit`, remapping person IDs to dense labels.
-
-        A split's ``pids`` need not be contiguous (a train partition left after an
-        identity holdout is not), while the classifier head needs ``0..N-1``.
-
-        Raises:
-            ValueError: If ``split`` is empty.
-        """
-        if len(split) == 0:
-            raise ValueError("Cannot build a training dataset from an empty ReIDSplit.")
-        pids = [int(pid) for pid in split.pids.tolist()]
-        label_by_pid = {pid: label for label, pid in enumerate(sorted(set(pids)))}
-        return cls(
-            list(split.image_paths),
-            [label_by_pid[pid] for pid in pids],
-            transform=transform,
-            num_classes=len(label_by_pid),
-        )
+        """Build from a :class:`ReIDSplit`, remapping person IDs to dense labels."""
+        image_paths, labels, num_classes = dense_labels_from_split(split)
+        return cls(image_paths, labels, transform=transform, num_classes=num_classes)
 
     @classmethod
     def from_identity_label_map(
@@ -128,24 +118,8 @@ class ReIDTrainDataset(CropDataset):
         *,
         num_classes: int | None = None,
     ) -> ReIDTrainDataset:
-        """Keep crops whose identity folder is in ``label_by_identity``.
-
-        Used for temporal val crops that reuse training identity folder names
-        (for example MOT17 train-half / val-half of the same sequences).
-
-        Raises:
-            ValueError: If no crop shares an identity folder with the map.
-        """
-        image_paths: list[str] = []
-        labels: list[int] = []
-        for path in split.image_paths:
-            label = label_by_identity.get(identity_name_from_crop_path(path))
-            if label is None:
-                continue
-            image_paths.append(path)
-            labels.append(label)
-        if not image_paths:
-            raise ValueError("No validation crops share identity folder names with the training map.")
+        """Build val crops that reuse the training identity folder → label map."""
+        image_paths, labels = labels_from_identity_map(split, label_by_identity)
         return cls(
             image_paths,
             labels,
@@ -241,9 +215,7 @@ class PKSampler(Sampler[list[int]]):
         self.crops_per_identity = k if crops_per_identity is None else crops_per_identity
         self._epoch = 0
 
-        self._indices_by_label: dict[int, list[int]] = defaultdict(list)
-        for index, label in enumerate(labels):
-            self._indices_by_label[label].append(index)
+        self._indices_by_label = indices_by_label(labels)
         self._labels = list(self._indices_by_label)
 
         if len(self._labels) < p:
