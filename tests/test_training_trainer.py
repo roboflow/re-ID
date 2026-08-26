@@ -20,6 +20,7 @@ from safetensors import safe_open
 
 from reid import ReIDModel
 from reid.architectures import build_architecture
+from reid.architectures.timm_encoder import TimmEncoder, remap_state_dict_onto_timm_encoder
 from reid.preprocessing import ReIDPreprocessing
 from reid.training import TrainableBackbone, TrainConfig, train_reid
 
@@ -170,6 +171,16 @@ class TestTrainReid:
             atol=1e-5,
         )
 
+    def test_timm_warm_start_keeps_head_named_trunk_weights(self) -> None:
+        """ConvNeXt keeps its final LayerNorm under ``head.``; warm-start must not drop it."""
+        source = build_architecture("timm:convnext_atto", num_classes=0).state_dict()
+        wrapper = TimmEncoder("convnext_atto", num_classes=4)
+        remapped = remap_state_dict_onto_timm_encoder(source)
+
+        trunk_keys = {key for key in wrapper.state_dict() if key.startswith("trunk.")}
+        assert trunk_keys <= set(remapped)
+        assert any(key.startswith("trunk.head.") for key in trunk_keys)
+
     def test_freeze_backbone_epochs_keeps_trunk_fixed(self, tmp_path: Path) -> None:
         """With every epoch frozen, warm-started trunk weights must not move while the head trains."""
         data_root = tmp_path / "crops"
@@ -255,7 +266,9 @@ class TestTrainReid:
         _make_crops(train_root, num_ids=4, num_per=4)
         _make_crops(val_root, num_ids=4, num_per=4)
 
-        config = _cpu_config(epochs=2, log_interval=1)
+        # A high LR makes val loss diverge after epoch 0, so the best epoch is not
+        # the last one and restoring it is observable.
+        config = _cpu_config(epochs=2, lr=0.05, log_interval=1)
         out_dir = tmp_path / "checkpoint"
         result = train_reid(
             train_root,
@@ -272,5 +285,21 @@ class TestTrainReid:
         assert "val_triplet" in result.history[0]
         val_totals = [epoch["val_total"] for epoch in result.history]
         assert result.best_epoch == int(np.argmin(val_totals))
+        assert result.best_epoch < len(result.history) - 1, (
+            "best epoch must not be the last, or the restore is untested"
+        )
         assert result.best_val_total == pytest.approx(min(val_totals))
+
+        # The returned weights must be the best epoch's, not the last epoch's: a
+        # deterministic run truncated to that epoch has to land on the same tensors.
+        truncated = train_reid(
+            train_root,
+            _cpu_config(epochs=result.best_epoch + 1, lr=0.05, log_interval=1),
+            architecture="osnet_x0_25",
+            pretrained=None,
+            val_data=val_root,
+        )
+        restored = result.model._backbone.state_dict()
+        expected = truncated.model._backbone.state_dict()
+        assert all(torch.equal(restored[key], expected[key]) for key in expected)
         assert (out_dir / "weights.safetensors").exists()

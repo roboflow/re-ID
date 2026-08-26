@@ -78,4 +78,4 @@ class TestReIDLoss:
         assert total.item() == pytest.approx(expected, rel=1e-5)
 
         total.backward()
-        assert loss_fn.center.centers.grad is not None
+        assert loss_fn.center.centers.grad.abs().sum() > 0

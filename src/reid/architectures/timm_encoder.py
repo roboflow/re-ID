@@ -45,14 +45,10 @@ class TimmEncoder(TrainableEncoder):
 def remap_state_dict_onto_timm_encoder(state_dict: dict) -> dict:
     """Map a plain ``timm`` or reid-saved checkpoint onto :class:`TimmEncoder`.
 
-    Prefixes trunk keys with ``trunk.`` (idempotently) and drops classifier /
-    ``timm`` head keys, which never transfer across identity sets.
+    Only re-prefixes trunk keys with ``trunk.`` (idempotently). Nothing is
+    dropped by name: :func:`reid.loaders.load_state_dict` already ignores keys
+    the target lacks, which filters classifier heads without also discarding
+    trunk parameters that live under a head-like name (ConvNeXt keeps its final
+    ``head.norm`` LayerNorm there even at ``num_classes=0``).
     """
-    mapped: dict = {}
-    for key, value in state_dict.items():
-        stripped = key.removeprefix("trunk.")
-        top = stripped.split(".", 1)[0]
-        if top in {"classifier", "fc", "head"}:
-            continue
-        mapped[f"trunk.{stripped}"] = value
-    return mapped
+    return {f"trunk.{key.removeprefix('trunk.')}": value for key, value in state_dict.items()}
