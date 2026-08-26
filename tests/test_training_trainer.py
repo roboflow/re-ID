@@ -34,6 +34,21 @@ def _make_crops(root: Path, num_ids: int, num_per: int) -> None:
             Image.fromarray(array).save(identity_dir / f"{j}.jpg")
 
 
+def _cpu_config(**overrides: object) -> TrainConfig:
+    """A fast CPU training config; ``overrides`` carry whatever the test is about."""
+    defaults = {
+        "epochs": 1,
+        "p": 2,
+        "k": 2,
+        "warmup_epochs": 0,
+        "num_workers": 0,
+        "amp": False,
+        "device": "cpu",
+        "log_interval": 0,
+    }
+    return TrainConfig(**{**defaults, **overrides})
+
+
 class TestTrainConfig:
     """``TrainConfig`` validation and epoch-budget arithmetic."""
 
@@ -87,16 +102,7 @@ class TestTrainReid:
         data_root = tmp_path / "crops"
         _make_crops(data_root, num_ids=4, num_per=4)
 
-        config = TrainConfig(
-            epochs=1,
-            p=2,
-            k=2,
-            warmup_epochs=0,
-            num_workers=0,
-            amp=False,
-            device="cpu",
-            log_interval=1,
-        )
+        config = _cpu_config(log_interval=1)
         out_dir = tmp_path / "checkpoint"
         result = train_reid(
             data_root,
@@ -130,9 +136,7 @@ class TestTrainReid:
         """history['lr'] reports the LR the epoch trained at, not the post-step value."""
         data_root = tmp_path / "crops"
         _make_crops(data_root, num_ids=4, num_per=4)
-        config = TrainConfig(
-            epochs=2, p=2, k=2, lr=0.1, warmup_epochs=2, num_workers=0, amp=False, device="cpu", log_interval=0
-        )
+        config = _cpu_config(epochs=2, lr=0.1, warmup_epochs=2)
 
         result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=None)
 
@@ -146,9 +150,7 @@ class TestTrainReid:
         raw = build_architecture("timm:resnet18", num_classes=0)
         checkpoint = tmp_path / "resnet18.pth"
         torch.save(raw.state_dict(), checkpoint)
-        config = TrainConfig(
-            epochs=1, p=2, k=2, warmup_epochs=0, num_workers=0, amp=False, device="cpu", log_interval=0
-        )
+        config = _cpu_config()
         out_dir = tmp_path / "checkpoint"
 
         result = train_reid(
@@ -175,17 +177,7 @@ class TestTrainReid:
         reference = build_architecture("osnet_x0_25", num_classes=0)
         checkpoint = tmp_path / "reference.pth"
         torch.save(reference.state_dict(), checkpoint)
-        config = TrainConfig(
-            epochs=1,
-            p=2,
-            k=2,
-            warmup_epochs=0,
-            num_workers=0,
-            amp=False,
-            device="cpu",
-            log_interval=0,
-            freeze_backbone_epochs=1,
-        )
+        config = _cpu_config(freeze_backbone_epochs=1)
 
         result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=str(checkpoint))
 
@@ -212,17 +204,7 @@ class TestTrainReid:
                 crop = np.full((64, 32, 3), color, dtype=np.float32) + rng.normal(0, 20, (64, 32, 3))
                 Image.fromarray(np.clip(crop, 0, 255).astype("uint8")).save(identity_dir / f"{j}.jpg")
 
-        config = TrainConfig(
-            epochs=2,
-            p=4,
-            k=4,
-            warmup_epochs=0,
-            num_workers=0,
-            amp=False,
-            device="cpu",
-            log_interval=0,
-            identities_per_epoch=16,
-        )
+        config = _cpu_config(epochs=2, p=4, k=4, identities_per_epoch=16)
         result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=None)
 
         assert result.history[-1]["total"] < 0.85 * result.history[0]["total"]
@@ -233,9 +215,7 @@ class TestTrainReid:
         _make_crops(data_root, num_ids=4, num_per=4)
         wrong_ckpt = tmp_path / "wrong.pth"
         torch.save({"backbone.stem.weight": torch.randn(4, 3, 3, 3)}, wrong_ckpt)
-        config = TrainConfig(
-            epochs=1, p=2, k=2, warmup_epochs=0, num_workers=0, amp=False, device="cpu", log_interval=0
-        )
+        config = _cpu_config()
 
         with pytest.raises(ValueError, match="matched only"):
             train_reid(data_root, config, architecture="osnet_x0_25", pretrained=str(wrong_ckpt))
@@ -243,9 +223,7 @@ class TestTrainReid:
     def test_preprocessing_round_trips_through_save(self, tmp_path: Path) -> None:
         data_root = tmp_path / "crops"
         _make_crops(data_root, num_ids=4, num_per=4)
-        config = TrainConfig(
-            epochs=1, p=2, k=2, warmup_epochs=0, num_workers=0, amp=False, device="cpu", log_interval=0
-        )
+        config = _cpu_config()
         preprocessing = ReIDPreprocessing(resize_mode="letterbox", interpolation="bicubic")
         out_dir = tmp_path / "checkpoint"
 
@@ -266,17 +244,7 @@ class TestTrainReid:
         data_root = tmp_path / "crops"
         _make_crops(data_root, num_ids=4, num_per=4)
 
-        config = TrainConfig(
-            epochs=1,
-            p=2,
-            k=2,
-            warmup_epochs=0,
-            num_workers=0,
-            amp=False,
-            device="cpu",
-            log_interval=0,
-            use_center=True,
-        )
+        config = _cpu_config(use_center=True)
         result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=None)
 
         assert "center" in result.history[0]
@@ -287,16 +255,7 @@ class TestTrainReid:
         _make_crops(train_root, num_ids=4, num_per=4)
         _make_crops(val_root, num_ids=4, num_per=4)
 
-        config = TrainConfig(
-            epochs=2,
-            p=2,
-            k=2,
-            warmup_epochs=0,
-            num_workers=0,
-            amp=False,
-            device="cpu",
-            log_interval=1,
-        )
+        config = _cpu_config(epochs=2, log_interval=1)
         out_dir = tmp_path / "checkpoint"
         result = train_reid(
             train_root,
