@@ -60,7 +60,7 @@ class TestReIDTrainDataset:
 
     def test_reads_split_and_labels(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=4, num_per=5)
-        dataset = ReIDTrainDataset(load_identity_crops(tmp_path), transform=build_train_transform())
+        dataset = ReIDTrainDataset.from_split(load_identity_crops(tmp_path), transform=build_train_transform())
 
         assert dataset.num_classes == 4
         assert len(dataset) == 20
@@ -74,7 +74,7 @@ class TestReIDTrainDataset:
             pids=np.array([2, 5, 5], dtype=np.int32),
             camids=np.array([-1, -1, -1], dtype=np.int32),
         )
-        dataset = ReIDTrainDataset(split, transform=lambda image: image)
+        dataset = ReIDTrainDataset.from_split(split, transform=lambda image: image)
 
         assert dataset.num_classes == 2
         assert dataset.labels == [0, 1, 1]
@@ -93,7 +93,7 @@ class TestReIDTrainDataset:
         unseen.mkdir(parents=True)
         Image.fromarray(np.zeros((48, 24, 3), dtype="uint8")).save(unseen / "0.jpg")
 
-        train_ds = ReIDTrainDataset(load_identity_crops(train_root), transform=lambda image: image)
+        train_ds = ReIDTrainDataset.from_split(load_identity_crops(train_root), transform=lambda image: image)
         val_ds = ReIDTrainDataset.from_identity_label_map(
             load_identity_crops(val_root),
             train_ds.label_by_identity,
@@ -114,7 +114,7 @@ class TestPKSampler:
 
     def test_batch_structure(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=5, num_per=4)
-        dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
+        dataset = ReIDTrainDataset.from_split(load_identity_crops(tmp_path))
         p, k = 2, 3
         sampler = PKSampler(dataset.labels, p=p, k=k, seed=123)
 
@@ -132,7 +132,7 @@ class TestPKSampler:
         """Batches per epoch are ``(identities_per_epoch * crops_per_identity) // (p * k)``."""
         num_ids = 8
         _make_crops(tmp_path, num_ids=num_ids, num_per=10)
-        dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
+        dataset = ReIDTrainDataset.from_split(load_identity_crops(tmp_path))
         p, k = 2, 2
 
         default = PKSampler(dataset.labels, p=p, k=k, seed=0)
@@ -147,6 +147,6 @@ class TestPKSampler:
 
     def test_rejects_too_few_identities(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=2, num_per=4)
-        dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
+        dataset = ReIDTrainDataset.from_split(load_identity_crops(tmp_path))
         with pytest.raises(ValueError, match="at least p="):
             PKSampler(dataset.labels, p=4, k=2)

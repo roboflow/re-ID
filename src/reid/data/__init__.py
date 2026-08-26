@@ -12,6 +12,7 @@ from reid.data.benchmarks import load_market1501, load_msmt17
 from reid.data.identity_crops import (
     build_identity_crop_holdout_split,
     build_identity_crop_retrieval_split,
+    identity_name_from_crop_path,
     load_identity_crops,
 )
 from reid.data.splits import MARKET1501_GALLERY_JUNK_PIDS, ReIDSplit
@@ -21,6 +22,7 @@ __all__ = [
     "ReIDSplit",
     "build_identity_crop_holdout_split",
     "build_identity_crop_retrieval_split",
+    "identity_name_from_crop_path",
     "load_identity_crops",
     "load_market1501",
     "load_msmt17",

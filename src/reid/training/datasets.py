@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from torch.utils.data import Sampler
@@ -21,14 +20,15 @@ from torchvision.transforms import (
     RandomHorizontalFlip,
 )
 
-from reid.data import ReIDSplit
-from reid.datasets import CropDataset
+from reid.crop_dataset import CropDataset
+from reid.data import ReIDSplit, identity_name_from_crop_path
 from reid.preprocessing import ReIDPreprocessing
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     import torch
+    from PIL import Image
 
 IdentitiesPerEpoch = int | Literal["all"]
 
@@ -53,78 +53,78 @@ def build_eval_transform(preprocessing: ReIDPreprocessing | None = None) -> Comp
     return preprocessing.build_crop_transform()
 
 
-def identity_name_from_crop_path(path: str | Path) -> str:
-    """Identity folder name for ``<root>/<identity>/<crop>.jpg`` layouts."""
-    return Path(path).parent.name
-
-
 class ReIDTrainDataset(CropDataset):
-    """Crop dataset over a :class:`ReIDSplit`, with dense training labels.
+    """Crop dataset yielding ``(tensor, label)`` for classifier training.
 
-    The dataset does not touch the filesystem to discover identities; it consumes
-    a :class:`ReIDSplit` (typically from :func:`reid.data.load_identity_crops` or
-    a holdout partition) and reads crops from ``split.image_paths`` on demand.
-    Person IDs are remapped to contiguous ``0..N-1`` classifier labels, so a split
-    whose ``pids`` are non-contiguous (for example a train partition left after an
-    identity holdout) still yields a dense label space for the classifier head.
+    Adds the training label space to :class:`~reid.crop_dataset.CropDataset`:
+    dense ``0..N-1`` classifier labels, the identity-folder to label map that
+    validation reuses, and per-item labels for :class:`PKSampler`. Build it with
+    :meth:`from_split` (remaps a split's person IDs) or
+    :meth:`from_identity_label_map` (reuses a training map for val crops).
     """
 
     def __init__(
         self,
-        split: ReIDSplit | None = None,
-        transform=None,
+        image_paths: list[str],
+        labels: list[int],
         *,
-        image_paths: list[str] | None = None,
-        labels: list[int] | None = None,
+        transform: Callable[[Image.Image], torch.Tensor] | None = None,
         num_classes: int | None = None,
     ) -> None:
-        """Build a training dataset from ``split`` or explicit paths/labels.
+        """Build a training dataset from crop paths and dense classifier labels.
 
         Args:
-            split: Crop split providing image paths and person IDs.
-            transform: Optional image transform (defaults to
-                :func:`build_train_transform`).
-            image_paths: Explicit crop paths (with ``labels``).
-            labels: Explicit classifier labels aligned with ``image_paths``.
-            num_classes: Classifier class count when using explicit labels.
-                Defaults to ``max(labels) + 1``.
+            image_paths: Crop paths.
+            labels: Classifier labels aligned with ``image_paths``.
+            transform: Image transform (defaults to :func:`build_train_transform`).
+            num_classes: Classifier class count. Defaults to ``max(labels) + 1``.
 
         Raises:
-            ValueError: If inputs are empty or inconsistent.
+            ValueError: If the inputs are empty or of unequal length.
         """
-        if split is not None:
-            if image_paths is not None or labels is not None:
-                raise ValueError("Pass either split or image_paths/labels, not both.")
-            if len(split) == 0:
-                raise ValueError("Cannot build a training dataset from an empty ReIDSplit.")
+        if not image_paths:
+            raise ValueError("Cannot build a training dataset from empty image_paths.")
+        if len(image_paths) != len(labels):
+            raise ValueError("image_paths and labels must have the same length.")
 
-            self.image_paths = list(split.image_paths)
-            split_pids = [int(pid) for pid in split.pids.tolist()]
-            label_by_pid = {pid: label for label, pid in enumerate(sorted(set(split_pids)))}
-            self.labels = [label_by_pid[pid] for pid in split_pids]
-            self._num_classes = len(label_by_pid)
-        else:
-            if image_paths is None or labels is None:
-                raise ValueError("Provide split, or both image_paths and labels.")
-            if len(image_paths) == 0:
-                raise ValueError("Cannot build a training dataset from empty image_paths.")
-            if len(image_paths) != len(labels):
-                raise ValueError("image_paths and labels must have the same length.")
-            self.image_paths = list(image_paths)
-            self.labels = [int(label) for label in labels]
-            self._num_classes = num_classes if num_classes is not None else max(self.labels) + 1
-
-        self.transform = transform if transform is not None else build_train_transform()
+        super().__init__(image_paths, transform if transform is not None else build_train_transform())
+        self.labels = [int(label) for label in labels]
+        self._num_classes = num_classes if num_classes is not None else max(self.labels) + 1
         self._label_by_identity = {
             identity_name_from_crop_path(path): label for path, label in zip(self.image_paths, self.labels, strict=True)
         }
+
+    @classmethod
+    def from_split(
+        cls,
+        split: ReIDSplit,
+        transform: Callable[[Image.Image], torch.Tensor] | None = None,
+    ) -> ReIDTrainDataset:
+        """Build from a :class:`ReIDSplit`, remapping person IDs to dense labels.
+
+        A split's ``pids`` need not be contiguous (a train partition left after an
+        identity holdout is not), while the classifier head needs ``0..N-1``.
+
+        Raises:
+            ValueError: If ``split`` is empty.
+        """
+        if len(split) == 0:
+            raise ValueError("Cannot build a training dataset from an empty ReIDSplit.")
+        pids = [int(pid) for pid in split.pids.tolist()]
+        label_by_pid = {pid: label for label, pid in enumerate(sorted(set(pids)))}
+        return cls(
+            list(split.image_paths),
+            [label_by_pid[pid] for pid in pids],
+            transform=transform,
+            num_classes=len(label_by_pid),
+        )
 
     @classmethod
     def from_identity_label_map(
         cls,
         split: ReIDSplit,
         label_by_identity: dict[str, int],
-        transform=None,
+        transform: Callable[[Image.Image], torch.Tensor] | None = None,
         *,
         num_classes: int | None = None,
     ) -> ReIDTrainDataset:
@@ -132,12 +132,14 @@ class ReIDTrainDataset(CropDataset):
 
         Used for temporal val crops that reuse training identity folder names
         (for example MOT17 train-half / val-half of the same sequences).
+
+        Raises:
+            ValueError: If no crop shares an identity folder with the map.
         """
         image_paths: list[str] = []
         labels: list[int] = []
         for path in split.image_paths:
-            name = identity_name_from_crop_path(path)
-            label = label_by_identity.get(name)
+            label = label_by_identity.get(identity_name_from_crop_path(path))
             if label is None:
                 continue
             image_paths.append(path)
@@ -145,9 +147,9 @@ class ReIDTrainDataset(CropDataset):
         if not image_paths:
             raise ValueError("No validation crops share identity folder names with the training map.")
         return cls(
+            image_paths,
+            labels,
             transform=transform,
-            image_paths=image_paths,
-            labels=labels,
             num_classes=num_classes if num_classes is not None else max(label_by_identity.values()) + 1,
         )
 
@@ -160,9 +162,6 @@ class ReIDTrainDataset(CropDataset):
     def label_by_identity(self) -> dict[str, int]:
         """Map identity folder name → classifier label."""
         return dict(self._label_by_identity)
-
-    def __len__(self) -> int:
-        return len(self.image_paths)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
         return super().__getitem__(index), self.labels[index]

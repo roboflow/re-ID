@@ -35,6 +35,11 @@ _QUERY_CAMID = 0
 _GALLERY_CAMID = 1
 
 
+def identity_name_from_crop_path(path: str | Path) -> str:
+    """Identity folder name for the ``<root>/<identity>/<crop>.jpg`` layout."""
+    return Path(path).parent.name
+
+
 def load_identity_crops(
     root: str | Path,
     *,

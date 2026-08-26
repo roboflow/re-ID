@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
-from reid.datasets import CropDataset
+from reid.crop_dataset import CropDataset
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 

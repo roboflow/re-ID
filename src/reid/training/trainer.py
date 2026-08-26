@@ -380,7 +380,7 @@ def train_reid(
         architecture, pretrained, preprocessing
     )
     transform = build_train_transform(resolved_preprocessing)
-    dataset = ReIDTrainDataset(split, transform=transform)
+    dataset = ReIDTrainDataset.from_split(split, transform=transform)
     num_classes = dataset.num_classes
     logger.info("Crop dataset: %d identities, %d crops", num_classes, len(dataset))
 
