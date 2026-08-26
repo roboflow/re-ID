@@ -129,17 +129,21 @@ class TestPKSampler:
             assert all(count == k for count in label_counts.values())
 
     def test_epoch_budget_scales_with_identities_and_crops(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=8, num_per=10)
+        """Batches per epoch are ``(identities_per_epoch * crops_per_identity) // (p * k)``."""
+        num_ids = 8
+        _make_crops(tmp_path, num_ids=num_ids, num_per=10)
         dataset = ReIDTrainDataset(load_identity_crops(tmp_path))
         p, k = 2, 2
 
         default = PKSampler(dataset.labels, p=p, k=k, seed=0)
         deeper = PKSampler(dataset.labels, p=p, k=k, seed=0, crops_per_identity=2 * k)
-        shorter = PKSampler(dataset.labels, p=p, k=k, seed=0, identities_per_epoch=4)
+        shorter = PKSampler(dataset.labels, p=p, k=k, seed=0, identities_per_epoch=num_ids // 2)
 
-        assert len(default) == 8 // p
+        # len(sampler) is the epoch's batch count. crops_per_identity defaults to k,
+        # so k cancels and the default epoch is one pass over the identities.
+        assert len(default) == num_ids // p
         assert len(deeper) == 2 * len(default)
-        assert len(shorter) == 4 // p
+        assert len(shorter) == len(default) // 2
 
     def test_rejects_too_few_identities(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=2, num_per=4)
