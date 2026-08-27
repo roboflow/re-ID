@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
 from reid.architectures.timm_encoder import TimmEncoder, remap_state_dict_onto_timm_encoder
-from reid.data import ReIDSplit, load_identity_crops
+from reid.data import ReIDCrops, ReIDSplit, load_identity_crops
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.model import ReIDModel, _select_device
 from reid.preprocessing import ReIDPreprocessing
@@ -287,6 +287,15 @@ def _run_epoch(
     return epoch_mean, step
 
 
+def _as_split(data: ReIDCrops | ReIDSplit | str | Path) -> ReIDSplit:
+    """Accept a crop folder, a :class:`ReIDCrops`, or an explicit split."""
+    if isinstance(data, ReIDCrops):
+        return data.split
+    if isinstance(data, ReIDSplit):
+        return data
+    return load_identity_crops(data)
+
+
 def _build_pk_loader(
     dataset: ReIDTrainDataset,
     config: TrainConfig,
@@ -310,14 +319,14 @@ def _build_pk_loader(
 
 
 def _build_val_loader(
-    val_data: ReIDSplit | str | Path,
+    val_data: ReIDCrops | ReIDSplit | str | Path,
     train_dataset: ReIDTrainDataset,
     config: TrainConfig,
     preprocessing: ReIDPreprocessing,
     device: torch.device,
 ) -> DataLoader:
     """Build a PK-sampled val loader over crops sharing train identity folders."""
-    val_split = val_data if isinstance(val_data, ReIDSplit) else load_identity_crops(val_data)
+    val_split = _as_split(val_data)
     eval_transform = build_eval_transform(preprocessing)
     val_dataset = ReIDTrainDataset.from_identity_label_map(
         val_split,
@@ -337,14 +346,14 @@ def _build_val_loader(
 
 
 def train_reid(
-    data: ReIDSplit | str | Path,
+    data: ReIDCrops | ReIDSplit | str | Path,
     config: TrainConfig | None = None,
     *,
     architecture: str | None = None,
     pretrained: str | None = None,
     preprocessing: ReIDPreprocessing | None = None,
     output_dir: str | Path | None = None,
-    val_data: ReIDSplit | str | Path | None = None,
+    val_data: ReIDCrops | ReIDSplit | str | Path | None = None,
 ) -> TrainResult:
     """Fine-tune a ReID encoder on a crop :class:`ReIDSplit`.
 
@@ -374,7 +383,7 @@ def train_reid(
     device = _select_device(config.device)
     torch.manual_seed(config.seed)
 
-    split = data if isinstance(data, ReIDSplit) else load_identity_crops(data)
+    split = _as_split(data)
 
     arch_name, weights_source, resolved_preprocessing = _resolve_training_recipe(
         architecture, pretrained, preprocessing

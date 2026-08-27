@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 import warnings
 from collections.abc import Sequence
+from pathlib import Path
 
 import numpy as np
 import supervision as sv
@@ -205,6 +207,101 @@ class ReIDModel:
         )
         save_model_config(card, directory, preprocessing=self._preprocessing)
         logger.info("ReIDModel saved to %s", directory)
+
+    # ------------------------------------------------------------------ #
+    # Fine-tuning and evaluation
+    # ------------------------------------------------------------------ #
+
+    def train(
+        self,
+        data,
+        *,
+        val_split=None,
+        config=None,
+        output_dir: str | Path | None = None,
+        **overrides,
+    ):
+        """Fine-tune this encoder in place on a crop dataset.
+
+        Delegates to :func:`reid.training.train_reid`, warm-starting from this
+        model's current weights and preprocessing, then adopts the trained
+        backbone so the same object can go straight on to
+        :meth:`evaluate`, :meth:`extract_features`, or :meth:`save_pretrained`.
+
+        Args:
+            data: Training crops — a :class:`~reid.data.ReIDCrops`, a
+                :class:`~reid.data.ReIDSplit`, or a crop-folder path.
+            val_split: Optional validation crops, in the same forms. Crops are
+                matched to training identities by folder name.
+            config: Full :class:`~reid.training.TrainConfig`. Mutually exclusive
+                with ``overrides``.
+            output_dir: If set, save the (best) checkpoint there.
+            **overrides: ``TrainConfig`` fields, e.g. ``epochs=30, p=8, k=4``.
+
+        Returns:
+            :class:`~reid.training.TrainResult` with per-epoch history.
+
+        Raises:
+            ValueError: If both ``config`` and ``overrides`` are given, or the
+                architecture name is unknown (nothing to warm-start from).
+        """
+        # Local import: reid.training builds on reid.model, so importing it at
+        # module scope would be circular.
+        from reid.training import TrainConfig, train_reid
+
+        if config is not None and overrides:
+            raise ValueError("Pass either config or individual TrainConfig overrides, not both.")
+        if self._architecture is None:
+            raise ValueError(
+                "Cannot fine-tune a model whose architecture name is unknown. "
+                "Build it via from_pretrained() with a named architecture."
+            )
+
+        with tempfile.TemporaryDirectory() as warm_start:
+            self.save_pretrained(warm_start)
+            result = train_reid(
+                data,
+                config if config is not None else TrainConfig(**overrides),
+                pretrained=warm_start,
+                preprocessing=self._preprocessing,
+                output_dir=output_dir,
+                val_data=val_split,
+            )
+
+        # Training may have run on another device (config.device); this model
+        # keeps its own, so bring the trained weights back to it.
+        self._backbone = result.model._backbone.to(self._device)
+        self._backbone.eval()
+        return result
+
+    def evaluate(self, data, gallery=None, *, queries_per_id: int = 1, batch_size: int = 64, **kwargs):
+        """Score retrieval metrics for this encoder.
+
+        Pass a :class:`~reid.data.ReIDCrops` (or crop-folder path) to have the
+        query/gallery partition derived from identity folders, or pass two
+        explicit :class:`~reid.data.ReIDSplit` objects — which is what benchmark
+        loaders such as :func:`~reid.data.load_market1501` return, and whose
+        published splits must not be re-derived.
+
+        Args:
+            data: ``ReIDCrops``/path/query split.
+            gallery: Gallery split, when ``data`` is an explicit query split.
+            queries_per_id: Queries per identity when deriving the partition.
+            batch_size: Embedding extraction batch size.
+            **kwargs: Forwarded to :meth:`~reid.eval.ReIDEvaluator.evaluate`.
+
+        Returns:
+            :class:`~reid.eval.ReIDResult`.
+        """
+        from reid.data import ReIDCrops
+        from reid.eval import ReIDEvaluator
+
+        if gallery is None:
+            crops = data if isinstance(data, ReIDCrops) else ReIDCrops(data)
+            query, gallery = crops.for_retrieval(queries_per_id=queries_per_id)
+        else:
+            query = data
+        return ReIDEvaluator(self, batch_size=batch_size).evaluate(query, gallery, **kwargs)
 
     # ------------------------------------------------------------------ #
     # Inference

@@ -138,6 +138,20 @@ result = train_reid(
 )
 
 print(result.best_epoch, result.best_val_total)
+```
+
+Or drive the whole lifecycle from the model, passing one crop set:
+
+```python
+from reid import ReIDModel
+from reid.data import ReIDCrops
+
+crops = ReIDCrops("/path/to/crops/train")
+val = ReIDCrops("/path/to/crops/val")
+
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
+result = model.train(crops, val_split=val, epochs=30, p=8, k=4, output_dir="/path/to/checkpoint")
+metrics = model.evaluate(val, queries_per_id=1)
 model = ReIDModel.from_pretrained("/path/to/checkpoint")
 ```
 
@@ -167,18 +181,16 @@ Two differences from the Bag-of-Tricks reference are worth knowing before you co
 After training, score embeddings on held-out crops. This is separate from `val_data` loss during training.
 
 ```python
-from reid import ReIDEvaluator, ReIDModel
-from reid.data import build_identity_crop_retrieval_split, load_identity_crops
+from reid import ReIDModel
+from reid.data import ReIDCrops
 
-split = load_identity_crops("/path/to/crops/val")
-query, gallery = build_identity_crop_retrieval_split(split, queries_per_id=1)
-
-baseline = ReIDModel.from_pretrained()
-finetuned = ReIDModel.from_pretrained("/path/to/checkpoint")
-
-for label, model in [("baseline", baseline), ("finetuned", finetuned)]:
-    print(label, ReIDEvaluator(model).evaluate(query, gallery).metrics)
+crops = ReIDCrops("/path/to/crops/val")
+model = ReIDModel.from_pretrained("/path/to/checkpoint")
+result = model.evaluate(crops, queries_per_id=1)
+print(result.metrics)
 ```
+
+`evaluate` derives the query/gallery partition from identity folders. Benchmark datasets ship their own splits, so pass those explicitly instead: `model.evaluate(*load_market1501(root))`.
 
 On the MOT17 notebook protocol (train on `mot17/train` crops, retrieve on `mot17/val` crops), scenes and IDs can overlap across time. Treat mAP / Rank-1 as a temporal diagnostic, not an open-set ReID score like Market-1501. For identity-disjoint holdout, partition with `build_identity_crop_holdout_split` before training. Metric definitions: [ReID Metrics](metrics.md).
 

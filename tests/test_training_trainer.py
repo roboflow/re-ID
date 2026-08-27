@@ -21,6 +21,7 @@ from safetensors import safe_open
 from reid import ReIDModel
 from reid.architectures import build_architecture
 from reid.architectures.timm_encoder import TimmEncoder, remap_state_dict_onto_timm_encoder
+from reid.data import ReIDCrops
 from reid.preprocessing import ReIDPreprocessing
 from reid.training import TrainableBackbone, TrainConfig, train_reid
 
@@ -132,6 +133,35 @@ class TestTrainReid:
 
         reloaded = ReIDModel.from_pretrained(str(out_dir)).extract_features(detections, frame)
         np.testing.assert_allclose(reloaded, embeddings, atol=1e-5)
+
+    def test_model_train_and_evaluate_round_trip(self, tmp_path: Path) -> None:
+        """One ReIDCrops object drives fine-tuning and evaluation from the model itself."""
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        crops = ReIDCrops(data_root)
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+        before = model.extract_features_from_paths(crops.split.image_paths[:2]).copy()
+        out_dir = tmp_path / "checkpoint"
+
+        result = model.train(
+            crops,
+            val_split=crops,
+            config=_cpu_config(),
+            output_dir=out_dir,
+        )
+
+        assert len(result.history) == 1
+        assert (out_dir / "weights.safetensors").exists()
+        after = model.extract_features_from_paths(crops.split.image_paths[:2])
+        assert not np.allclose(before, after), "train() must update the model in place"
+
+        metrics = model.evaluate(crops, queries_per_id=1, verbose=False)
+        assert metrics.metrics.num_queries == crops.num_identities
+
+    def test_model_train_rejects_config_and_overrides_together(self, tmp_path: Path) -> None:
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+        with pytest.raises(ValueError, match="not both"):
+            model.train(tmp_path, config=_cpu_config(), epochs=2)
 
     def test_history_lr_is_the_trained_lr(self, tmp_path: Path) -> None:
         """history['lr'] reports the LR the epoch trained at, not the post-step value."""
