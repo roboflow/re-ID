@@ -11,7 +11,7 @@ Gallery re-identification scores how well an appearance encoder ranks the right 
 
 - What Rank-k (CMC), mAP, and mINP measure
 - How Market-1501 / MSMT17 filtering (same camera, junk IDs) works
-- How to run gallery evaluation with `ReIDEvaluator`
+- How to run gallery evaluation with `ReIDModel.evaluate`
 - When to use cosine vs Euclidean distance
 
 ---
@@ -35,11 +35,11 @@ pip install -e ".[dev]"
 Load Market-1501 query and gallery splits, embed them with a pretrained model, and report metrics:
 
 ```python
-from reid import ReIDEvaluator, ReIDModel, load_market1501
+from reid import ReIDModel, load_market1501
 
 model = ReIDModel.from_pretrained()
 query, gallery = load_market1501("/path/to/Market-1501-v15.09.15")
-result = ReIDEvaluator(model).evaluate(query, gallery)
+result = model.evaluate(query, gallery)
 print(result.metrics)
 ```
 
@@ -108,7 +108,7 @@ mINP penalizes models that bury hard positive gallery images deep in the ranking
 
 ## Distance metrics
 
-`ReIDEvaluator.evaluate(..., distance=...)` builds a query × gallery distance matrix before calling the metric functions.
+`model.evaluate(..., distance=...)` builds a query × gallery distance matrix before calling the metric functions.
 
 | `distance`           | Behavior                                        |
 | :------------------- | :---------------------------------------------- |
@@ -124,11 +124,11 @@ The torchreid model zoo reports OSNet x1.0 same-domain numbers with **euclidean*
 Same metric stack, different loader:
 
 ```python
-from reid import ReIDEvaluator, ReIDModel, load_msmt17
+from reid import ReIDModel, load_msmt17
 
 model = ReIDModel.from_pretrained("/path/to/osnet_x1_0_msmt17.pth", architecture="osnet_x1_0")
 query, gallery = load_msmt17("/path/to/MSMT17_V1")
-result = ReIDEvaluator(model).evaluate(query, gallery, distance="cosine")
+result = model.evaluate(query, gallery, distance="cosine")
 print(result.metrics)
 ```
 

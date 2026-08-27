@@ -39,7 +39,7 @@ class TestComputeReidMetrics:
     """mAP / CMC / mINP computation and input validation."""
 
     def test_market1501_pid_zero_is_junk_in_gallery(self) -> None:
-        from reid.eval.datasets import MARKET1501_GALLERY_JUNK_PIDS
+        from reid.data import MARKET1501_GALLERY_JUNK_PIDS
         from reid.eval.metrics import compute_reid_metrics
 
         metrics = compute_reid_metrics(
@@ -112,7 +112,7 @@ class TestReIDEvaluator:
     """``ReIDEvaluator`` end-to-end retrieval scoring."""
 
     def test_reuses_provided_query_embeddings_only(self, tmp_path: Path) -> None:
-        from reid.eval.datasets import ReIDSplit
+        from reid.data import ReIDSplit
         from reid.eval.evaluator import ReIDEvaluator
 
         query_img = tmp_path / "q.jpg"
@@ -158,7 +158,7 @@ class TestReIDEvaluator:
         np.testing.assert_array_equal(result.query_embeddings, provided_query)
 
     def test_wrong_length_provided_embeddings_raise(self, tmp_path: Path) -> None:
-        from reid.eval.datasets import ReIDSplit
+        from reid.data import ReIDSplit
         from reid.eval.evaluator import ReIDEvaluator
 
         query_img = tmp_path / "q.jpg"
@@ -209,7 +209,7 @@ class TestMarket1501Loader:
     """Market-1501 folder parsing."""
 
     def test_load_market1501_from_temp_tree(self, tmp_path) -> None:
-        from reid.eval.datasets import (
+        from reid.data import (
             MARKET1501_GALLERY_JUNK_PIDS,
             load_market1501,
         )
@@ -233,7 +233,7 @@ class TestMSMT17Loader:
     """MSMT17 list-file parsing."""
 
     def test_load_msmt17_from_temp_lists(self, tmp_path) -> None:
-        from reid.eval.datasets import load_msmt17
+        from reid.data import load_msmt17
 
         root = Path(tmp_path)
         test_root = root / "test"

@@ -97,7 +97,7 @@ val_stats = generate_mot_patches(
 )
 ```
 
-If you already have identity folders from another source, skip this step and pass that root to `train_reid` (or load it with `load_identity_crops`).
+If you already have identity folders from another source, skip this step and point `ReIDCrops` at that root.
 
 `val_data` matches crops by identity folder name. Trackers' `mot17/val` holds later frames of the same sequences, so names like `MOT17-02_5` line up with train. If train and val share no folder names, training raises.
 

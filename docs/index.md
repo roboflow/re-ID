@@ -31,6 +31,6 @@ print(embeddings.shape)  # (1, 512)
 ## Guides
 
 - [Load a model](guides/loading.md): curated aliases, saved exports, bare checkpoints
-- [Evaluate a gallery](guides/evaluation.md): query/gallery splits with `ReIDEvaluator`
+- [Evaluate a gallery](guides/evaluation.md): retrieval metrics with `ReIDModel.evaluate`
 - [Fine-tune on tracking crops](learn/train.md): MOT-format patches, `train_reid`, reload for BoT-SORT
 - [ReID metrics](learn/metrics.md): CMC Rank-k, mAP, and mINP for Market-1501 / MSMT17 gallery retrieval
