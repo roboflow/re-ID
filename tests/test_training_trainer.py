@@ -21,7 +21,7 @@ from safetensors import safe_open
 from reid import ReIDModel
 from reid.architectures import build_architecture
 from reid.architectures.timm_encoder import TimmEncoder, remap_state_dict_onto_timm_encoder
-from reid.data import ReIDCrops
+from reid.data import ReIDDataset
 from reid.preprocessing import ReIDPreprocessing
 from reid.training import TrainableBackbone, TrainConfig, train_reid
 
@@ -135,10 +135,10 @@ class TestTrainReid:
         np.testing.assert_allclose(reloaded, embeddings, atol=1e-5)
 
     def test_model_train_and_evaluate_round_trip(self, tmp_path: Path) -> None:
-        """One ReIDCrops object drives fine-tuning and evaluation from the model itself."""
+        """One ReIDDataset object drives fine-tuning and evaluation from the model itself."""
         data_root = tmp_path / "crops"
         _make_crops(data_root, num_ids=4, num_per=4)
-        crops = ReIDCrops(data_root)
+        crops = ReIDDataset(data_root)
         model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
         before = model.extract_features_from_paths(crops.split.image_paths[:2]).copy()
         out_dir = tmp_path / "checkpoint"

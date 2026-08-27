@@ -8,7 +8,7 @@ Import the public interface from `reid`:
 
 ```python
 from reid import (
-    ReIDCrops,
+    ReIDDataset,
     ReIDEvaluator,
     ReIDModel,
     ReIDPreprocessing,
@@ -21,7 +21,7 @@ from reid import (
 )
 ```
 
-`ReIDModel` carries the whole lifecycle: `from_pretrained` to load, `train` to fine-tune in place, `evaluate` to score retrieval, `extract_features` for inference, `to` to move devices, and `save_pretrained` to persist. `ReIDCrops` wraps a `<root>/<identity>/<crop>.jpg` folder and hands out the partition each step needs; `ReIDSplit` is the underlying paths/pids/camids record that `load_market1501` and `load_msmt17` return.
+`ReIDModel` carries the whole lifecycle: `from_pretrained` to load, `train` to fine-tune in place, `evaluate` to score retrieval, `extract_features` for inference, `to` to move devices, and `save_pretrained` to persist. `ReIDDataset` wraps a `<root>/<identity>/<crop>.jpg` folder and hands out the partition each step needs; `ReIDSplit` is the underlying paths/pids/camids record that `load_market1501` and `load_msmt17` return.
 
 For a training loop you drive yourself, `reid.training` exposes `train_reid` and `TrainConfig`, and `ReIDEvaluator` scores an explicit query/gallery pair.
 

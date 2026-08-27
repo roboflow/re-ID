@@ -240,7 +240,7 @@ class ReIDModel:
         :meth:`evaluate`, :meth:`extract_features`, or :meth:`save_pretrained`.
 
         Args:
-            data: Training crops — a :class:`~reid.data.ReIDCrops`, a
+            data: Training crops — a :class:`~reid.data.ReIDDataset`, a
                 :class:`~reid.data.ReIDSplit`, or a crop-folder path.
             val_split: Optional validation crops, in the same forms. Crops are
                 matched to training identities by folder name.
@@ -293,14 +293,14 @@ class ReIDModel:
     def evaluate(self, data, gallery=None, *, queries_per_id: int = 1, batch_size: int = 64, **kwargs):
         """Score retrieval metrics for this encoder.
 
-        Pass a :class:`~reid.data.ReIDCrops` (or crop-folder path) to have the
+        Pass a :class:`~reid.data.ReIDDataset` (or crop-folder path) to have the
         query/gallery partition derived from identity folders, or pass two
         explicit :class:`~reid.data.ReIDSplit` objects — which is what benchmark
         loaders such as :func:`~reid.data.load_market1501` return, and whose
         published splits must not be re-derived.
 
         Args:
-            data: ``ReIDCrops``/path/query split.
+            data: ``ReIDDataset``/path/query split.
             gallery: Gallery split, when ``data`` is an explicit query split.
             queries_per_id: Queries per identity when deriving the partition.
             batch_size: Embedding extraction batch size.
@@ -309,11 +309,11 @@ class ReIDModel:
         Returns:
             :class:`~reid.eval.ReIDResult`.
         """
-        from reid.data import ReIDCrops
+        from reid.data import ReIDDataset
         from reid.eval import ReIDEvaluator
 
         if gallery is None:
-            crops = data if isinstance(data, ReIDCrops) else ReIDCrops(data)
+            crops = data if isinstance(data, ReIDDataset) else ReIDDataset(data)
             query, gallery = crops.for_retrieval(queries_per_id=queries_per_id)
         else:
             query = data

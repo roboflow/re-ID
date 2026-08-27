@@ -4,7 +4,7 @@ title: Evaluate a query and gallery
 
 # Evaluate a gallery
 
-`ReIDModel.evaluate` computes re-identification metrics. Market-1501 and MSMT17 define their own query/gallery splits, so pass those explicitly; for a folder of identity crops, hand it a `ReIDCrops` and the partition is derived for you.
+`ReIDModel.evaluate` computes re-identification metrics. Market-1501 and MSMT17 define their own query/gallery splits, so pass those explicitly; for a folder of identity crops, hand it a `ReIDDataset` and the partition is derived for you.
 
 ```python
 from reid import ReIDModel, load_market1501

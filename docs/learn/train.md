@@ -97,7 +97,7 @@ val_stats = generate_mot_patches(
 )
 ```
 
-If you already have identity folders from another source, skip this step and point `ReIDCrops` at that root.
+If you already have identity folders from another source, skip this step and point `ReIDDataset` at that root.
 
 `val_data` matches crops by identity folder name. Trackers' `mot17/val` holds later frames of the same sequences, so names like `MOT17-02_5` line up with train. If train and val share no folder names, training raises.
 
@@ -144,10 +144,10 @@ Or drive the whole lifecycle from the model, passing one crop set:
 
 ```python
 from reid import ReIDModel
-from reid.data import ReIDCrops
+from reid.data import ReIDDataset
 
-crops = ReIDCrops("/path/to/crops/train")
-val = ReIDCrops("/path/to/crops/val")
+crops = ReIDDataset("/path/to/crops/train")
+val = ReIDDataset("/path/to/crops/val")
 
 model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall", device="cuda")
 result = model.train(crops, val_split=val, epochs=30, p=8, k=4, output_dir="/path/to/checkpoint")
@@ -182,9 +182,9 @@ After training, score embeddings on held-out crops. This is separate from `val_d
 
 ```python
 from reid import ReIDModel
-from reid.data import ReIDCrops
+from reid.data import ReIDDataset
 
-crops = ReIDCrops("/path/to/crops/val")
+crops = ReIDDataset("/path/to/crops/val")
 model = ReIDModel.from_pretrained("/path/to/checkpoint")
 result = model.evaluate(crops, queries_per_id=1)
 print(result.metrics)
