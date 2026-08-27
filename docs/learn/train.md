@@ -149,7 +149,7 @@ from reid.data import ReIDCrops
 crops = ReIDCrops("/path/to/crops/train")
 val = ReIDCrops("/path/to/crops/val")
 
-model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall", device="cuda")
 result = model.train(crops, val_split=val, epochs=30, p=8, k=4, output_dir="/path/to/checkpoint")
 metrics = model.evaluate(val, queries_per_id=1)
 model = ReIDModel.from_pretrained("/path/to/checkpoint")

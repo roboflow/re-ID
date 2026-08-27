@@ -99,6 +99,17 @@ class ReIDModel:
         logger.info("ReIDModel preprocessing: %s", preprocessing.describe())
 
     @property
+    def device(self) -> torch.device:
+        """Device the backbone runs on."""
+        return self._device
+
+    def to(self, device: str | torch.device) -> ReIDModel:
+        """Move the encoder to ``device`` and return self, for chaining."""
+        self._device = _select_device(device) if isinstance(device, str) else device
+        self._backbone.to(self._device)
+        return self
+
+    @property
     def preprocessing(self) -> ReIDPreprocessing:
         """Active preprocessing pipeline."""
         return self._preprocessing
@@ -237,6 +248,8 @@ class ReIDModel:
                 with ``overrides``.
             output_dir: If set, save the (best) checkpoint there.
             **overrides: ``TrainConfig`` fields, e.g. ``epochs=30, p=8, k=4``.
+                ``device`` defaults to this model's device; the trained weights
+                are returned to it either way. Use :meth:`to` to move the model.
 
         Returns:
             :class:`~reid.training.TrainResult` with per-epoch history.
@@ -251,6 +264,9 @@ class ReIDModel:
 
         if config is not None and overrides:
             raise ValueError("Pass either config or individual TrainConfig overrides, not both.")
+        # Train where this model already lives unless the caller says otherwise,
+        # so a CPU model does not silently train on an accelerator and move back.
+        overrides.setdefault("device", str(self._device))
         if self._architecture is None:
             raise ValueError(
                 "Cannot fine-tune a model whose architecture name is unknown. "

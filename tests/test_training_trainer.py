@@ -158,6 +158,17 @@ class TestTrainReid:
         metrics = model.evaluate(crops, queries_per_id=1, verbose=False)
         assert metrics.metrics.num_queries == crops.num_identities
 
+    def test_model_train_stays_on_the_models_device(self, tmp_path: Path) -> None:
+        """Training defaults to the model's device, and the weights come back to it."""
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+        model.train(data_root, epochs=1, p=2, k=2, warmup_epochs=0, num_workers=0, amp=False, log_interval=0)
+
+        assert model.device == torch.device("cpu")
+        assert all(parameter.device == torch.device("cpu") for parameter in model._backbone.parameters())
+
     def test_model_train_rejects_config_and_overrides_together(self, tmp_path: Path) -> None:
         model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
         with pytest.raises(ValueError, match="not both"):
