@@ -21,6 +21,7 @@ rule.
 from __future__ import annotations
 
 import random
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -211,12 +212,21 @@ def _check_query_params(*, queries_per_id: int, min_crops: int) -> None:
         )
 
 
+def indices_by_label(labels: Sequence[int]) -> dict[int, list[int]]:
+    """Map each identity label to the positions of its crops, in input order.
+
+    Shared by the retrieval and holdout split builders (which group raw person
+    IDs) and by the training PK sampler (which groups dense classifier labels).
+    """
+    grouped: dict[int, list[int]] = {}
+    for index, label in enumerate(labels):
+        grouped.setdefault(int(label), []).append(index)
+    return grouped
+
+
 def _indices_by_pid(split: ReIDSplit) -> dict[int, list[int]]:
     """Group crop indices by person ID, preserving the split's order."""
-    grouped: dict[int, list[int]] = {}
-    for index, pid in enumerate(split.pids.tolist()):
-        grouped.setdefault(pid, []).append(index)
-    return grouped
+    return indices_by_label(split.pids.tolist())
 
 
 def _query_gallery_from_pids(
@@ -269,3 +279,72 @@ def _subset_split(
         pids=pids,
         camids=np.full(len(indices), camid, dtype=np.int32),
     )
+
+
+class ReIDDataset:
+    """An identity-folder image dataset, scanned once.
+
+    Images may be tracking crops or any identity-labelled pictures; only the
+    ``<root>/<identity>/<image>`` layout matters. The filesystem scan happens in
+    the constructor and the partitions below are derived from it on demand in
+    microseconds, so hold one instance and ask it for whichever view a step needs.
+
+    Benchmark datasets are not covered: Market-1501 and MSMT17 ship their own
+    query/gallery definitions, so load those with
+    :func:`~reid.data.load_market1501` / :func:`~reid.data.load_msmt17` and pass
+    the two splits explicitly rather than re-deriving them here.
+
+    Args:
+        root: Dataset root holding one folder per identity.
+        identities: Optional whitelist of identity folder names.
+
+    Attributes:
+        split: The underlying :class:`ReIDSplit` over every image found.
+    """
+
+    def __init__(self, root: str | Path, *, identities: list[str] | None = None) -> None:
+        self.root = Path(root)
+        self.split = load_identity_crops(self.root, identities=identities)
+
+    def __len__(self) -> int:
+        return len(self.split)
+
+    @property
+    def num_identities(self) -> int:
+        """Distinct identities in the folder."""
+        return len(set(self.split.pids.tolist()))
+
+    def for_retrieval(
+        self,
+        *,
+        queries_per_id: int = 1,
+        min_crops: int = 2,
+        seed: int = 0,
+    ) -> tuple[ReIDSplit, ReIDSplit]:
+        """Partition into ``(query, gallery)`` for retrieval evaluation."""
+        return build_identity_crop_retrieval_split(
+            self.split,
+            queries_per_id=queries_per_id,
+            min_crops=min_crops,
+            seed=seed,
+        )
+
+    def for_holdout(
+        self,
+        *,
+        holdout_fraction: float = 0.2,
+        queries_per_id: int = 1,
+        min_crops: int = 2,
+        seed: int = 0,
+    ) -> tuple[ReIDSplit, ReIDSplit, ReIDSplit]:
+        """Hold whole identities out for retrieval; return ``(train, query, gallery)``."""
+        return build_identity_crop_holdout_split(
+            self.split,
+            holdout_fraction=holdout_fraction,
+            queries_per_id=queries_per_id,
+            min_crops=min_crops,
+            seed=seed,
+        )
+
+    def __repr__(self) -> str:
+        return f"ReIDDataset({str(self.root)!r}, images={len(self)}, identities={self.num_identities})"

@@ -4,56 +4,39 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""ReID appearance encoder: loading, inference, and checkpoint I/O."""
+"""ReID appearance encoder: loading, inference, and checkpoint I/O.
+
+Array-type boundary: torch tensors stay inside the model; embeddings cross to
+``numpy`` once, on the way out of :meth:`ReIDModel._embed_batch`, because
+``supervision`` and ``trackers`` consume numpy. Everything downstream
+(``reid.eval``) is numpy throughout.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import supervision as sv
 import torch
 import torch.nn as nn
-from PIL import Image as PILImage
 from safetensors.torch import save_file
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
+from reid.crop_dataset import CropDataset
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
 logger = logging.getLogger(__name__)
 
-
-class _CropPathDataset(Dataset):
-    """Reads crop images from disk and applies preprocessing on worker processes.
-
-    Images on disk are assumed RGB (PIL ``convert("RGB")``); see
-    :meth:`ReIDPreprocessing.prepare_crop_array`.
-    """
-
-    def __init__(
-        self,
-        image_paths: Sequence[str],
-        preprocessing: ReIDPreprocessing,
-        transforms: Callable[[np.ndarray], torch.Tensor],
-    ) -> None:
-        self._image_paths = list(image_paths)
-        self._preprocessing = preprocessing
-        self._transforms = transforms
-
-    def __len__(self) -> int:
-        return len(self._image_paths)
-
-    def __getitem__(self, index: int) -> torch.Tensor:
-        img = PILImage.open(self._image_paths[index]).convert("RGB")
-        arr = self._preprocessing.prepare_crop_array(np.asarray(img), from_bgr_frame=False)
-        resized = self._preprocessing.resize_crop(arr)
-        return self._transforms(resized)
+# Defaults for the derived query/gallery partition, mirrored from
+# ReIDDataset.for_retrieval so ReIDModel.evaluate can tell "unset" from "asked for".
+_RETRIEVAL_DEFAULTS = {"queries_per_id": 1, "min_crops": 2, "seed": 0}
 
 
 def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -96,6 +79,8 @@ class ReIDModel:
         backbone: Feature-extractor module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
         device: Device the backbone runs on.
         preprocessing: Crop and embedding preprocessing.
+        architecture: Registered architecture name, required by
+            ``save_pretrained``. ``None`` for a raw ``nn.Module`` backbone.
     """
 
     def __init__(
@@ -103,6 +88,7 @@ class ReIDModel:
         backbone: nn.Module,
         device: torch.device,
         preprocessing: ReIDPreprocessing,
+        architecture: str | None = None,
     ) -> None:
         self._backbone = backbone
         # Encoders are inference-only; force eval() so callers that pass a raw
@@ -111,10 +97,19 @@ class ReIDModel:
         self._device = device
         self._preprocessing = preprocessing
         self._transforms = preprocessing.build_transform()
-        # Set by from_pretrained() to enable save_pretrained(); None if the
-        # model was constructed directly with a raw nn.Module architecture.
-        self._architecture: str | None = None
+        self._architecture = architecture
         logger.info("ReIDModel preprocessing: %s", preprocessing.describe())
+
+    @property
+    def device(self) -> torch.device:
+        """Device the backbone runs on."""
+        return self._device
+
+    def to(self, device: str | torch.device) -> ReIDModel:
+        """Move the encoder to ``device`` and return self, for chaining."""
+        self._device = _select_device(device) if isinstance(device, str) else device
+        self._backbone.to(self._device)
+        return self
 
     @property
     def preprocessing(self) -> ReIDPreprocessing:
@@ -180,10 +175,12 @@ class ReIDModel:
 
         backbone.to(resolved_device)
 
-        instance = cls(backbone, resolved_device, plan.preprocessing)
-        # Store the architecture name (string only) to enable save_pretrained.
-        instance._architecture = plan.architecture if isinstance(plan.architecture, str) else None
-        return instance
+        return cls(
+            backbone,
+            resolved_device,
+            plan.preprocessing,
+            architecture=plan.architecture if isinstance(plan.architecture, str) else None,
+        )
 
     def save_pretrained(self, directory: str) -> None:
         """Persist ``weights.safetensors`` and ``reid_config.json`` for later loads.
@@ -205,7 +202,8 @@ class ReIDModel:
         os.makedirs(directory, exist_ok=True)
 
         weights_path = os.path.join(directory, "weights.safetensors")
-        save_file(self._backbone.state_dict(), weights_path)
+        state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
+        save_file(state_dict, weights_path)
 
         card = ModelCard(
             architecture=self._architecture,
@@ -213,6 +211,68 @@ class ReIDModel:
         )
         save_model_config(card, directory, preprocessing=self._preprocessing)
         logger.info("ReIDModel saved to %s", directory)
+
+    # ------------------------------------------------------------------ #
+    # Evaluation
+    # ------------------------------------------------------------------ #
+
+    def evaluate(
+        self,
+        data,
+        gallery=None,
+        *,
+        queries_per_id: int = 1,
+        min_crops: int = 2,
+        seed: int = 0,
+        batch_size: int = 64,
+        **kwargs,
+    ):
+        """Score retrieval metrics for this encoder.
+
+        Two ways to say what to score:
+
+        * Pass a :class:`~reid.data.ReIDDataset` (or a crop-folder path) and the
+          query/gallery partition is derived from identity folders, tuned by
+          ``queries_per_id`` / ``min_crops`` / ``seed``.
+        * Pass an explicit query and gallery split, which is what benchmark
+          loaders such as :func:`~reid.data.load_market1501` return; their
+          published partitions must not be re-derived.
+
+        Args:
+            data: ``ReIDDataset``, crop-folder path, or the query split.
+            gallery: Gallery split, when ``data`` is an explicit query split.
+            queries_per_id: Queries per identity when deriving the partition.
+            min_crops: Minimum crops an identity needs to be usable.
+            seed: Seed for the query/gallery draw.
+            batch_size: Embedding extraction batch size.
+            **kwargs: Forwarded to :meth:`~reid.eval.ReIDEvaluator.evaluate`
+                (``distance``, ``max_rank``, ``verbose``, cached embeddings).
+
+        Returns:
+            :class:`~reid.eval.ReIDResult`.
+
+        Raises:
+            ValueError: If split-derivation arguments are combined with an
+                explicit ``gallery``, which would silently ignore them.
+        """
+        from reid.data import ReIDDataset
+        from reid.eval import ReIDEvaluator
+
+        if gallery is None:
+            dataset = data if isinstance(data, ReIDDataset) else ReIDDataset(data)
+            query, gallery = dataset.for_retrieval(queries_per_id=queries_per_id, min_crops=min_crops, seed=seed)
+        else:
+            derived = {"queries_per_id": queries_per_id, "min_crops": min_crops, "seed": seed}
+            given = [name for name, value in derived.items() if value != _RETRIEVAL_DEFAULTS[name]]
+            if given:
+                verb = "applies" if len(given) == 1 else "apply"
+                raise ValueError(
+                    f"{', '.join(given)} only {verb} when the partition is derived; "
+                    "an explicit gallery is used as given. Drop them, or build the "
+                    "split with ReIDDataset.for_retrieval() and pass the result."
+                )
+            query = data
+        return ReIDEvaluator(self, batch_size=batch_size).evaluate(query, gallery, **kwargs)
 
     # ------------------------------------------------------------------ #
     # Inference
@@ -265,7 +325,7 @@ class ReIDModel:
         if batch_size < 1:
             raise ValueError(f"batch_size must be >= 1, got {batch_size}")
 
-        dataset = _CropPathDataset(image_paths, self._preprocessing, self._transforms)
+        dataset = CropDataset(image_paths, self._preprocessing.build_crop_transform())
         loader = DataLoader(
             dataset,
             batch_size=batch_size,

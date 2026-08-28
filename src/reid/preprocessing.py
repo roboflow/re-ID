@@ -14,6 +14,7 @@ from typing import Literal
 
 import cv2
 import numpy as np
+from PIL import Image as PILImage
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 # ImageNet statistics — shared by every OSNet / timm ImageNet-pretrained backbone.
@@ -63,13 +64,16 @@ class ReIDPreprocessing:
     pad_value: int = LETTERBOX_PAD_VALUE
 
     def __post_init__(self) -> None:
-        """Normalize legacy string values to ``Interpolation`` members."""
+        """Normalize interpolation and reject unknown ``resize_mode`` values."""
         try:
             interpolation = Interpolation(self.interpolation)
         except ValueError as error:
             choices = sorted(mode.value for mode in Interpolation)
             raise ValueError(f"Unknown interpolation {self.interpolation!r}. Choose from: {choices}") from error
         object.__setattr__(self, "interpolation", interpolation)
+
+        if self.resize_mode not in ("stretch", "letterbox"):
+            raise ValueError(f"Unknown resize_mode {self.resize_mode!r}. Choose from: ['letterbox', 'stretch'].")
 
     def describe(self) -> str:
         """Human-readable one-line summary."""
@@ -124,6 +128,14 @@ class ReIDPreprocessing:
 
         return cv2.resize(crop, (target_w, target_h), interpolation=interpolation)
 
+    def resize_transform(self) -> ResizeCrop:
+        """Transform applying :meth:`resize_crop` to an RGB PIL crop."""
+        return ResizeCrop(self)
+
+    def build_crop_transform(self) -> Compose:
+        """Full crop pipeline for an RGB PIL image: resize then tensor normalisation."""
+        return Compose([self.resize_transform(), *self.build_transform().transforms])
+
     def build_transform(self):
         """Tensor normalisation for a crop already at ``input_size`` (RGB PIL in)."""
         return Compose(
@@ -168,3 +180,17 @@ class ReIDPreprocessing:
         if "pad_value" in data:
             kwargs["pad_value"] = data["pad_value"]
         return cls(**kwargs)
+
+
+class ResizeCrop:
+    """Resize an RGB PIL crop with :meth:`ReIDPreprocessing.resize_crop`.
+
+    Keeps ``resize_mode`` / ``interpolation`` and the OpenCV resampler identical
+    between training and serving.
+    """
+
+    def __init__(self, preprocessing: ReIDPreprocessing) -> None:
+        self.preprocessing = preprocessing
+
+    def __call__(self, image: PILImage.Image) -> PILImage.Image:
+        return PILImage.fromarray(self.preprocessing.resize_crop(np.asarray(image)))

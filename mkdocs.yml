@@ -40,4 +40,5 @@ nav:
   - Guides:
       - Load a model: guides/loading.md
       - Evaluate a gallery: guides/evaluation.md
+      - ReID metrics: learn/metrics.md
   - API reference: api/reference.md

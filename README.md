@@ -75,7 +75,7 @@ Each architecture class owns its default crop/tensor recipe as a `default_prepro
 
 Embedding L2 norm is not a preprocessing field: extract returns raw vectors; cosine distance normalizes inside `ReIDEvaluator`.
 
-Saved `reid_config.json` also has `architecture`, optional `weights`, and optional domain warning metadata written by `save_pretrained`.
+`save_pretrained` writes `architecture` and `preprocessing` into `reid_config.json`, with weights beside it in `weights.safetensors`. Domain warnings stay on curated aliases at load time; they are not written into saved configs.
 
 ## Package layout
 
@@ -89,7 +89,7 @@ src/reid/
 ├── catalog.py          # curated aliases (ModelCard, ALIASES)
 ├── architectures/      # builders + class default_preprocessing() on each net
 ├── loaders.py          # weight I/O and resolve_load_plan
-├── data/               # ReIDSplit and benchmark loaders
+├── data/               # ReIDSplit, benchmarks, identity crops
 └── eval/               # gallery evaluation (metrics + ReIDEvaluator)
 ```
 
@@ -100,7 +100,7 @@ src/reid/
 
 1. Implement under `src/reid/architectures/` (or use `timm:<name>`).
 2. Add a `@classmethod default_preprocessing()` on the architecture class, documenting the input size / resize / colour contract for that checkpoint family.
-3. Register build + preprocessing dispatch in `architectures/__init__.py`.
+3. Register build + preprocessing dispatch in `architectures/registry.py`.
 4. Optionally add a curated alias in `catalog.ALIASES`.
 
 ## Gallery eval
@@ -114,7 +114,37 @@ result = ReIDEvaluator(model).evaluate(query, gallery)
 print(result.metrics)
 ```
 
-To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-domain checkpoints, cosine vs Euclidean), run [`notebooks/eval_reid.ipynb`](notebooks/eval_reid.ipynb) — Colab-friendly, pins this PR branch while under review.
+Metrics (CMC Rank-k, mAP, mINP), junk filtering, and cosine vs Euclidean distance are documented in [`docs/learn/metrics.md`](docs/learn/metrics.md).
+
+To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-domain checkpoints; OSNet x1.0 Market-1501 uses euclidean), run [`notebooks/eval_reid.ipynb`](notebooks/eval_reid.ipynb).
+
+## Fine-tuning on tracking crops
+
+**Full guide:** [`docs/learn/train.md`](docs/learn/train.md). Crops → `train_reid` → reload → BoT-SORT.
+
+Three steps:
+
+```python
+from reid import ReIDModel
+from reid.data.mot import generate_mot_patches
+from reid.training import TrainConfig, train_reid
+
+generate_mot_patches("/path/to/MOT17/train", "/path/to/crops/train", split="train_half", class_ids=[1])
+
+result = train_reid(
+    "/path/to/crops/train",
+    TrainConfig(epochs=30, num_workers=0),
+    pretrained="osnet_x1_0_msmt17_combineall",
+    output_dir="/path/to/checkpoint",
+    val_data="/path/to/crops/val",
+)
+
+model = ReIDModel.from_pretrained("/path/to/checkpoint")
+```
+
+Epoch length is an identity/crop budget: `(identities_per_epoch * crops_per_identity) // (p * k)` batches. Defaults cover all identities with `k` crops each. Optional `val_data` needs the same identity folder names as train. On Colab/Jupyter, set `num_workers=0`.
+
+End-to-end MOT17 walkthrough: [`notebooks/train_reid_mot17.ipynb`](notebooks/train_reid_mot17.ipynb).
 
 ## Weight cache
 
@@ -122,4 +152,4 @@ Google Drive downloads (`gd://...`) are cached under `~/.cache/reid/weights/`. S
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).

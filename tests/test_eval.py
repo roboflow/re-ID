@@ -18,13 +18,53 @@ from pathlib import Path
 import numpy as np
 import pytest
 import supervision as sv
+from PIL import Image
 
-# ---------------------------------------------------------------------------
-# Eval metrics + dataset loaders
-# ---------------------------------------------------------------------------
+from reid import ReIDDataset, ReIDModel
+
+
+def _make_identity_crops(root: Path, num_ids: int, num_per: int) -> None:
+    """Write a ``<root>/<identity>/<crop>.jpg`` tree of random images."""
+    rng = np.random.default_rng(0)
+    for i in range(num_ids):
+        identity_dir = root / f"id_{i:02d}"
+        identity_dir.mkdir(parents=True)
+        for j in range(num_per):
+            array = (rng.random((48, 24, 3)) * 255).astype("uint8")
+            Image.fromarray(array).save(identity_dir / f"{j}.jpg")
+
+
+class TestModelEvaluate:
+    """``ReIDModel.evaluate`` derives a partition or takes an explicit one."""
+
+    def test_evaluate_derives_or_accepts_an_explicit_partition(self, tmp_path: Path) -> None:
+        """Defaults handle the split; the derivation knobs are reachable; explicit splits win."""
+        data_root = tmp_path / "crops"
+        _make_identity_crops(data_root, num_ids=6, num_per=6)
+        data = ReIDDataset(data_root)
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+        assert model.evaluate(data, verbose=False).metrics.num_queries == 6
+        assert model.evaluate(data_root, verbose=False).metrics.num_queries == 6
+        assert model.evaluate(data, queries_per_id=2, min_crops=3, verbose=False).metrics.num_queries == 12
+
+        query, gallery = data.for_retrieval(queries_per_id=2, min_crops=3, seed=7)
+        assert model.evaluate(query, gallery, verbose=False).metrics.num_queries == 12
+
+    def test_evaluate_rejects_derivation_args_with_an_explicit_gallery(self, tmp_path: Path) -> None:
+        """Silently ignoring a split knob the caller set would hide a mistake."""
+        data_root = tmp_path / "crops"
+        _make_identity_crops(data_root, num_ids=6, num_per=6)
+        query, gallery = ReIDDataset(data_root).for_retrieval()
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+        with pytest.raises(ValueError, match="only applies when the partition is derived"):
+            model.evaluate(query, gallery, seed=7)
 
 
 class TestDistanceMatrix:
+    """Query x gallery distance matrix in cosine and euclidean metrics."""
+
     def test_cosine_and_euclidean_shapes(self) -> None:
         from reid.eval.evaluator import _distance_matrix
 
@@ -38,8 +78,10 @@ class TestDistanceMatrix:
 
 
 class TestComputeReidMetrics:
+    """mAP / CMC / mINP computation and input validation."""
+
     def test_market1501_pid_zero_is_junk_in_gallery(self) -> None:
-        from reid.eval.datasets import MARKET1501_GALLERY_JUNK_PIDS
+        from reid.data import MARKET1501_GALLERY_JUNK_PIDS
         from reid.eval.metrics import compute_reid_metrics
 
         metrics = compute_reid_metrics(
@@ -109,8 +151,10 @@ class TestComputeReidMetrics:
 
 
 class TestReIDEvaluator:
+    """``ReIDEvaluator`` end-to-end retrieval scoring."""
+
     def test_reuses_provided_query_embeddings_only(self, tmp_path: Path) -> None:
-        from reid.eval.datasets import ReIDSplit
+        from reid.data import ReIDSplit
         from reid.eval.evaluator import ReIDEvaluator
 
         query_img = tmp_path / "q.jpg"
@@ -156,7 +200,7 @@ class TestReIDEvaluator:
         np.testing.assert_array_equal(result.query_embeddings, provided_query)
 
     def test_wrong_length_provided_embeddings_raise(self, tmp_path: Path) -> None:
-        from reid.eval.datasets import ReIDSplit
+        from reid.data import ReIDSplit
         from reid.eval.evaluator import ReIDEvaluator
 
         query_img = tmp_path / "q.jpg"
@@ -204,8 +248,10 @@ class TestReIDEvaluator:
 
 
 class TestMarket1501Loader:
+    """Market-1501 folder parsing."""
+
     def test_load_market1501_from_temp_tree(self, tmp_path) -> None:
-        from reid.eval.datasets import (
+        from reid.data import (
             MARKET1501_GALLERY_JUNK_PIDS,
             load_market1501,
         )
@@ -226,8 +272,10 @@ class TestMarket1501Loader:
 
 
 class TestMSMT17Loader:
+    """MSMT17 list-file parsing."""
+
     def test_load_msmt17_from_temp_lists(self, tmp_path) -> None:
-        from reid.eval.datasets import load_msmt17
+        from reid.data import load_msmt17
 
         root = Path(tmp_path)
         test_root = root / "test"

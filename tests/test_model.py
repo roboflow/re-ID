@@ -6,7 +6,7 @@
 
 """ReID model / architecture / loader tests.
 
-Requires ``roboflow-reid`` (torch, timm, huggingface_hub, safetensors).
+Requires the ``reid`` package (torch, timm, huggingface_hub, safetensors).
 Installed and run in CI via ``uv sync --all-extras`` and ``pytest tests/ -m 'not slow'``.
 Curated weight downloads live in the ``@pytest.mark.slow`` test below.
 """
@@ -92,6 +92,10 @@ class TestReIDPreprocessing:
     def test_unknown_interpolation_raises(self) -> None:
         with pytest.raises(ValueError, match="lanczos"):
             ReIDPreprocessing(interpolation="lanczos")
+
+    def test_unknown_resize_mode_raises(self) -> None:
+        with pytest.raises(ValueError, match="resize_mode"):
+            ReIDPreprocessing(resize_mode="crop")  # type: ignore[arg-type]
 
     def test_prepare_crop_array_swaps_bgr_frames_only(self) -> None:
         bgr = np.array([[[255, 0, 0]]], dtype=np.uint8)  # blue in BGR

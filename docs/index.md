@@ -28,4 +28,8 @@ embeddings = model.extract_features(detections, frame)
 print(embeddings.shape)  # (1, 512)
 ```
 
-Continue with the [model-loading guide](guides/loading.md) or see how to [evaluate a query/gallery split](guides/evaluation.md).
+## Guides
+
+- [Load a model](guides/loading.md): curated aliases, saved exports, bare checkpoints
+- [Evaluate a gallery](guides/evaluation.md): retrieval metrics with `ReIDModel.evaluate`
+- [ReID metrics](learn/metrics.md): CMC Rank-k, mAP, and mINP for Market-1501 / MSMT17 gallery retrieval
