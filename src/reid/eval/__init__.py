@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-from reid.data import ReIDSplit, load_market1501, load_msmt17
 from reid.eval.evaluator import ReIDEvaluator, ReIDResult
 from reid.eval.metrics import ReIDMetrics, compute_reid_metrics
 
@@ -14,8 +13,5 @@ __all__ = [
     "ReIDEvaluator",
     "ReIDMetrics",
     "ReIDResult",
-    "ReIDSplit",
     "compute_reid_metrics",
-    "load_market1501",
-    "load_msmt17",
 ]
