@@ -36,6 +36,10 @@ from reid.preprocessing import ReIDPreprocessing
 
 logger = logging.getLogger(__name__)
 
+# Defaults for the derived query/gallery partition, mirrored from
+# ReIDDataset.for_retrieval so ReIDModel.evaluate can tell "unset" from "asked for".
+_RETRIEVAL_DEFAULTS = {"queries_per_id": 1, "min_crops": 2, "seed": 0}
+
 
 def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray:
     """Clip a box to frame bounds with at least 1 px width and height."""
@@ -290,32 +294,61 @@ class ReIDModel:
         self._backbone.eval()
         return result
 
-    def evaluate(self, data, gallery=None, *, queries_per_id: int = 1, batch_size: int = 64, **kwargs):
+    def evaluate(
+        self,
+        data,
+        gallery=None,
+        *,
+        queries_per_id: int = 1,
+        min_crops: int = 2,
+        seed: int = 0,
+        batch_size: int = 64,
+        **kwargs,
+    ):
         """Score retrieval metrics for this encoder.
 
-        Pass a :class:`~reid.data.ReIDDataset` (or crop-folder path) to have the
-        query/gallery partition derived from identity folders, or pass two
-        explicit :class:`~reid.data.ReIDSplit` objects — which is what benchmark
-        loaders such as :func:`~reid.data.load_market1501` return, and whose
-        published splits must not be re-derived.
+        Two ways to say what to score:
+
+        * Pass a :class:`~reid.data.ReIDDataset` (or a crop-folder path) and the
+          query/gallery partition is derived from identity folders, tuned by
+          ``queries_per_id`` / ``min_crops`` / ``seed``.
+        * Pass an explicit query and gallery split, which is what benchmark
+          loaders such as :func:`~reid.data.load_market1501` return; their
+          published partitions must not be re-derived.
 
         Args:
-            data: ``ReIDDataset``/path/query split.
+            data: ``ReIDDataset``, crop-folder path, or the query split.
             gallery: Gallery split, when ``data`` is an explicit query split.
             queries_per_id: Queries per identity when deriving the partition.
+            min_crops: Minimum crops an identity needs to be usable.
+            seed: Seed for the query/gallery draw.
             batch_size: Embedding extraction batch size.
-            **kwargs: Forwarded to :meth:`~reid.eval.ReIDEvaluator.evaluate`.
+            **kwargs: Forwarded to :meth:`~reid.eval.ReIDEvaluator.evaluate`
+                (``distance``, ``max_rank``, ``verbose``, cached embeddings).
 
         Returns:
             :class:`~reid.eval.ReIDResult`.
+
+        Raises:
+            ValueError: If split-derivation arguments are combined with an
+                explicit ``gallery``, which would silently ignore them.
         """
         from reid.data import ReIDDataset
         from reid.eval import ReIDEvaluator
 
         if gallery is None:
-            crops = data if isinstance(data, ReIDDataset) else ReIDDataset(data)
-            query, gallery = crops.for_retrieval(queries_per_id=queries_per_id)
+            dataset = data if isinstance(data, ReIDDataset) else ReIDDataset(data)
+            query, gallery = dataset.for_retrieval(queries_per_id=queries_per_id, min_crops=min_crops, seed=seed)
         else:
+            derived = {"queries_per_id": queries_per_id, "min_crops": min_crops, "seed": seed}
+            given = [name for name, value in derived.items() if value != _RETRIEVAL_DEFAULTS[name]]
+            if given:
+                verb = "applies" if len(given) == 1 else "apply"
+                raise ValueError(
+                    f"{', '.join(given)} only {verb} when the partition is derived; "
+                    "an explicit gallery is used as given. Drop them, or build the "
+                    "split with ReIDDataset.for_retrieval() and pass the result."
+                )
             query = data
         return ReIDEvaluator(self, batch_size=batch_size).evaluate(query, gallery, **kwargs)
 
