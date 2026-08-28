@@ -15,6 +15,7 @@ import pytest
 from PIL import Image
 
 from reid.data import (
+    ReIDDataset,
     ReIDSplit,
     build_identity_crop_holdout_split,
     build_identity_crop_retrieval_split,
@@ -168,3 +169,50 @@ class TestHoldoutSplit:
             build_identity_crop_holdout_split(split, holdout_fraction=0.0)
         with pytest.raises(ValueError, match="holdout_fraction must be in"):
             build_identity_crop_holdout_split(split, holdout_fraction=1.5)
+
+
+class TestReIDDataset:
+    """The identity-folder dataset that hands out evaluation partitions."""
+
+    def test_scans_the_folder_once_and_reports_its_size(self, tmp_path: Path) -> None:
+        _make_crops(tmp_path, num_ids=5, num_per=4)
+
+        dataset = ReIDDataset(tmp_path)
+
+        assert len(dataset) == 20
+        assert dataset.num_identities == 5
+        assert len(dataset.split.image_paths) == 20
+
+    def test_honours_the_identity_whitelist(self, tmp_path: Path) -> None:
+        _make_crops(tmp_path, num_ids=4, num_per=3)
+
+        dataset = ReIDDataset(tmp_path, identities=["id_00", "id_02"])
+
+        assert dataset.num_identities == 2
+        assert len(dataset) == 6
+
+    def test_for_retrieval_partitions_every_eligible_identity(self, tmp_path: Path) -> None:
+        _make_crops(tmp_path, num_ids=6, num_per=4)
+        dataset = ReIDDataset(tmp_path)
+
+        query, gallery = dataset.for_retrieval(queries_per_id=2, min_crops=3)
+
+        assert len(query) == 12
+        assert len(gallery) == len(dataset) - len(query)
+        assert set(query.pids.tolist()) == set(gallery.pids.tolist())
+
+    def test_for_holdout_is_identity_disjoint(self, tmp_path: Path) -> None:
+        _make_crops(tmp_path, num_ids=6, num_per=4)
+        dataset = ReIDDataset(tmp_path)
+
+        train, query, gallery = dataset.for_holdout(holdout_fraction=0.5)
+
+        held_out = set(query.pids.tolist()) | set(gallery.pids.tolist())
+        assert held_out
+        assert not (set(train.pids.tolist()) & held_out)
+
+    def test_repr_names_the_root_and_its_contents(self, tmp_path: Path) -> None:
+        _make_crops(tmp_path, num_ids=2, num_per=3)
+
+        assert "images=6" in repr(ReIDDataset(tmp_path))
+        assert "identities=2" in repr(ReIDDataset(tmp_path))
