@@ -20,6 +20,7 @@ import tempfile
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import supervision as sv
@@ -31,14 +32,14 @@ from torch.utils.data import DataLoader
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
 from reid.crop_dataset import CropDataset
+from reid.data import ReIDDataset, ReIDSplit
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from reid.eval import ReIDResult
 
-# Defaults for the derived query/gallery partition, mirrored from
-# ReIDDataset.for_retrieval so ReIDModel.evaluate can tell "unset" from "asked for".
-_RETRIEVAL_DEFAULTS = {"queries_per_id": 1, "min_crops": 2, "seed": 0}
+logger = logging.getLogger(__name__)
 
 
 def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -305,22 +306,23 @@ class ReIDModel:
 
     def evaluate(
         self,
-        data,
-        gallery=None,
+        data: ReIDDataset | ReIDSplit | str | Path,
+        gallery: ReIDSplit | None = None,
         *,
-        queries_per_id: int = 1,
-        min_crops: int = 2,
-        seed: int = 0,
+        queries_per_id: int | None = None,
+        min_crops: int | None = None,
+        seed: int | None = None,
         batch_size: int = 64,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> ReIDResult:
         """Score retrieval metrics for this encoder.
 
         Two ways to say what to score:
 
         * Pass a :class:`~reid.data.ReIDDataset` (or a crop-folder path) and the
           query/gallery partition is derived from identity folders, tuned by
-          ``queries_per_id`` / ``min_crops`` / ``seed``.
+          ``queries_per_id`` / ``min_crops`` / ``seed`` (defaults live on
+          :meth:`~reid.data.ReIDDataset.for_retrieval`).
         * Pass an explicit query and gallery split, which is what benchmark
           loaders such as :func:`~reid.data.load_market1501` return; their
           published partitions must not be re-derived.
@@ -342,15 +344,18 @@ class ReIDModel:
             ValueError: If split-derivation arguments are combined with an
                 explicit ``gallery``, which would silently ignore them.
         """
-        from reid.data import ReIDDataset
+        # Local import: reid.eval.evaluator imports reid.model, so a
+        # module-level import here would be circular.
         from reid.eval import ReIDEvaluator
 
+        derivation = {"queries_per_id": queries_per_id, "min_crops": min_crops, "seed": seed}
         if gallery is None:
             dataset = data if isinstance(data, ReIDDataset) else ReIDDataset(data)
-            query, gallery = dataset.for_retrieval(queries_per_id=queries_per_id, min_crops=min_crops, seed=seed)
+            query, gallery = dataset.for_retrieval(
+                **{name: value for name, value in derivation.items() if value is not None}
+            )
         else:
-            derived = {"queries_per_id": queries_per_id, "min_crops": min_crops, "seed": seed}
-            given = [name for name, value in derived.items() if value != _RETRIEVAL_DEFAULTS[name]]
+            given = [name for name, value in derivation.items() if value is not None]
             if given:
                 verb = "applies" if len(given) == 1 else "apply"
                 raise ValueError(
@@ -360,10 +365,6 @@ class ReIDModel:
                 )
             query = data
         return ReIDEvaluator(self, batch_size=batch_size).evaluate(query, gallery, **kwargs)
-
-    # ------------------------------------------------------------------ #
-    # Inference
-    # ------------------------------------------------------------------ #
 
     def _crop_to_tensor(self, rgb_crop: np.ndarray) -> torch.Tensor:
         """Resize an RGB crop to the model input and apply tensor normalisation."""
