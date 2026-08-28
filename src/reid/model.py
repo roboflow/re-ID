@@ -288,9 +288,18 @@ class ReIDModel:
                 val_data=val_split,
             )
 
-        # Training may have run on another device (config.device); this model
-        # keeps its own, so bring the trained weights back to it.
-        self._backbone = result.model._backbone.to(self._device)
+        # Copy the trained weights instead of adopting the module: result.model
+        # keeps its own working backbone (on the training device), and this
+        # model stays on its device. Aliasing one module between the two made a
+        # later .to() on either silently corrupt the other. The trained state
+        # drops the classifier head and the timm ``trunk.`` prefix, mirroring
+        # what save_pretrained writes and from_pretrained reads.
+        trained_state = {
+            key.removeprefix("trunk."): value.to(self._device)
+            for key, value in result.model._backbone.state_dict().items()
+            if not key.startswith("classifier.")
+        }
+        self._backbone.load_state_dict(trained_state)
         self._backbone.eval()
         return result
 

@@ -158,6 +158,19 @@ class TestTrainReid:
         metrics = model.evaluate(crops, queries_per_id=1, verbose=False)
         assert metrics.metrics.num_queries == crops.num_identities
 
+    def test_model_train_leaves_the_result_model_usable(self, tmp_path: Path) -> None:
+        """The notebook keeps both objects; adopting the backbone by reference broke result.model."""
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+        result = model.train(data_root, config=_cpu_config())
+
+        paths = ReIDDataset(data_root).split.image_paths[:2]
+        outer = model.extract_features_from_paths(paths)
+        inner = result.model.extract_features_from_paths(paths)
+        np.testing.assert_allclose(outer, inner, atol=2e-5)
+
     def test_model_train_stays_on_the_models_device(self, tmp_path: Path) -> None:
         """Training defaults to the model's device, and the weights come back to it."""
         data_root = tmp_path / "crops"
