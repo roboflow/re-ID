@@ -349,36 +349,5 @@ class ReIDDataset:
             seed=seed,
         )
 
-    def for_holdout(
-        self,
-        *,
-        holdout_fraction: float = 0.2,
-        queries_per_id: int = 1,
-        min_crops: int = 2,
-        seed: int = 0,
-    ) -> tuple[ReIDSplit, ReIDSplit, ReIDSplit]:
-        """Hold whole identities out for retrieval; return ``(train, query, gallery)``.
-
-        Args:
-            holdout_fraction: Fraction of eligible identities held out, in ``(0, 1]``.
-            queries_per_id: Crops drawn as queries per held-out identity.
-            min_crops: Minimum crops an identity needs to be held out.
-            seed: Seed for the identity draw.
-
-        Returns:
-            ``(train, query, gallery)`` with train identity-disjoint from the rest.
-
-        Raises:
-            ValueError: If ``holdout_fraction`` is outside ``(0, 1]``, the query
-                parameters are inconsistent, or no identity is eligible.
-        """
-        return build_identity_crop_holdout_split(
-            self.split,
-            holdout_fraction=holdout_fraction,
-            queries_per_id=queries_per_id,
-            min_crops=min_crops,
-            seed=seed,
-        )
-
     def __repr__(self) -> str:
         return f"ReIDDataset({str(self.root)!r}, images={len(self)}, identities={self.num_identities})"
