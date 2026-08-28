@@ -136,7 +136,7 @@ class ReIDPreprocessing:
         """Full crop pipeline for an RGB PIL image: resize then tensor normalisation."""
         return Compose([self.resize_transform(), *self.build_transform().transforms])
 
-    def build_transform(self):
+    def build_transform(self) -> Compose:
         """Tensor normalisation for a crop already at ``input_size`` (RGB PIL in)."""
         return Compose(
             [

@@ -51,6 +51,17 @@ class TestModelEvaluate:
         query, gallery = data.for_retrieval(queries_per_id=2, min_crops=3, seed=7)
         assert model.evaluate(query, gallery, verbose=False).metrics.num_queries == 12
 
+    def test_evaluate_rejects_a_non_split_query_with_an_explicit_gallery(self, tmp_path: Path) -> None:
+        """A dataset or path with an explicit gallery would fail deep inside the evaluator."""
+        data_root = tmp_path / "crops"
+        _make_identity_crops(data_root, num_ids=4, num_per=3)
+        dataset = ReIDDataset(data_root)
+        _, gallery = dataset.for_retrieval()
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+        with pytest.raises(TypeError, match="must be the query ReIDSplit"):
+            model.evaluate(dataset, gallery=gallery)
+
     def test_evaluate_rejects_derivation_args_with_an_explicit_gallery(self, tmp_path: Path) -> None:
         """Silently ignoring a split knob the caller set would hide a mistake."""
         data_root = tmp_path / "crops"

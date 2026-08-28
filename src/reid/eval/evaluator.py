@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from reid.data import ReIDSplit
 from reid.eval.metrics import ReIDMetrics, compute_reid_metrics
-from reid.model import ReIDModel
+
+if TYPE_CHECKING:
+    from reid.model import ReIDModel
 
 logger = logging.getLogger(__name__)
 

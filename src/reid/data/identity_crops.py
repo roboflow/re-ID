@@ -222,6 +222,12 @@ def indices_by_label(labels: Sequence[int]) -> dict[int, list[int]]:
 
     Shared by the retrieval and holdout split builders (which group raw person
     IDs) and by the training PK sampler (which groups dense classifier labels).
+
+    Args:
+        labels: Identity label per crop, in crop order.
+
+    Returns:
+        Label → list of crop positions, preserving input order within each label.
     """
     grouped: dict[int, list[int]] = {}
     for index, label in enumerate(labels):
@@ -365,26 +371,23 @@ class ReIDDataset:
         min_crops: int = 2,
         seed: int = 0,
     ) -> tuple[ReIDSplit, ReIDSplit]:
-        """Partition into ``(query, gallery)`` for retrieval evaluation."""
+        """Partition into ``(query, gallery)`` for retrieval evaluation.
+
+        Args:
+            queries_per_id: Crops drawn as queries per identity.
+            min_crops: Minimum crops an identity needs to be usable; must be
+                greater than ``queries_per_id`` so gallery crops remain.
+            seed: Seed for the query/gallery draw.
+
+        Returns:
+            ``(query, gallery)`` splits covering every eligible identity.
+
+        Raises:
+            ValueError: If the parameters are inconsistent or no identity has
+                ``min_crops`` crops.
+        """
         return build_identity_crop_retrieval_split(
             self.split,
-            queries_per_id=queries_per_id,
-            min_crops=min_crops,
-            seed=seed,
-        )
-
-    def for_holdout(
-        self,
-        *,
-        holdout_fraction: float = 0.2,
-        queries_per_id: int = 1,
-        min_crops: int = 2,
-        seed: int = 0,
-    ) -> tuple[ReIDSplit, ReIDSplit, ReIDSplit]:
-        """Hold whole identities out for retrieval; return ``(train, query, gallery)``."""
-        return build_identity_crop_holdout_split(
-            self.split,
-            holdout_fraction=holdout_fraction,
             queries_per_id=queries_per_id,
             min_crops=min_crops,
             seed=seed,

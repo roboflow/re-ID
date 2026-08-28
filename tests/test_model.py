@@ -671,3 +671,54 @@ def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
     assert embs.shape == (1, 2048)
     assert np.isfinite(embs).all()
     assert model.preprocessing.input_size == (384, 128)
+
+
+class TestCropTransformPinning:
+    """The disk-crop pipeline must resize exactly like inference resize_crop."""
+
+    def test_crop_transform_matches_resize_crop_for_non_input_sized_images(self) -> None:
+        import torch
+        from PIL import Image
+
+        from reid.preprocessing import ReIDPreprocessing
+
+        preprocessing = ReIDPreprocessing(resize_mode="letterbox", interpolation="bicubic")
+        crop = (np.random.default_rng(0).random((200, 50, 3)) * 255).astype("uint8")
+
+        tensor = preprocessing.build_crop_transform()(Image.fromarray(crop))
+        pixels = (
+            tensor * torch.tensor(preprocessing.std)[:, None, None] + torch.tensor(preprocessing.mean)[:, None, None]
+        ) * 255
+        expected = torch.from_numpy(preprocessing.resize_crop(crop)).permute(2, 0, 1).float()
+
+        assert torch.allclose(pixels, expected, atol=0.5)
+
+
+class TestModelToDevice:
+    """``ReIDModel.to`` must move the backbone with the bookkeeping."""
+
+    def test_to_moves_the_backbone_and_returns_self(self) -> None:
+        import torch
+
+        from reid import ReIDModel
+        from reid.preprocessing import ReIDPreprocessing
+
+        moved: list = []
+
+        class _RecordingBackbone(torch.nn.Linear):
+            def to(self, *args, **kwargs):  # noqa: ANN002, ANN003
+                moved.append(args[0] if args else kwargs.get("device"))
+                return super().to(*args, **kwargs)
+
+        model = ReIDModel(
+            _RecordingBackbone(4, 4),
+            torch.device("cpu"),
+            ReIDPreprocessing(),
+        )
+        moved.clear()
+
+        returned = model.to("cpu")
+
+        assert returned is model
+        assert model.device == torch.device("cpu")
+        assert moved, "to() must propagate to the backbone, not just update bookkeeping"

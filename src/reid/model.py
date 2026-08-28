@@ -33,6 +33,7 @@ from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
 from reid.crop_dataset import CropDataset
 from reid.data import ReIDDataset, ReIDSplit
+from reid.eval import ReIDEvaluator
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
@@ -343,13 +344,18 @@ class ReIDModel:
         Raises:
             ValueError: If split-derivation arguments are combined with an
                 explicit ``gallery``, which would silently ignore them.
+            TypeError: If ``gallery`` is given but ``data`` is not the query
+                :class:`~reid.data.ReIDSplit`.
+            ValueError: If ``data`` is a bare query split with no ``gallery``.
         """
-        # Local import: reid.eval.evaluator imports reid.model, so a
-        # module-level import here would be circular.
-        from reid.eval import ReIDEvaluator
-
         derivation = {"queries_per_id": queries_per_id, "min_crops": min_crops, "seed": seed}
         if gallery is None:
+            if isinstance(data, ReIDSplit):
+                raise ValueError(
+                    "Got a query ReIDSplit but no gallery. Pass both splits — for "
+                    "example evaluate(*dataset.for_retrieval()) — or pass the "
+                    "ReIDDataset / crop folder itself to derive the partition."
+                )
             dataset = data if isinstance(data, ReIDDataset) else ReIDDataset(data)
             query, gallery = dataset.for_retrieval(
                 **{name: value for name, value in derivation.items() if value is not None}
@@ -362,6 +368,12 @@ class ReIDModel:
                     f"{', '.join(given)} only {verb} when the partition is derived; "
                     "an explicit gallery is used as given. Drop them, or build the "
                     "split with ReIDDataset.for_retrieval() and pass the result."
+                )
+            if not isinstance(data, ReIDSplit):
+                raise TypeError(
+                    f"With an explicit gallery, data must be the query ReIDSplit, got "
+                    f"{type(data).__name__}. Pass both splits (for_retrieval() or a "
+                    "benchmark loader), or drop gallery to derive the partition."
                 )
             query = data
         return ReIDEvaluator(self, batch_size=batch_size).evaluate(query, gallery, **kwargs)

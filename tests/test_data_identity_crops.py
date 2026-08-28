@@ -201,16 +201,6 @@ class TestReIDDataset:
         assert len(gallery) == len(dataset) - len(query)
         assert set(query.pids.tolist()) == set(gallery.pids.tolist())
 
-    def test_for_holdout_is_identity_disjoint(self, tmp_path: Path) -> None:
-        _make_crops(tmp_path, num_ids=6, num_per=4)
-        dataset = ReIDDataset(tmp_path)
-
-        train, query, gallery = dataset.for_holdout(holdout_fraction=0.5)
-
-        held_out = set(query.pids.tolist()) | set(gallery.pids.tolist())
-        assert held_out
-        assert not (set(train.pids.tolist()) & held_out)
-
     def test_repr_names_the_root_and_its_contents(self, tmp_path: Path) -> None:
         _make_crops(tmp_path, num_ids=2, num_per=3)
 

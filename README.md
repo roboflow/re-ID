@@ -107,45 +107,17 @@ src/reid/
 ## Gallery eval
 
 ```python
-from reid import ReIDEvaluator, ReIDModel, load_market1501
+from reid import ReIDModel, load_market1501
 
 model = ReIDModel.from_pretrained()
 query, gallery = load_market1501("/path/to/Market-1501")
-result = ReIDEvaluator(model).evaluate(query, gallery)
+result = model.evaluate(query, gallery)
 print(result.metrics)
 ```
 
 Metrics (CMC Rank-k, mAP, mINP), junk filtering, and cosine vs Euclidean distance are documented in [`docs/learn/metrics.md`](docs/learn/metrics.md).
 
 To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-domain checkpoints; OSNet x1.0 Market-1501 uses euclidean), run [`notebooks/eval_reid.ipynb`](notebooks/eval_reid.ipynb).
-
-## Fine-tuning on tracking crops
-
-**Full guide:** [`docs/learn/train.md`](docs/learn/train.md). Crops → `train_reid` → reload → BoT-SORT.
-
-Three steps:
-
-```python
-from reid import ReIDModel
-from reid.data.mot import generate_mot_patches
-from reid.training import TrainConfig, train_reid
-
-generate_mot_patches("/path/to/MOT17/train", "/path/to/crops/train", split="train_half", class_ids=[1])
-
-result = train_reid(
-    "/path/to/crops/train",
-    TrainConfig(epochs=30, num_workers=0),
-    pretrained="osnet_x1_0_msmt17_combineall",
-    output_dir="/path/to/checkpoint",
-    val_data="/path/to/crops/val",
-)
-
-model = ReIDModel.from_pretrained("/path/to/checkpoint")
-```
-
-Epoch length is an identity/crop budget: `(identities_per_epoch * crops_per_identity) // (p * k)` batches. Defaults cover all identities with `k` crops each. Optional `val_data` needs the same identity folder names as train. On Colab/Jupyter, set `num_workers=0`.
-
-End-to-end MOT17 walkthrough: [`notebooks/train_reid_mot17.ipynb`](notebooks/train_reid_mot17.ipynb).
 
 ## Weight cache
 
