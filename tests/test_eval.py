@@ -18,6 +18,48 @@ from pathlib import Path
 import numpy as np
 import pytest
 import supervision as sv
+from PIL import Image
+
+from reid import ReIDDataset, ReIDModel
+
+
+def _make_identity_crops(root: Path, num_ids: int, num_per: int) -> None:
+    """Write a ``<root>/<identity>/<crop>.jpg`` tree of random images."""
+    rng = np.random.default_rng(0)
+    for i in range(num_ids):
+        identity_dir = root / f"id_{i:02d}"
+        identity_dir.mkdir(parents=True)
+        for j in range(num_per):
+            array = (rng.random((48, 24, 3)) * 255).astype("uint8")
+            Image.fromarray(array).save(identity_dir / f"{j}.jpg")
+
+
+class TestModelEvaluate:
+    """``ReIDModel.evaluate`` derives a partition or takes an explicit one."""
+
+    def test_evaluate_derives_or_accepts_an_explicit_partition(self, tmp_path: Path) -> None:
+        """Defaults handle the split; the derivation knobs are reachable; explicit splits win."""
+        data_root = tmp_path / "crops"
+        _make_identity_crops(data_root, num_ids=6, num_per=6)
+        data = ReIDDataset(data_root)
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+        assert model.evaluate(data, verbose=False).metrics.num_queries == 6
+        assert model.evaluate(data_root, verbose=False).metrics.num_queries == 6
+        assert model.evaluate(data, queries_per_id=2, min_crops=3, verbose=False).metrics.num_queries == 12
+
+        query, gallery = data.for_retrieval(queries_per_id=2, min_crops=3, seed=7)
+        assert model.evaluate(query, gallery, verbose=False).metrics.num_queries == 12
+
+    def test_evaluate_rejects_derivation_args_with_an_explicit_gallery(self, tmp_path: Path) -> None:
+        """Silently ignoring a split knob the caller set would hide a mistake."""
+        data_root = tmp_path / "crops"
+        _make_identity_crops(data_root, num_ids=6, num_per=6)
+        query, gallery = ReIDDataset(data_root).for_retrieval()
+        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+        with pytest.raises(ValueError, match="only applies when the partition is derived"):
+            model.evaluate(query, gallery, seed=7)
 
 
 class TestDistanceMatrix:
