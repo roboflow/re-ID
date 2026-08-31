@@ -3,8 +3,7 @@ name: CI
 on:
   push:
     branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  pull_request:  # all target branches, so stacked PRs (e.g. feature-on-feature) get CI too
 
 jobs:
   test:
