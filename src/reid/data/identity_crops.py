@@ -36,6 +36,11 @@ _QUERY_CAMID = 0
 _GALLERY_CAMID = 1
 
 
+def identity_name_from_crop_path(path: str | Path) -> str:
+    """Identity folder name for the ``<root>/<identity>/<crop>.jpg`` layout."""
+    return Path(path).parent.name
+
+
 def load_identity_crops(
     root: str | Path,
     *,
@@ -285,6 +290,45 @@ def _subset_split(
         pids=pids,
         camids=np.full(len(indices), camid, dtype=np.int32),
     )
+
+
+def dense_labels_from_split(split: ReIDSplit) -> tuple[list[str], list[int], int]:
+    """Return ``(image_paths, dense labels, num_classes)`` for classifier training.
+
+    A split's ``pids`` need not be contiguous (a train partition left after an
+    identity holdout is not), while a classifier head indexes its output layer
+    by label and so needs ``0..N-1``.
+
+    Raises:
+        ValueError: If ``split`` is empty.
+    """
+    if len(split) == 0:
+        raise ValueError("Cannot build training labels from an empty ReIDSplit.")
+    pids = [int(pid) for pid in split.pids.tolist()]
+    label_by_pid = {pid: label for label, pid in enumerate(sorted(set(pids)))}
+    return list(split.image_paths), [label_by_pid[pid] for pid in pids], len(label_by_pid)
+
+
+def labels_from_identity_map(split: ReIDSplit, label_by_identity: dict[str, int]) -> tuple[list[str], list[int]]:
+    """Keep the split's crops whose identity folder appears in ``label_by_identity``.
+
+    Used for temporal validation crops that reuse training identity folder names
+    (for example MOT17 train-half / val-half of the same sequences).
+
+    Raises:
+        ValueError: If no crop shares an identity folder with the map.
+    """
+    image_paths: list[str] = []
+    labels: list[int] = []
+    for path in split.image_paths:
+        label = label_by_identity.get(identity_name_from_crop_path(path))
+        if label is None:
+            continue
+        image_paths.append(path)
+        labels.append(label)
+    if not image_paths:
+        raise ValueError("No validation crops share identity folder names with the training map.")
+    return image_paths, labels
 
 
 class ReIDDataset:

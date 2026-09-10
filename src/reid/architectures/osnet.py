@@ -17,6 +17,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from reid.architectures.encoder import TrainableEncoder
 from reid.preprocessing import ReIDPreprocessing
 
 # --------------------------------------------------------------------------- #
@@ -152,7 +153,7 @@ class OSBlock(nn.Module):
 # --------------------------------------------------------------------------- #
 
 
-class OSNet(nn.Module):
+class OSNet(TrainableEncoder):
     """Omni-Scale Network for instance re-identification.
 
     Architecture from:
@@ -171,6 +172,8 @@ class OSNet(nn.Module):
         channels: Channel widths ``[stem, stage1, stage2, stage3]``.
         feature_dim: Dimensionality of the final embedding vector.
     """
+
+    _head_modules = frozenset({"fc", "classifier"})
 
     @classmethod
     def default_preprocessing(cls) -> ReIDPreprocessing:
@@ -256,6 +259,12 @@ class OSNet(nn.Module):
         x = self.conv4(x)
         return self.conv5(x)
 
+    def _embed(self, x: torch.Tensor) -> torch.Tensor:
+        """Trunk → GAP → ``fc`` neck embeddings (shared by train and inference)."""
+        features = self._featuremaps(x)
+        pooled = self.global_avgpool(features).flatten(1)
+        return self.fc(pooled)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run a forward pass.
 
@@ -263,12 +272,10 @@ class OSNet(nn.Module):
         classifier was built. Returns classifier logits only in training mode
         with ``num_classes > 0``.
         """
-        x = self._featuremaps(x)
-        v = self.global_avgpool(x).view(x.size(0), -1)
-        v = self.fc(v)
+        embeddings = self._embed(x)
         if self.training and hasattr(self, "classifier"):
-            return self.classifier(v)
-        return v
+            return self.classifier(embeddings)
+        return embeddings
 
 
 # --------------------------------------------------------------------------- #

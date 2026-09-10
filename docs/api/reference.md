@@ -21,8 +21,8 @@ from reid import (
 )
 ```
 
-`ReIDModel` carries the lifecycle: `from_pretrained` to load, `evaluate` to score retrieval, `extract_features` for inference, `to` to move devices, and `save_pretrained` to persist. `ReIDDataset` wraps a `<root>/<identity>/<crop>.jpg` folder and hands out the partition each step needs; `ReIDSplit` is the underlying paths/pids/camids record that `load_market1501` and `load_msmt17` return.
+`ReIDModel` carries the whole lifecycle: `from_pretrained` to load, `train` to fine-tune in place, `evaluate` to score retrieval, `extract_features` for inference, `to` to move devices, and `save_pretrained` to persist. `ReIDDataset` wraps a `<root>/<identity>/<crop>.jpg` folder and hands out the partition each step needs; `ReIDSplit` is the underlying paths/pids/camids record that `load_market1501` and `load_msmt17` return.
 
-`ReIDEvaluator` scores an explicit query/gallery pair for callers who want it directly.
+For a training loop you drive yourself, `reid.training` exposes `train_reid` and `TrainConfig`, and `ReIDEvaluator` scores an explicit query/gallery pair.
 
-See the [loading guide](../guides/loading.md), [evaluation guide](../guides/evaluation.md), and [metrics guide](../learn/metrics.md) for runnable examples.
+See the [loading guide](../guides/loading.md), [evaluation guide](../guides/evaluation.md), and [fine-tuning guide](../learn/train.md) for runnable examples.

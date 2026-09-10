@@ -89,8 +89,9 @@ src/reid/
 ├── catalog.py          # curated aliases (ModelCard, ALIASES)
 ├── architectures/      # builders + class default_preprocessing() on each net
 ├── loaders.py          # weight I/O and resolve_load_plan
-├── data/               # ReIDSplit, benchmarks, identity crops
-└── eval/               # gallery evaluation (metrics + ReIDEvaluator)
+├── data/               # ReIDSplit, benchmarks, identity crops, MOT patches
+├── eval/               # gallery evaluation (metrics + ReIDEvaluator)
+└── training/           # fine-tuning loop (datasets, losses, trainer)
 ```
 
 - **Architectures** know how to build a net and expose preprocessing via `default_preprocessing()` on the architecture class.

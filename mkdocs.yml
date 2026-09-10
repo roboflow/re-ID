@@ -40,5 +40,6 @@ nav:
   - Guides:
       - Load a model: guides/loading.md
       - Evaluate a gallery: guides/evaluation.md
+      - Fine-tune on tracking crops: learn/train.md
       - ReID metrics: learn/metrics.md
   - API reference: api/reference.md

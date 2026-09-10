@@ -31,7 +31,7 @@ _HF_PREFIX = "hf://"
 _GD_PREFIX = "gd://"
 
 _DEFAULT_DROP_PREFIXES = ("classifier",)
-_COMMON_KEY_PREFIXES = ("module.", "model.", "encoder.")
+_COMMON_KEY_PREFIXES = ("module.", "model.", "encoder.", "trunk.")
 
 
 def _cache_root() -> str:

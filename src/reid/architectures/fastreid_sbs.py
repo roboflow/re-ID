@@ -29,6 +29,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from reid.architectures.encoder import TrainableEncoder
 from reid.preprocessing import ReIDPreprocessing
 
 FASTREID_SBS_ARCHITECTURE = "fastreid_sbs_resnest50"
@@ -72,13 +73,19 @@ class GeneralizedMeanPooling(nn.Module):
         return x.pow(1.0 / self.p)
 
 
-class FastReIDSBSResNeSt50(nn.Module):
+class FastReIDSBSResNeSt50(TrainableEncoder):
     """ResNeSt50 SBS re-ID encoder matching BoT-SORT / FastReID MOT17 checkpoints.
 
     Inference path: patched ``timm`` ResNeSt-50 → GeM (:attr:`pool`) → BNNeck
     (:attr:`bottleneck`). Weights for all three stages load from a BoT-SORT
     ``.pth`` via :func:`remap_fastreid_sbs_state_dict`.
+
+    When ``num_classes > 0``, a linear identity classifier is attached for
+    :func:`reid.training.train_reid` (same layout as FastReID ``EmbeddingHead``;
+    classifier keys are dropped again on inference load).
     """
+
+    _head_modules = frozenset({"pool", "bottleneck", "classifier"})
 
     @classmethod
     def default_preprocessing(cls) -> ReIDPreprocessing:
@@ -96,8 +103,9 @@ class FastReIDSBSResNeSt50(nn.Module):
             to_rgb=True,
         )
 
-    def __init__(self) -> None:
+    def __init__(self, num_classes: int = 0) -> None:
         super().__init__()
+        self.feature_dim = FASTREID_SBS_EMBED_DIM
         backbone = timm.create_model(
             "resnest50d",
             pretrained=False,
@@ -108,34 +116,41 @@ class FastReIDSBSResNeSt50(nn.Module):
         self.backbone = _patch_resnest50d_for_fastreid_last_stride(backbone)
         self.pool = GeneralizedMeanPooling()
         self.bottleneck = nn.BatchNorm1d(FASTREID_SBS_EMBED_DIM)
+        if num_classes > 0:
+            self.classifier = nn.Linear(FASTREID_SBS_EMBED_DIM, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return BNNeck embeddings (inference and training-time feature path)."""
         x = self.backbone(x)
         x = self.pool(x).flatten(1)
         return self.bottleneck(x)
 
+    def _embed(self, x: torch.Tensor) -> torch.Tensor:
+        return self.forward(x)
+
 
 def build_fastreid_sbs_resnest50(*, num_classes: int = 0, pretrained: bool = False) -> FastReIDSBSResNeSt50:
     """Build the BoT-SORT FastReID SBS ResNeSt50 encoder (weights loaded separately)."""
-    del num_classes, pretrained
-    return FastReIDSBSResNeSt50()
+    del pretrained
+    return FastReIDSBSResNeSt50(num_classes=num_classes)
 
 
 def remap_fastreid_sbs_state_dict(state_dict: dict) -> dict:
     """Map BoT-SORT / FastReID SBS checkpoint keys onto :class:`FastReIDSBSResNeSt50`.
 
     Renames FastReID ``heads.*`` keys to ``pool.*`` / ``bottleneck.*`` and passes
-    ``backbone.*`` through unchanged. Skips ``heads.weight`` (classifier). GeM
-    ``heads.pool_layer.p`` becomes ``pool.p`` and replaces the 3.0 init default.
+    ``backbone.*`` through unchanged. Native ``save_pretrained`` keys
+    (``pool.*``, ``bottleneck.*``) pass through as-is. Skips classifier weights
+    (``heads.weight`` / ``classifier.*``); unused at inference.
     """
     mapped: dict = {}
     for key, value in state_dict.items():
         key = key[7:] if key.startswith("module.") else key
-        if key.startswith("backbone."):
+        if key.startswith(("backbone.", "pool.", "bottleneck.")):
             mapped[key] = value
         elif key == "heads.pool_layer.p":
             mapped["pool.p"] = value
         elif key.startswith("heads.bottleneck.0."):
             mapped["bottleneck." + key[len("heads.bottleneck.0.") :]] = value
-        # Skip heads.weight (identity classifier; unused at inference).
+        # Skip heads.weight / classifier.* (identity classifier; unused at inference).
     return mapped

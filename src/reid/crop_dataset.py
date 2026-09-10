@@ -18,15 +18,15 @@ from torch.utils.data import Dataset
 class CropDataset(Dataset):
     """Reads crop images from disk and applies ``transform`` on worker processes.
 
-    Internal building block shared by inference and training; not part of the
-    curated public API surface.
+        Internal building block shared by inference and training; not part of the
+        curated public API surface.
 
-    Crops on disk are read as RGB, so the transform owns every pixel step
-    (resize, tensor conversion, and any augmentation a caller composes in).
+        Crops on disk are read as RGB, so the transform owns every pixel step
+    (resize, augmentation, tensor conversion). Inference and training share
+        this reader; training adds labels in
+        :class:`~reid.training.datasets.ReIDTrainDataset`.
 
-    Args:
-        image_paths: Crop image paths.
-        transform: Maps an RGB PIL image to the model input tensor.
+        Internal building block; not part of the curated public API surface.
     """
 
     def __init__(self, image_paths: Sequence[str], transform: Callable[[PILImage.Image], torch.Tensor]) -> None:

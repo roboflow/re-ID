@@ -6,16 +6,17 @@
 
 """ReID appearance encoder: loading, inference, and checkpoint I/O.
 
-Array-type boundary: torch tensors stay inside the model; embeddings cross to
-``numpy`` once, on the way out of :meth:`ReIDModel._embed_batch`, because
-``supervision`` and ``trackers`` consume numpy. Everything downstream
-(``reid.eval``) is numpy throughout.
+Array-type boundary: torch tensors stay inside the model and the training
+loop; embeddings cross to ``numpy`` once, on the way out of
+:meth:`ReIDModel._embed_batch`, because ``supervision`` and ``trackers``
+consume numpy. Everything downstream (``reid.eval``) is numpy throughout.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import tempfile
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -188,6 +189,9 @@ class ReIDModel:
     def save_pretrained(self, directory: str) -> None:
         """Persist ``weights.safetensors`` and ``reid_config.json`` for later loads.
 
+        Only inference weights are written; a training ``classifier`` head, if
+        present, is dropped.
+
         Args:
             directory: Output directory (created if missing).
 
@@ -205,7 +209,13 @@ class ReIDModel:
         os.makedirs(directory, exist_ok=True)
 
         weights_path = os.path.join(directory, "weights.safetensors")
-        state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
+        # Inference artifact only: the training classifier head is skipped by
+        # every load path and its identity->label map is not persisted.
+        state_dict = {
+            key: value.detach().cpu()
+            for key, value in self._backbone.state_dict().items()
+            if not key.startswith("classifier.")
+        }
         save_file(state_dict, weights_path)
 
         card = ModelCard(
@@ -216,8 +226,84 @@ class ReIDModel:
         logger.info("ReIDModel saved to %s", directory)
 
     # ------------------------------------------------------------------ #
-    # Evaluation
+    # Fine-tuning and evaluation
     # ------------------------------------------------------------------ #
+
+    def train(
+        self,
+        data,
+        *,
+        val_split=None,
+        config=None,
+        output_dir: str | Path | None = None,
+        **overrides,
+    ):
+        """Fine-tune this encoder in place on a crop dataset.
+
+        Delegates to :func:`reid.training.train_reid`, warm-starting from this
+        model's current weights and preprocessing, then adopts the trained
+        backbone so the same object can go straight on to
+        :meth:`evaluate`, :meth:`extract_features`, or :meth:`save_pretrained`.
+
+        Args:
+            data: Training crops — a :class:`~reid.data.ReIDDataset`, a
+                :class:`~reid.data.ReIDSplit`, or a crop-folder path.
+            val_split: Optional validation crops, in the same forms. Crops are
+                matched to training identities by folder name.
+            config: Full :class:`~reid.training.TrainConfig`. Mutually exclusive
+                with ``overrides``.
+            output_dir: If set, save the (best) checkpoint there.
+            **overrides: ``TrainConfig`` fields, e.g. ``epochs=30, p=8, k=4``.
+                ``device`` defaults to this model's device; the trained weights
+                are returned to it either way. Use :meth:`to` to move the model.
+
+        Returns:
+            :class:`~reid.training.TrainResult` with per-epoch history.
+
+        Raises:
+            ValueError: If both ``config`` and ``overrides`` are given, or the
+                architecture name is unknown (nothing to warm-start from).
+        """
+        # Local import: reid.training builds on reid.model, so importing it at
+        # module scope would be circular.
+        from reid.training import TrainConfig, train_reid
+
+        if config is not None and overrides:
+            raise ValueError("Pass either config or individual TrainConfig overrides, not both.")
+        # Train where this model already lives unless the caller says otherwise,
+        # so a CPU model does not silently train on an accelerator and move back.
+        overrides.setdefault("device", str(self._device))
+        if self._architecture is None:
+            raise ValueError(
+                "Cannot fine-tune a model whose architecture name is unknown. "
+                "Build it via from_pretrained() with a named architecture."
+            )
+
+        with tempfile.TemporaryDirectory() as warm_start:
+            self.save_pretrained(warm_start)
+            result = train_reid(
+                data,
+                config if config is not None else TrainConfig(**overrides),
+                pretrained=warm_start,
+                preprocessing=self._preprocessing,
+                output_dir=output_dir,
+                val_data=val_split,
+            )
+
+        # Copy the trained weights instead of adopting the module: result.model
+        # keeps its own working backbone (on the training device), and this
+        # model stays on its device. Aliasing one module between the two made a
+        # later .to() on either silently corrupt the other. The trained state
+        # drops the classifier head and the timm ``trunk.`` prefix, mirroring
+        # what save_pretrained writes and from_pretrained reads.
+        trained_state = {
+            key.removeprefix("trunk."): value.to(self._device)
+            for key, value in result.model._backbone.state_dict().items()
+            if not key.startswith("classifier.")
+        }
+        self._backbone.load_state_dict(trained_state)
+        self._backbone.eval()
+        return result
 
     def evaluate(
         self,
