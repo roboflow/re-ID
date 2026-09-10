@@ -148,14 +148,26 @@ class TrainConfig:
 
 @dataclass
 class TrainResult:
-    """Output of :func:`train_reid` (model, class count, history, save path)."""
+    """Output of :func:`train_reid` (model, class count, history, checkpoint paths).
+
+    ``best_dir`` holds the epoch with the lowest ``val_total`` and ``last_dir`` the
+    final epoch. "Best" means lowest validation loss on identities that also appear
+    in training, since the loss needs the training classifier head; it is not a
+    measure of how well the encoder separates identities it has not seen, so it is
+    not a reliable predictor of downstream tracking quality. Compare both.
+    """
 
     model: ReIDModel
     num_classes: int
     history: list[dict[str, float]] = field(default_factory=list)
-    output_dir: str | None = None
     best_epoch: int | None = None
     best_val_total: float | None = None
+    best_dir: str | None = None
+    last_dir: str | None = None
+
+
+_BEST_CHECKPOINT_DIR = "best"
+_LAST_CHECKPOINT_DIR = "last"
 
 
 def _build_lr_lambda(config: TrainConfig) -> Callable[[int], float]:
@@ -370,11 +382,16 @@ def train_reid(
             alias (warm-start included). When ``architecture`` is set, ``None``
             means no warm-start weights.
         preprocessing: Preprocessing override.
-        output_dir: If set, save via :meth:`ReIDModel.save_pretrained`.
+        output_dir: If set, write two checkpoints via :meth:`ReIDModel.save_pretrained`:
+            ``<output_dir>/last``, rewritten every epoch, and, when ``val_split``
+            is given, ``<output_dir>/best``, rewritten whenever ``val_total``
+            improves. Both are written during training so an interrupted run still
+            leaves usable checkpoints, and each is a complete checkpoint directory
+            that :meth:`ReIDModel.from_pretrained` accepts.
         val_data: Optional val crop split/path. Crops whose identity folder names
             overlap the training set contribute CE + triplet validation loss each
-            epoch. When set, the checkpoint written to ``output_dir`` is the epoch
-            with the lowest ``val_total``.
+            epoch, written to ``<output_dir>/best`` alongside the final epoch in
+            ``<output_dir>/last``.
 
     Returns:
         :class:`TrainResult`.
@@ -426,6 +443,25 @@ def train_reid(
     use_amp = config.amp and device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
+    def _as_model() -> ReIDModel:
+        """Wrap the live backbone as a ``ReIDModel``; leaves it in eval mode."""
+        backbone.eval()
+        return ReIDModel(
+            backbone,
+            device,
+            resolved_preprocessing,
+            architecture=arch_name if isinstance(arch_name, str) else None,
+        )
+
+    def _save_checkpoint(directory: str) -> None:
+        """Write the live weights, restoring the backbone's train/eval mode."""
+        was_training = backbone.training
+        _as_model().save_pretrained(directory)
+        backbone.train(was_training)
+
+    best_dir = str(Path(output_dir) / _BEST_CHECKPOINT_DIR) if output_dir is not None else None
+    last_dir = str(Path(output_dir) / _LAST_CHECKPOINT_DIR) if output_dir is not None else None
+
     history: list[dict[str, float]] = []
     step = 0
     best_epoch: int | None = None
@@ -451,6 +487,7 @@ def train_reid(
             step=step,
             frozen_backbone=frozen,
         )
+        improved = False
         epoch_mean["epoch"] = epoch
         # Record before scheduler.step() so this is the LR the epoch trained at.
         epoch_mean["lr"] = optimizer.param_groups[0]["lr"]
@@ -476,16 +513,25 @@ def train_reid(
             for key, value in val_mean.items():
                 epoch_mean[f"val_{key}"] = value
 
-            if best_val_total is None or val_mean["total"] < best_val_total:
+            improved = best_val_total is None or val_mean["total"] < best_val_total
+            if improved:
                 best_val_total = val_mean["total"]
                 best_epoch = epoch
+                # Also kept in memory: with output_dir unset there is no best/ to reload.
                 best_backbone_state = _clone_state_dict(backbone)
                 if loss_fn.center is not None:
                     best_center_state = _clone_state_dict(loss_fn.center)
 
+        if improved and best_dir is not None:
+            _save_checkpoint(best_dir)
+            logger.info("Saved new best epoch %d (val_total=%.4f)", epoch, best_val_total)
+        if last_dir is not None:
+            _save_checkpoint(last_dir)
+
         history.append(epoch_mean)
         logger.info("epoch %d mean: %s", epoch, {k: round(v, 4) for k, v in epoch_mean.items()})
 
+    model = _as_model()
     if best_backbone_state is not None:
         backbone.load_state_dict(best_backbone_state)
         if best_center_state is not None and loss_fn.center is not None:
@@ -495,25 +541,14 @@ def train_reid(
             best_epoch,
             best_val_total,
         )
-
-    backbone.eval()
-    model = ReIDModel(
-        backbone,
-        device,
-        resolved_preprocessing,
-        architecture=arch_name if isinstance(arch_name, str) else None,
-    )
-
-    saved_dir = None
-    if output_dir is not None:
-        saved_dir = str(output_dir)
-        model.save_pretrained(saved_dir)
+        model = _as_model()
 
     return TrainResult(
         model=model,
         num_classes=num_classes,
         history=history,
-        output_dir=saved_dir,
         best_epoch=best_epoch,
         best_val_total=best_val_total,
+        best_dir=best_dir if best_epoch is not None else None,
+        last_dir=last_dir,
     )

@@ -118,10 +118,10 @@ class TestTrainReid:
         assert len(result.history) == 1
         assert "total" in result.history[0]
         assert result.best_epoch is None
-        assert (out_dir / "weights.safetensors").exists()
-        assert (out_dir / "reid_config.json").exists()
+        assert (Path(result.last_dir) / "weights.safetensors").exists()
+        assert (Path(result.last_dir) / "reid_config.json").exists()
 
-        with safe_open(out_dir / "weights.safetensors", framework="pt") as saved:
+        with safe_open(Path(result.last_dir) / "weights.safetensors", framework="pt") as saved:
             saved_keys = set(saved.keys())
         assert not any(key.startswith("classifier.") for key in saved_keys)
         assert saved_keys == {key for key in result.model._backbone.state_dict() if not key.startswith("classifier.")}
@@ -131,7 +131,7 @@ class TestTrainReid:
         embeddings = result.model.extract_features(detections, frame)
         assert embeddings.shape == (1, 512)
 
-        reloaded = ReIDModel.from_pretrained(str(out_dir)).extract_features(detections, frame)
+        reloaded = ReIDModel.from_pretrained(result.last_dir).extract_features(detections, frame)
         np.testing.assert_allclose(reloaded, embeddings, atol=1e-5)
 
     def test_model_train_and_evaluate_round_trip(self, tmp_path: Path) -> None:
@@ -151,7 +151,7 @@ class TestTrainReid:
         )
 
         assert len(result.history) == 1
-        assert (out_dir / "weights.safetensors").exists()
+        assert (Path(result.last_dir) / "weights.safetensors").exists()
         after = model.extract_features_from_paths(crops.split.image_paths[:2])
         assert not np.allclose(before, after), "train() must update the model in place"
 
@@ -215,7 +215,7 @@ class TestTrainReid:
             pretrained=str(checkpoint),
             output_dir=out_dir,
         )
-        reloaded = ReIDModel.from_pretrained(str(out_dir))
+        reloaded = ReIDModel.from_pretrained(result.last_dir)
 
         frame = np.zeros((96, 64, 3), dtype=np.uint8)
         detections = sv.Detections(xyxy=np.array([[8, 8, 40, 88]], dtype=float))
@@ -292,7 +292,7 @@ class TestTrainReid:
         preprocessing = ReIDPreprocessing(resize_mode="letterbox", interpolation="bicubic")
         out_dir = tmp_path / "checkpoint"
 
-        train_reid(
+        result = train_reid(
             data_root,
             config,
             architecture="osnet_x0_25",
@@ -300,7 +300,7 @@ class TestTrainReid:
             preprocessing=preprocessing,
             output_dir=out_dir,
         )
-        reloaded = ReIDModel.from_pretrained(str(out_dir))
+        reloaded = ReIDModel.from_pretrained(result.last_dir)
 
         assert reloaded._preprocessing.resize_mode == "letterbox"
         assert reloaded._preprocessing.interpolation == preprocessing.interpolation
@@ -313,6 +313,59 @@ class TestTrainReid:
         result = train_reid(data_root, config, architecture="osnet_x0_25", pretrained=None)
 
         assert "center" in result.history[0]
+
+    def test_best_and_last_are_both_written(self, tmp_path: Path) -> None:
+        train_root = tmp_path / "train"
+        val_root = tmp_path / "val"
+        _make_crops(train_root, num_ids=4, num_per=4)
+        _make_crops(val_root, num_ids=4, num_per=4)
+
+        # A high LR makes val loss diverge after epoch 0, so best is not the final
+        # epoch and the two checkpoints must differ.
+        config = _cpu_config(epochs=2, lr=0.05, log_interval=1)
+        out_dir = tmp_path / "checkpoint"
+        result = train_reid(
+            train_root,
+            config,
+            architecture="osnet_x0_25",
+            pretrained=None,
+            output_dir=out_dir,
+            val_data=val_root,
+        )
+
+        assert result.best_epoch is not None
+        assert result.best_epoch < len(result.history) - 1, (
+            "best epoch must not be the last, or best and last cannot differ"
+        )
+        assert result.best_dir == str(out_dir / "best")
+        assert result.last_dir == str(out_dir / "last")
+        for directory in (result.best_dir, result.last_dir):
+            assert (Path(directory) / "weights.safetensors").exists()
+            assert (Path(directory) / "reid_config.json").exists()
+
+        best_bytes = (Path(result.best_dir) / "weights.safetensors").read_bytes()
+        last_bytes = (Path(result.last_dir) / "weights.safetensors").read_bytes()
+        assert best_bytes != last_bytes, "the final epoch must not overwrite the best one"
+
+    def test_last_is_written_without_validation(self, tmp_path: Path) -> None:
+        data_root = tmp_path / "crops"
+        _make_crops(data_root, num_ids=4, num_per=4)
+        out_dir = tmp_path / "checkpoint"
+
+        result = train_reid(
+            data_root,
+            _cpu_config(),
+            architecture="osnet_x0_25",
+            pretrained=None,
+            output_dir=out_dir,
+        )
+
+        # Without a val split there is no best epoch, so only last/ is written.
+        assert result.best_epoch is None
+        assert result.best_dir is None
+        assert result.last_dir == str(out_dir / "last")
+        assert (Path(result.last_dir) / "weights.safetensors").exists()
+        assert not (out_dir / "best").exists()
 
     def test_val_keeps_best_epoch(self, tmp_path: Path) -> None:
         train_root = tmp_path / "train"
@@ -356,4 +409,4 @@ class TestTrainReid:
         restored = result.model._backbone.state_dict()
         expected = truncated.model._backbone.state_dict()
         assert all(torch.equal(restored[key], expected[key]) for key in expected)
-        assert (out_dir / "weights.safetensors").exists()
+        assert (Path(result.last_dir) / "weights.safetensors").exists()

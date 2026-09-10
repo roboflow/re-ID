@@ -152,7 +152,7 @@ val = ReIDDataset("/path/to/crops/val")
 model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall", device="cuda")
 result = model.train(crops, val_split=val, epochs=30, p=8, k=4, output_dir="/path/to/checkpoint")
 metrics = model.evaluate(val, queries_per_id=1)
-model = ReIDModel.from_pretrained("/path/to/checkpoint")
+model = ReIDModel.from_pretrained("/path/to/checkpoint/best")
 ```
 
 | Field                    | Role                                 | MOT17 starting point                         |
@@ -168,7 +168,7 @@ model = ReIDModel.from_pretrained("/path/to/checkpoint")
 
 **Epoch budget.** Batches per epoch are `(identities_per_epoch * crops_per_identity) // (p * k)`. Defaults (`"all"` identities, `crops_per_identity=k`) give about `num_identities // p` batches (about 25 for ~200 MOT17 identities with `p=8`). Raise `crops_per_identity` to deepen an epoch without visiting every frame. Lower `identities_per_epoch` for smoke tests.
 
-With `val_data` set, `output_dir` stores the best-epoch checkpoint (`weights.safetensors` and `reid_config.json`). `result.history` has per-epoch train (and val) losses: plot `total` / `val_total` and confirm they trend down before trusting the run.
+`output_dir` holds two checkpoints, each with `weights.safetensors` and `reid_config.json`: `last/` is rewritten every epoch, and with `val_data` set `best/` is rewritten whenever `val_total` improves. Both are written during training, so an interrupted run still leaves usable weights. Note that `best` is the lowest validation loss over identities that also appear in training, which is not the same as the encoder that generalises best to unseen identities, so compare the two before shipping one. `result.history` has per-epoch train (and val) losses: plot `total` / `val_total` and confirm they trend down before trusting the run.
 
 **Center loss (opt-in).** `train_reid` optimizes cross-entropy plus a batch-hard triplet term. `use_center=True` adds the third Bag-of-Tricks term, which pulls embeddings toward a learnable per-identity center. It is off by default because batch-hard triplet already enforces intra-class compactness, so the two terms largely overlap.
 
