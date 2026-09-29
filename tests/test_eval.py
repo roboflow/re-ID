@@ -21,6 +21,7 @@ import supervision as sv
 from PIL import Image
 
 from reid import ReIDDataset, ReIDModel
+from reid.eval import RetrievalProtocol
 
 
 def _make_identity_crops(root: Path, num_ids: int, num_per: int) -> None:
@@ -44,12 +45,15 @@ class TestModelEvaluate:
         data = ReIDDataset(data_root)
         model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
 
-        assert model.evaluate(data, verbose=False).metrics.num_queries == 6
-        assert model.evaluate(data_root, verbose=False).metrics.num_queries == 6
-        assert model.evaluate(data, queries_per_id=2, min_crops=3, verbose=False).metrics.num_queries == 12
+        assert model.evaluate(data, verbose=False).num_queries == 6
+        assert model.evaluate(data_root, verbose=False).num_queries == 6
+        assert (
+            model.evaluate(data, protocol=RetrievalProtocol(queries_per_id=2, min_crops=3), verbose=False).num_queries
+            == 12
+        )
 
         query, gallery = data.for_retrieval(queries_per_id=2, min_crops=3, seed=7)
-        assert model.evaluate(query, gallery, verbose=False).metrics.num_queries == 12
+        assert model.evaluate(query, gallery, verbose=False).num_queries == 12
 
     def test_evaluate_rejects_a_non_split_query_with_an_explicit_gallery(self, tmp_path: Path) -> None:
         """A dataset or path with an explicit gallery would fail deep inside the evaluator."""
@@ -69,8 +73,8 @@ class TestModelEvaluate:
         query, gallery = ReIDDataset(data_root).for_retrieval()
         model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
 
-        with pytest.raises(ValueError, match="only applies when the partition is derived"):
-            model.evaluate(query, gallery, seed=7)
+        with pytest.raises(ValueError, match="explicit|gallery|derived"):
+            model.evaluate(query, gallery, protocol=RetrievalProtocol(seed=7))
 
 
 class TestDistanceMatrix:

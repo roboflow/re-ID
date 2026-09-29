@@ -52,7 +52,7 @@ class ReIDPreprocessing:
 
     Preprocessing does not own embedding L2 normalisation: ``extract_*`` always
     returns raw embeddings and cosine similarity is normalised at distance time
-    (see ``ReIDEvaluator._distance_matrix``).
+    (see ``reid.eval.metrics._distance_matrix``).
     """
 
     input_size: tuple[int, int] = REID_INPUT_SIZE

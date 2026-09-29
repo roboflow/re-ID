@@ -18,8 +18,6 @@ import logging
 import os
 import warnings
 from collections.abc import Sequence
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import supervision as sv
@@ -30,14 +28,13 @@ from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
+from reid.checks import DEFAULT_MAX_PAIRS, validate_positive_int
 from reid.crop_dataset import CropDataset
 from reid.data import ReIDDataset, ReIDSplit
-from reid.eval import ReIDEvaluator
+from reid.eval import EvaluationProtocol, ReIDResult, RetrievalProtocol
+from reid.eval.metrics import _compute_reid_metrics, _distance_matrix
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
-
-if TYPE_CHECKING:
-    from reid.eval import ReIDResult
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +70,13 @@ def _select_device(device: str) -> torch.device:
 class ReIDModel:
     """Appearance encoder with loading, preprocessing, and checkpoint I/O.
 
-    Provides ``extract_features`` (for video-frame crops) and
-    ``extract_features_from_paths`` (for on-disk crops), plus
+    Provides ``extract_embeddings`` (for video-frame crops) and
+    ``extract_embeddings_from_paths`` (for on-disk crops), plus
     ``from_pretrained`` and ``save_pretrained``. The default checkpoint is
     pedestrian-trained; pass ``source`` / ``architecture`` for other domains.
 
     Args:
-        backbone: Feature-extractor module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
+        backbone: Encoder module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
         device: Device the backbone runs on.
         preprocessing: Crop and embedding preprocessing.
         architecture: Registered architecture name, required by
@@ -221,76 +218,89 @@ class ReIDModel:
 
     def evaluate(
         self,
-        data: ReIDDataset | ReIDSplit | str | Path,
+        data: ReIDDataset | ReIDSplit,
         gallery: ReIDSplit | None = None,
         *,
-        queries_per_id: int | None = None,
-        min_crops: int | None = None,
-        seed: int | None = None,
+        protocol: EvaluationProtocol | None = None,
         batch_size: int = 64,
-        **kwargs: Any,
+        max_pairs: int = DEFAULT_MAX_PAIRS,
+        return_distmat: bool = False,
+        verbose: bool = True,
     ) -> ReIDResult:
-        """Score retrieval metrics for this encoder.
+        """Evaluate this model under an evaluation protocol.
 
-        Two ways to say what to score:
-
-        * Pass a :class:`~reid.data.ReIDDataset` (or a crop-folder path) and the
-          query/gallery partition is derived from identity folders, tuned by
-          ``queries_per_id`` / ``min_crops`` / ``seed`` (defaults live on
-          :meth:`~reid.data.ReIDDataset.for_retrieval`).
-        * Pass an explicit query and gallery split, which is what benchmark
-          loaders such as :func:`~reid.data.load_market1501` return; their
-          published partitions must not be re-derived.
+        The protocol selects which images are compared and which metrics are
+        reported; this model embeds them. Selection is deterministic, so the
+        same data and protocol score identical inputs for every model.
 
         Args:
-            data: ``ReIDDataset``, crop-folder path, or the query split.
-            gallery: Gallery split, when ``data`` is an explicit query split.
-            queries_per_id: Queries per identity when deriving the partition.
-            min_crops: Minimum crops an identity needs to be usable.
-            seed: Seed for the query/gallery draw.
-            batch_size: Embedding extraction batch size.
-            **kwargs: Forwarded to :meth:`~reid.eval.ReIDEvaluator.evaluate`
-                (``distance``, ``max_rank``, ``verbose``, cached embeddings).
+            data: Identity-folder dataset, or a query split with ``gallery``.
+            gallery: Gallery split when ``data`` is the query split.
+            protocol: Evaluation protocol. Defaults to
+                :class:`~reid.eval.RetrievalProtocol`.
+            batch_size: Images per embedding batch.
+            max_pairs: Largest query-by-gallery matrix to allocate.
+            return_distmat: Keep the query-by-gallery distance matrix in the result.
+            verbose: Log progress.
 
         Returns:
-            :class:`~reid.eval.ReIDResult`.
+            :class:`~reid.eval.ReIDResult` with protocol metrics as percentages,
+            the number of scored queries, and protocol metadata.
 
         Raises:
-            ValueError: If split-derivation arguments are combined with an
-                explicit ``gallery``, which would silently ignore them.
-            TypeError: If ``gallery`` is given but ``data`` is not the query
-                :class:`~reid.data.ReIDSplit`.
-            ValueError: If ``data`` is a bare query split with no ``gallery``.
+            TypeError: If ``protocol`` is not an ``EvaluationProtocol``.
+            ValueError: If an input is invalid, the model returns non-finite
+                embeddings, or no query can be scored.
         """
-        derivation = {"queries_per_id": queries_per_id, "min_crops": min_crops, "seed": seed}
-        if gallery is None:
-            if isinstance(data, ReIDSplit):
-                raise ValueError(
-                    "Got a query ReIDSplit but no gallery. Pass both splits — for "
-                    "example evaluate(*dataset.for_retrieval()) — or pass the "
-                    "ReIDDataset / crop folder itself to derive the partition."
-                )
-            dataset = data if isinstance(data, ReIDDataset) else ReIDDataset(data)
-            query, gallery = dataset.for_retrieval(
-                **{name: value for name, value in derivation.items() if value is not None}
+        validate_positive_int(batch_size, "batch_size")
+        if protocol is None:
+            protocol = RetrievalProtocol()
+        elif not isinstance(protocol, EvaluationProtocol):
+            raise TypeError("protocol must be an EvaluationProtocol instance.")
+        query, gallery_split, candidate_mask, metadata = protocol.build_query_gallery(
+            data, gallery, max_pairs=max_pairs
+        )
+
+        # A crop may be both a query and a gallery image. Embed it once.
+        paths = list(dict.fromkeys([*query.image_paths, *gallery_split.image_paths]))
+        if verbose:
+            logger.info("Extracting embeddings (%s images)…", len(paths))
+        embeddings = self.extract_embeddings_from_paths(paths, batch_size=batch_size)
+        if not np.all(np.isfinite(embeddings)):
+            raise ValueError("The model returned non-finite embeddings.")
+        row = {path: index for index, path in enumerate(paths)}
+        query_embeddings = embeddings[[row[path] for path in query.image_paths]]
+        gallery_embeddings = embeddings[[row[path] for path in gallery_split.image_paths]]
+
+        distmat = _distance_matrix(query_embeddings, gallery_embeddings, protocol.distance)
+        metrics = _compute_reid_metrics(
+            distmat=distmat,
+            q_pids=query.pids,
+            g_pids=gallery_split.pids,
+            q_camids=query.camids,
+            g_camids=gallery_split.camids,
+            gallery_junk_pids=gallery_split.gallery_junk_pids,
+            candidate_mask=candidate_mask,
+            exclude_same_pid_camid=protocol.exclude_same_pid_camid,
+        )
+        if metrics.num_queries == 0:
+            raise ValueError(
+                "No query has a correct match among its candidates, so nothing can be scored. "
+                "Check that the query identities appear in the gallery."
             )
-        else:
-            given = [name for name, value in derivation.items() if value is not None]
-            if given:
-                verb = "applies" if len(given) == 1 else "apply"
-                raise ValueError(
-                    f"{', '.join(given)} only {verb} when the partition is derived; "
-                    "an explicit gallery is used as given. Drop them, or build the "
-                    "split with ReIDDataset.for_retrieval() and pass the result."
-                )
-            if not isinstance(data, ReIDSplit):
-                raise TypeError(
-                    f"With an explicit gallery, data must be the query ReIDSplit, got "
-                    f"{type(data).__name__}. Pass both splits (for_retrieval() or a "
-                    "benchmark loader), or drop gallery to derive the partition."
-                )
-            query = data
-        return ReIDEvaluator(self, batch_size=batch_size).evaluate(query, gallery, **kwargs)
+        if verbose:
+            logger.info("Results (%s)\n%s", protocol.distance, metrics)
+        skipped = metadata.get("num_skipped_queries", 0) + len(query) - metrics.num_queries
+        return ReIDResult(
+            metrics=protocol.metric_values(metrics),
+            num_queries=metrics.num_queries,
+            distmat=distmat if return_distmat else np.empty((0, 0), dtype=np.float32),
+            metadata={
+                **metadata,
+                "exclude_same_pid_camid": protocol.exclude_same_pid_camid,
+                "num_skipped_queries": skipped,
+            },
+        )
 
     def _crop_to_tensor(self, rgb_crop: np.ndarray) -> torch.Tensor:
         """Resize an RGB crop to the model input and apply tensor normalisation."""
@@ -309,7 +319,7 @@ class ReIDModel:
             raise ValueError("embeddings must contain only finite values")
         return out
 
-    def extract_features_from_paths(
+    def extract_embeddings_from_paths(
         self,
         image_paths: Sequence[str],
         *,
@@ -318,7 +328,7 @@ class ReIDModel:
     ) -> np.ndarray:
         """Extract embeddings from pre-cropped image paths.
 
-        For bbox crops from a video frame, use ``extract_features``. Images are
+        For bbox crops from a video frame, use ``extract_embeddings``. Images are
         decoded and preprocessed via a ``DataLoader`` so ``num_workers > 0``
         parallelises disk I/O on platforms that support it. Raw (un-normalised)
         embeddings are returned; cosine callers normalise at distance time.
@@ -332,12 +342,11 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``.
 
         Raises:
-            ValueError: If ``batch_size`` is less than 1.
+            ValueError: If ``batch_size`` is not a positive integer.
         """
         if not image_paths:
             return np.empty((0, 0), dtype=np.float32)
-        if batch_size < 1:
-            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+        validate_positive_int(batch_size, "batch_size")
 
         dataset = CropDataset(image_paths, self._preprocessing.build_crop_transform())
         loader = DataLoader(
@@ -351,7 +360,7 @@ class ReIDModel:
         all_embeddings: list[np.ndarray] = [self._embed_batch(batch) for batch in loader]
         return np.concatenate(all_embeddings, axis=0)
 
-    def extract_features(
+    def extract_embeddings(
         self,
         detections: sv.Detections,
         frame: np.ndarray,
@@ -362,7 +371,7 @@ class ReIDModel:
 
         Crops are sub-batched so crowded frames do not build one oversized
         forward pass. Shares crop→tensor→forward with
-        ``extract_features_from_paths``. Raw (un-normalised) embeddings are
+        ``extract_embeddings_from_paths``. Raw (un-normalised) embeddings are
         returned; cosine callers normalise at distance time.
 
         Args:
@@ -374,12 +383,11 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
 
         Raises:
-            ValueError: If ``batch_size`` is less than 1.
+            ValueError: If ``batch_size`` is not a positive integer.
         """
         if len(detections) == 0:
             return np.empty((0, 0), dtype=np.float32)
-        if batch_size < 1:
-            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+        validate_positive_int(batch_size, "batch_size")
 
         frame_h, frame_w = frame.shape[:2]
         tensors: list[torch.Tensor] = []

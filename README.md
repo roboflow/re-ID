@@ -1,12 +1,16 @@
-# re-ID
+<div align="center">
+    <h1>reid</h1>
+    <p>Load and evaluate person re-identification models in Python.</p>
 
-`reid` loads person re-identification encoders, extracts appearance embeddings from detection boxes or image crops, and evaluates galleries with standard ReID metrics (mAP, CMC / Rank-k). Use it to match the same identity across cameras or clips.
+[![version](https://badge.fury.io/py/reid.svg)](https://badge.fury.io/py/reid) [![downloads](https://img.shields.io/pypi/dm/reid)](https://pypistats.org/packages/reid) [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE) [![python-version](https://img.shields.io/pypi/pyversions/reid)](https://badge.fury.io/py/reid) [![discord](https://img.shields.io/discord/1159501506232451173?logo=discord&label=discord&labelColor=fff&color=5865f2&link=https%3A%2F%2Fdiscord.gg%2FGbfgXGJ8Bk)](https://discord.gg/GbfgXGJ8Bk)
 
-<video width="100%" controls muted loop playsinline preload="metadata" aria-label="Gallery retrieval promo: query a soccer player and rank gallery crops by cosine distance">
-  <source src="https://github.com/user-attachments/assets/036a7949-2206-49fc-9a1b-89f9d3c51f20" type="video/mp4">
-</video>
+</div>
 
-Gallery retrieval with OSNet: query a player, rank crops from other clips by cosine distance (↓ lower is better).
+`reid` turns a person crop into an appearance embedding, a vector that is close for crops of the same person and far apart for different people. It loads pretrained OSNet and FastReID checkpoints, embeds `supervision.Detections` from any detector or crops saved on disk, and measures how well a model matches people: across cameras with retrieval on Market-1501 and MSMT17, or over time with re-association on crops cut from MOT-format video. Requires Python 3.10 or newer.
+
+https://github.com/user-attachments/assets/036a7949-2206-49fc-9a1b-89f9d3c51f20
+
+Gallery retrieval with OSNet: a query player ranks crops from other clips by cosine distance, lowest first.
 
 ## Install
 
@@ -14,114 +18,107 @@ Gallery retrieval with OSNet: query a player, rank crops from other clips by cos
 pip install "reid>=0.1.0.dev0"
 ```
 
-From a clone:
+<details>
+<summary>Install from source</summary>
 
 ```bash
-pip install -e ".[dev]"
+pip install git+https://github.com/roboflow/re-ID.git
 ```
 
-Or with uv:
+For development, clone the repository and run `uv sync --all-extras` or `pip install -e ".[dev]"`.
 
-```bash
-uv sync --all-extras
-```
-
-Import as `reid`.
+</details>
 
 ## Quick start
 
+Embed every detection in a frame. `from_pretrained()` with no name downloads the default model, OSNet x1.0 trained on MSMT17.
+
 ```python
+import cv2
 import numpy as np
 import supervision as sv
 from reid import ReIDModel
 
-model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+model = ReIDModel.from_pretrained()
 
-frame = np.zeros((256, 128, 3), dtype=np.uint8)
-detections = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
-embeddings = model.extract_features(detections, frame)
-print(embeddings.shape)  # (1, 512)
+frame = cv2.imread("frame.jpg")
+detections = sv.Detections(xyxy=np.array([[100, 40, 180, 300], [300, 60, 370, 310]], dtype=np.float32))
+embeddings = model.extract_embeddings(detections, frame)
 
-# Pre-cropped images on disk (gallery eval, etc.)
-embeddings = model.extract_features_from_paths(["/path/to/crop.jpg"])
+embeddings.shape
+# (2, 512)
 ```
 
-## Ways to load a model
-
-Use `ReIDModel.from_pretrained(...)`. Pick the form that matches what you have:
-
-1. **Curated alias** (or no argument): `ReIDModel.from_pretrained()` or `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")`. Resolves architecture and weights URL; preprocessing comes from that architecture's `default_preprocessing()`. Other shipped aliases include `fastreid_mot17_sbs50`.
-
-2. **Saved directory or HF repo with `reid_config.json`**: `ReIDModel.from_pretrained("/path/to/export")` or `ReIDModel.from_pretrained("hf://org/repo")`. Use after `save_pretrained`. The config records architecture and preprocessing; weights live in `weights.safetensors` next to it.
-
-3. **Bare checkpoint file** plus `architecture=`: `ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")` (also `hf://.../file.pth` and `gd://...`). Preprocessing comes from that architecture's `default_preprocessing()` unless you pass `preprocessing=`.
-
-4. **Architecture only** (random init): `ReIDModel.from_pretrained(architecture="osnet_x1_0")`. Useful for tests, scaffolding, or before training attaches weights.
-
-### Preprocessing and config
-
-Each architecture class owns its default crop/tensor recipe as a `default_preprocessing()` classmethod (`OSNet.default_preprocessing()`, `FastReIDSBSResNeSt50.default_preprocessing()`). OSNet uses 256x128 stretch; FastReID SBS uses 384x128 stretch (BoT-SORT FastReIDInterface). String dispatch is `architectures.default_preprocessing_for_architecture`.
-
-`ReIDPreprocessing` fields (also what `reid_config.json` stores under `"preprocessing"`):
-
-| Field           | Meaning                                                                  | Typical                                   |
-| --------------- | ------------------------------------------------------------------------ | ----------------------------------------- |
-| `input_size`    | `(H, W)`                                                                 | OSNet `(256, 128)`; FastReID `(384, 128)` |
-| `resize_mode`   | `stretch` or `letterbox`                                                 | `stretch`                                 |
-| `interpolation` | OpenCV resize                                                            | `bilinear`                                |
-| `to_rgb`        | BGR→RGB swap for video-frame crops only; on-disk RGB paths are unchanged | `True`                                    |
-| `mean` / `std`  | tensor Normalize                                                         | ImageNet                                  |
-| `pad_value`     | letterbox pad                                                            | `114`                                     |
-
-Embedding L2 norm is not a preprocessing field: extract returns raw vectors; cosine distance normalizes inside `ReIDEvaluator`.
-
-`save_pretrained` writes `architecture` and `preprocessing` into `reid_config.json`, with weights beside it in `weights.safetensors`. Domain warnings stay on curated aliases at load time; they are not written into saved configs.
-
-## Package layout
-
-The public API is exported from the top-level `reid` package; advanced helpers live in submodules. Discovery helpers: `list_aliases()`, `list_architectures()`. Constants: `DEFAULT_MODEL`, `FASTREID_MOT17_SBS50`.
-
-```
-src/reid/
-├── __init__.py         # narrow public surface (see __all__)
-├── model.py            # ReIDModel (the encoder)
-├── preprocessing.py    # ReIDPreprocessing (shared crop/tensor type)
-├── catalog.py          # curated aliases (ModelCard, ALIASES)
-├── architectures/      # builders + class default_preprocessing() on each net
-├── loaders.py          # weight I/O and resolve_load_plan
-├── data/               # ReIDSplit, benchmarks, identity crops
-└── eval/               # gallery evaluation (metrics + ReIDEvaluator)
-```
-
-- **Architectures** know how to build a net and expose preprocessing via `default_preprocessing()` on the architecture class.
-- **Catalog** is only the small allowlist of named recipes (alias → architecture + weights URL + domain warning). Preprocessing for aliases is derived from the architecture at load time. Curated aliases require a 100% state-dict match at load time (enforced in `resolve_load_plan`).
-
-## Adding a new architecture
-
-1. Implement under `src/reid/architectures/` (or use `timm:<name>`).
-2. Add a `@classmethod default_preprocessing()` on the architecture class, documenting the input size / resize / colour contract for that checkpoint family.
-3. Register build + preprocessing dispatch in `architectures/registry.py`.
-4. Optionally add a curated alias in `catalog.ALIASES`.
-
-## Gallery eval
+Crops already saved as images work the same way:
 
 ```python
-from reid import ReIDModel, load_market1501
-
-model = ReIDModel.from_pretrained()
-query, gallery = load_market1501("/path/to/Market-1501")
-result = model.evaluate(query, gallery)
-print(result.metrics)
+embeddings = model.extract_embeddings_from_paths(["crop_1.jpg", "crop_2.jpg"])
 ```
 
-Metrics (CMC Rank-k, mAP, mINP), junk filtering, and cosine vs Euclidean distance are documented in [`docs/learn/metrics.md`](docs/learn/metrics.md).
+For every way to load a model, including saved models, Hugging Face repositories, and weights files, see the [loading guide](docs/guides/loading.md).
 
-To reproduce torchreid model-zoo OSNet numbers on Market-1501 and MSMT17 (same-domain checkpoints; OSNet x1.0 Market-1501 uses euclidean), run [`notebooks/eval_reid.ipynb`](notebooks/eval_reid.ipynb).
+## Evaluate
 
-## Weight cache
+`model.evaluate` scores a model on benchmark splits or on your own identity folders, one folder of crops per person.
 
-Google Drive downloads (`gd://...`) are cached under `~/.cache/reid/weights/`. Set the `REID_CACHE_DIR` environment variable to override the cache root (weights are then stored under `$REID_CACHE_DIR/weights/`). Hugging Face weights use the standard Hugging Face Hub cache.
+```python
+from reid import ReIDDataset, ReIDModel, load_market1501
+
+model = ReIDModel.from_pretrained()
+
+query, gallery = load_market1501("/path/to/Market-1501")
+result = model.evaluate(query, gallery)
+
+result = model.evaluate(ReIDDataset("/path/to/identity/folders"))
+result.metrics
+# {'map': ..., 'rank1': ..., 'rank5': ..., 'rank10': ..., 'minp': ...}
+```
+
+For crops cut from video, `ReassociationProtocol` asks whether the model recognizes a person a set number of frames later, the way a tracker uses it. See the [evaluation guide](docs/guides/evaluation.md) and the [metric definitions](docs/learn/metrics.md).
+
+## Pretrained models
+
+| Name | Architecture | Trained on | Use for |
+| :-- | :-- | :-- | :-- |
+| `osnet_x1_0_msmt17_combineall` (default) | OSNet x1.0 | MSMT17, all splits combined | General pedestrian embeddings. Not for evaluating on MSMT17, whose test identities it has seen. |
+| `fastreid_mot17_sbs50` | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | MOT17 tracking, as in BoT-SORT |
+
+`list_aliases()` lists these names. Any `timm:<name>` backbone and other OSNet sizes load from a weights file; see the [loading guide](docs/guides/loading.md).
+
+## Tutorials
+
+| Tutorial | What you will do |
+| :-- | :-- |
+| [Load a model](docs/guides/loading.md) | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
+| [Evaluate a model](docs/guides/evaluation.md) | Score a model on Market-1501, your own identity folders, or crops cut from video |
+| [Understand the metrics](docs/learn/metrics.md) | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association |
+| [Reproduce the OSNet benchmarks](notebooks/eval_reid.ipynb) | Evaluate OSNet x1.0 on Market-1501 and MSMT17 against the torchreid model zoo, on a Colab T4 |
+
+## Citation
+
+If you use `reid` in academic work, please cite the library:
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@software{roboflow_reid,
+  author  = {{Roboflow}},
+  title   = {Roboflow Re-ID},
+  url     = {https://github.com/roboflow/re-ID},
+  year    = {2026},
+  license = {Apache-2.0}
+}
+```
+
+</details>
+
+For the models themselves, cite OSNet ([Zhou et al., ICCV 2019](https://arxiv.org/abs/1905.00953)) and FastReID ([He et al., 2020](https://arxiv.org/abs/2006.02631)).
+
+## Contributing
+
+We welcome contributions. Read the [contributor guide](CONTRIBUTING.md) to set up a development environment and add an architecture.
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+The code is released under the [Apache 2.0 license](LICENSE).

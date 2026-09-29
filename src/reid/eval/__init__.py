@@ -4,14 +4,17 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
+"""Evaluation protocols, results, and retrieval metrics."""
+
 from __future__ import annotations
 
-from reid.eval.evaluator import ReIDEvaluator, ReIDResult
-from reid.eval.metrics import ReIDMetrics, compute_reid_metrics
+from reid.eval.metrics import ReIDMetrics, ReIDResult
+from reid.eval.protocols import EvaluationProtocol, ReassociationProtocol, RetrievalProtocol
 
 __all__ = [
-    "ReIDEvaluator",
+    "EvaluationProtocol",
     "ReIDMetrics",
     "ReIDResult",
-    "compute_reid_metrics",
+    "ReassociationProtocol",
+    "RetrievalProtocol",
 ]

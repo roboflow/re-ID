@@ -1,7 +1,7 @@
 site_name: Re-ID
 site_url: https://roboflow.github.io/re-ID/
 site_author: Roboflow
-site_description: Re-identification models and gallery evaluation for appearance embeddings.
+site_description: Tools for re-identification visual feature extraction and evaluation.
 repo_name: roboflow/re-ID
 repo_url: https://github.com/roboflow/re-ID
 edit_uri: edit/main/docs/
@@ -39,6 +39,6 @@ nav:
   - Home: index.md
   - Guides:
       - Load a model: guides/loading.md
-      - Evaluate a gallery: guides/evaluation.md
+      - Evaluate a model: guides/evaluation.md
       - ReID metrics: learn/metrics.md
   - API reference: api/reference.md
