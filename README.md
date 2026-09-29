@@ -115,10 +115,6 @@ If you use `reid` in academic work, please cite the library:
 
 For the models themselves, cite OSNet ([Zhou et al., ICCV 2019](https://arxiv.org/abs/1905.00953)) and FastReID ([He et al., 2020](https://arxiv.org/abs/2006.02631)).
 
-## Contributing
-
-We welcome contributions. Read the [contributor guide](CONTRIBUTING.md) to set up a development environment and add an architecture.
-
 ## License
 
 The code is released under the [Apache 2.0 license](LICENSE).
