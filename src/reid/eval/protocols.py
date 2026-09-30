@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -17,7 +16,7 @@ from reid.checks import DEFAULT_MAX_PAIRS, validate_candidate_mask, validate_pai
 from reid.data.identity_crops import (
     ReIDDataset,
     _check_query_params,
-    build_identity_crop_retrieval_split,
+    _retrieval_split,
 )
 from reid.data.reassociation import _build_reassociation_candidates
 from reid.data.splits import ReIDSplit
@@ -25,19 +24,11 @@ from reid.eval.metrics import ReIDMetrics, _validate_distance
 
 
 def _validate_split(split: ReIDSplit, name: str) -> None:
-    if not isinstance(split, ReIDSplit):
-        raise TypeError(f"Selected {name} must be a ReIDSplit.")
-    if not isinstance(split.image_paths, list):
-        raise ValueError(f"{name}.image_paths must be a list.")
+    """Reject IDs that do not line up with the images; ranking would pair images with the wrong person."""
     for field in ("pids", "camids"):
         values = getattr(split, field)
-        if (
-            not isinstance(values, np.ndarray)
-            or values.ndim != 1
-            or len(values) != len(split)
-            or not np.issubdtype(values.dtype, np.signedinteger)
-        ):
-            raise ValueError(f"{name}.{field} must be a one-dimensional signed integer array matching image_paths.")
+        if np.ndim(values) != 1 or len(values) != len(split):
+            raise ValueError(f"{name}.{field} must hold one value per image, got shape {np.shape(values)}.")
 
 
 class EvaluationProtocol(ABC):
@@ -86,12 +77,8 @@ class EvaluationProtocol(ABC):
         """
         validate_positive_int(max_pairs, "max_pairs")
         _validate_distance(self.distance)
-        if not isinstance(self.exclude_same_pid_camid, bool):
-            raise ValueError("exclude_same_pid_camid must be a bool.")
         selection = self._build_query_gallery(data, gallery, max_pairs=max_pairs)
-        if not isinstance(selection, tuple) or len(selection) != 4:
-            raise TypeError("_build_query_gallery must return (query, gallery, candidate_mask, metadata).")
-        query, gallery_split, candidate_mask, metadata = selection
+        query, gallery_split, candidate_mask, _ = selection
         _validate_split(query, "query")
         _validate_split(gallery_split, "gallery")
         if not query.image_paths or not gallery_split.image_paths:
@@ -99,12 +86,6 @@ class EvaluationProtocol(ABC):
         validate_pair_budget(len(query), len(gallery_split), max_pairs)
         if candidate_mask is not None:
             validate_candidate_mask(candidate_mask, len(query), len(gallery_split))
-        if not isinstance(metadata, dict):
-            raise TypeError("Selection metadata must be a JSON-compatible dictionary.")
-        try:
-            json.dumps(metadata, allow_nan=False)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("Selection metadata must contain only JSON-compatible values.") from exc
         return selection
 
     @abstractmethod
@@ -153,8 +134,6 @@ class RetrievalProtocol(EvaluationProtocol):
             validate_positive_int(queries_per_id, "queries_per_id")
         if min_crops is not None:
             validate_positive_int(min_crops, "min_crops")
-        if seed is not None and (not isinstance(seed, int) or isinstance(seed, bool)):
-            raise ValueError("seed must be an integer.")
         _validate_distance(distance)
         self._sampling_set = any(value is not None for value in (queries_per_id, min_crops, seed))
         self.queries_per_id = 1 if queries_per_id is None else queries_per_id
@@ -180,7 +159,7 @@ class RetrievalProtocol(EvaluationProtocol):
             if not isinstance(data, ReIDDataset):
                 raise TypeError(f"Derived retrieval needs a ReIDDataset, got {type(data).__name__}.")
             parameters = {"queries_per_id": self.queries_per_id, "min_crops": self.min_crops, "seed": self.seed}
-            query, gallery_split = build_identity_crop_retrieval_split(data.split, **parameters)
+            query, gallery_split = _retrieval_split(data.split, **parameters)
             source = "derived"
         metadata = {
             "protocol": self.name,

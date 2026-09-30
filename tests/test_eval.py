@@ -4,310 +4,144 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""NumPy-only ReID gallery evaluation tests.
-
-These do not require torch. CI installs via ``uv sync --all-extras`` and runs
-``pytest tests/ -m 'not slow'``.
-"""
+"""``ReIDModel.evaluate``: protocols, embedding once per image, and input guards."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import pytest
-import supervision as sv
-from PIL import Image
+import torch
 
 from reid import ReIDDataset, ReIDModel
-from reid.eval import RetrievalProtocol
+from reid.data import ReIDSplit
+from reid.eval import ReassociationProtocol, RetrievalProtocol
+from reid.preprocessing import ReIDPreprocessing
+
+from .crop_images import write_identity_crops, write_mot_crop
 
 
-def _make_identity_crops(root: Path, num_ids: int, num_per: int) -> None:
-    """Write a ``<root>/<identity>/<crop>.jpg`` tree of random images."""
-    rng = np.random.default_rng(0)
-    for i in range(num_ids):
-        identity_dir = root / f"id_{i:02d}"
-        identity_dir.mkdir(parents=True)
-        for j in range(num_per):
-            array = (rng.random((48, 24, 3)) * 255).astype("uint8")
-            Image.fromarray(array).save(identity_dir / f"{j}.jpg")
+def _model() -> ReIDModel:
+    """A real ``ReIDModel`` whose embeddings each test supplies or monkeypatches."""
+    return ReIDModel(backbone=torch.nn.Identity(), device=torch.device("cpu"), preprocessing=ReIDPreprocessing())
 
 
-class TestModelEvaluate:
-    """``ReIDModel.evaluate`` derives a partition or takes an explicit one."""
-
-    def test_evaluate_derives_or_accepts_an_explicit_partition(self, tmp_path: Path) -> None:
-        """Defaults handle the split; the derivation knobs are reachable; explicit splits win."""
-        data_root = tmp_path / "crops"
-        _make_identity_crops(data_root, num_ids=6, num_per=6)
-        data = ReIDDataset(data_root)
-        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
-
-        assert model.evaluate(data, verbose=False).num_queries == 6
-        assert model.evaluate(data_root, verbose=False).num_queries == 6
-        assert (
-            model.evaluate(data, protocol=RetrievalProtocol(queries_per_id=2, min_crops=3), verbose=False).num_queries
-            == 12
-        )
-
-        query, gallery = data.for_retrieval(queries_per_id=2, min_crops=3, seed=7)
-        assert model.evaluate(query, gallery, verbose=False).num_queries == 12
-
-    def test_evaluate_rejects_a_non_split_query_with_an_explicit_gallery(self, tmp_path: Path) -> None:
-        """A dataset or path with an explicit gallery would fail deep inside the evaluator."""
-        data_root = tmp_path / "crops"
-        _make_identity_crops(data_root, num_ids=4, num_per=3)
-        dataset = ReIDDataset(data_root)
-        _, gallery = dataset.for_retrieval()
-        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
-
-        with pytest.raises(TypeError, match="must be the query ReIDSplit"):
-            model.evaluate(dataset, gallery=gallery)
-
-    def test_evaluate_rejects_derivation_args_with_an_explicit_gallery(self, tmp_path: Path) -> None:
-        """Silently ignoring a split knob the caller set would hide a mistake."""
-        data_root = tmp_path / "crops"
-        _make_identity_crops(data_root, num_ids=6, num_per=6)
-        query, gallery = ReIDDataset(data_root).for_retrieval()
-        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
-
-        with pytest.raises(ValueError, match="explicit|gallery|derived"):
-            model.evaluate(query, gallery, protocol=RetrievalProtocol(seed=7))
+def _model_with(vectors: dict[str, list[float]]) -> ReIDModel:
+    """A real ``ReIDModel`` that embeds each image path to a fixed vector."""
+    model = _model()
+    model.extract_embeddings_from_paths = lambda paths, **kwargs: np.array([vectors[path] for path in paths])
+    return model
 
 
-class TestDistanceMatrix:
-    """Query x gallery distance matrix in cosine and euclidean metrics."""
+def test_real_model_evaluates_a_dataset_and_its_explicit_splits(tmp_path: Path) -> None:
+    """The default protocol, custom sampling, and explicit splits all run through a real encoder."""
+    write_identity_crops(tmp_path, num_ids=6, num_per=6)
+    data = ReIDDataset(tmp_path)
+    model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
 
-    def test_cosine_and_euclidean_shapes(self) -> None:
-        from reid.eval.evaluator import _distance_matrix
+    # One query per identity by default, two when asked: 6 identities give 6 and 12 queries.
+    assert model.evaluate(data, verbose=False).num_queries == 6
+    assert model.evaluate(data, protocol=RetrievalProtocol(queries_per_id=2), verbose=False).num_queries == 12
 
-        q = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
-        g = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
-        cos = _distance_matrix(q, g, "cosine")
-        euc = _distance_matrix(q, g, "euclidean")
-        assert cos.shape == (2, 2)
-        assert euc.shape == (2, 2)
-        assert np.allclose(cos.diagonal(), 0.0, atol=1e-5)
-
-
-class TestComputeReidMetrics:
-    """mAP / CMC / mINP computation and input validation."""
-
-    def test_market1501_pid_zero_is_junk_in_gallery(self) -> None:
-        from reid.data import MARKET1501_GALLERY_JUNK_PIDS
-        from reid.eval.metrics import compute_reid_metrics
-
-        metrics = compute_reid_metrics(
-            np.array([[0.1, 0.2, 0.3]], dtype=np.float32),
-            q_pids=np.array([1]),
-            g_pids=np.array([0, 1, 2]),
-            q_camids=np.array([0]),
-            g_camids=np.array([0, 1, 0]),
-            max_rank=10,
-            gallery_junk_pids=MARKET1501_GALLERY_JUNK_PIDS,
-        )
-        assert metrics.rank1 == pytest.approx(100.0)
-
-    def test_cmc_pads_when_valid_gallery_shorter_than_max_rank(self) -> None:
-        from reid.eval.metrics import compute_reid_metrics
-
-        metrics = compute_reid_metrics(
-            np.array([[0.2, 0.1]], dtype=np.float32),
-            q_pids=np.array([3]),
-            g_pids=np.array([3, 8]),
-            q_camids=np.array([0]),
-            g_camids=np.array([1, 0]),
-            max_rank=10,
-        )
-        assert metrics.rank1 == pytest.approx(0.0)
-        assert metrics.rank5 == pytest.approx(100.0)
-
-    def test_max_rank_below_ten_raises(self) -> None:
-        from reid.eval.metrics import compute_reid_metrics
-
-        with pytest.raises(ValueError, match="max_rank"):
-            compute_reid_metrics(
-                np.array([[0.1, 0.2]], dtype=np.float32),
-                q_pids=np.array([1]),
-                g_pids=np.array([1, 2]),
-                q_camids=np.array([0]),
-                g_camids=np.array([1, 0]),
-                max_rank=5,
-            )
-
-    def test_computes_map_cmc_and_minp_on_controlled_ranking(self) -> None:
-        """One query, two true gallery matches after junk removal.
-
-        Distance order of gallery ids ``[2, 1, 1, 1]`` with cams ``[1, 1, 0, 2]``.
-        Same-(pid, camid) as the query (third gallery entry) is junk, so the
-        valid ranking is distractor → match → match.
-
-        Hand-computed: Rank-1 = 0%, AP = 7/12, mINP = 2/3.
-        """
-        from reid.eval.metrics import compute_reid_metrics
-
-        metrics = compute_reid_metrics(
-            np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float32),
-            q_pids=np.array([1]),
-            g_pids=np.array([2, 1, 1, 1]),
-            q_camids=np.array([0]),
-            g_camids=np.array([1, 1, 0, 2]),
-            max_rank=10,
-            gallery_junk_pids=frozenset(),
-        )
-        assert metrics.num_queries == 1
-        assert metrics.rank1 == pytest.approx(0.0)
-        assert metrics.rank5 == pytest.approx(100.0)
-        assert metrics.rank10 == pytest.approx(100.0)
-        assert metrics.mean_average_precision == pytest.approx((7.0 / 12.0) * 100.0)
-        assert metrics.minp == pytest.approx((2.0 / 3.0) * 100.0)
+    query, gallery, _, _ = RetrievalProtocol(queries_per_id=2, seed=7).build_query_gallery(data)
+    assert model.evaluate(query, gallery, verbose=False).num_queries == 12
 
 
-class TestReIDEvaluator:
-    """``ReIDEvaluator`` end-to-end retrieval scoring."""
+def test_explicit_splits_score_a_perfect_match() -> None:
+    query = ReIDSplit(image_paths=["q"], pids=np.array([1]), camids=np.array([0]))
+    # g1 is the query's person on another camera; the same person on the same camera would not count as a match.
+    gallery = ReIDSplit(image_paths=["g1", "g2"], pids=np.array([1, 2]), camids=np.array([1, 2]))
+    model = _model_with({"q": [1.0, 0.0], "g1": [1.0, 0.0], "g2": [0.0, 1.0]})
 
-    def test_reuses_provided_query_embeddings_only(self, tmp_path: Path) -> None:
-        from reid.data import ReIDSplit
-        from reid.eval.evaluator import ReIDEvaluator
+    result = model.evaluate(query, gallery, verbose=False)
 
-        query_img = tmp_path / "q.jpg"
-        gallery_img = tmp_path / "g.jpg"
-        query_img.write_bytes(b"jpeg")
-        gallery_img.write_bytes(b"jpeg")
-        query = ReIDSplit(
-            image_paths=[str(query_img)],
-            pids=np.array([1]),
-            camids=np.array([0]),
-        )
-        gallery = ReIDSplit(
-            image_paths=[str(gallery_img)],
-            pids=np.array([1]),
-            camids=np.array([1]),
-        )
-
-        class _Encoder:
-            def __init__(self) -> None:
-                self.calls: list[list[str]] = []
-
-            def extract_features(self, detections: sv.Detections, frame: np.ndarray) -> np.ndarray:
-                raise NotImplementedError
-
-            def extract_features_from_paths(
-                self,
-                image_paths: Sequence[str],
-                *,
-                batch_size: int = 64,
-            ) -> np.ndarray:
-                self.calls.append(list(image_paths))
-                return np.ones((len(image_paths), 2), dtype=np.float32)
-
-        encoder = _Encoder()
-        provided_query = np.array([[0.0, 1.0]], dtype=np.float32)
-        result = ReIDEvaluator(encoder).evaluate(
-            query,
-            gallery,
-            query_embeddings=provided_query,
-            verbose=False,
-        )
-        assert encoder.calls == [[str(gallery_img)]]
-        np.testing.assert_array_equal(result.query_embeddings, provided_query)
-
-    def test_wrong_length_provided_embeddings_raise(self, tmp_path: Path) -> None:
-        from reid.data import ReIDSplit
-        from reid.eval.evaluator import ReIDEvaluator
-
-        query_img = tmp_path / "q.jpg"
-        gallery_img = tmp_path / "g.jpg"
-        query_img.write_bytes(b"jpeg")
-        gallery_img.write_bytes(b"jpeg")
-        query = ReIDSplit(
-            image_paths=[str(query_img)],
-            pids=np.array([1]),
-            camids=np.array([0]),
-        )
-        gallery = ReIDSplit(
-            image_paths=[str(gallery_img)],
-            pids=np.array([1]),
-            camids=np.array([1]),
-        )
-
-        class _Encoder:
-            def extract_features(self, detections: sv.Detections, frame: np.ndarray) -> np.ndarray:
-                raise NotImplementedError
-
-            def extract_features_from_paths(
-                self,
-                image_paths: Sequence[str],
-                *,
-                batch_size: int = 64,
-            ) -> np.ndarray:
-                return np.ones((len(image_paths), 2), dtype=np.float32)
-
-        evaluator = ReIDEvaluator(_Encoder())
-        with pytest.raises(ValueError, match="query_embeddings"):
-            evaluator.evaluate(
-                query,
-                gallery,
-                query_embeddings=np.ones((2, 2), dtype=np.float32),
-                verbose=False,
-            )
-        with pytest.raises(ValueError, match="gallery_embeddings"):
-            evaluator.evaluate(
-                query,
-                gallery,
-                gallery_embeddings=np.ones((3, 2), dtype=np.float32),
-                verbose=False,
-            )
+    assert result.metrics["map"] == 100.0
+    assert result.metrics["rank1"] == 100.0
 
 
-class TestMarket1501Loader:
-    """Market-1501 folder parsing."""
+def test_reassociation_scores_mot_crops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for track_id in (1, 2):
+        for frame in (60, 90, 120):
+            write_mot_crop(tmp_path, "SEQ-01", track_id, frame)
+    model = _model()
 
-    def test_load_market1501_from_temp_tree(self, tmp_path) -> None:
-        from reid.data import (
-            MARKET1501_GALLERY_JUNK_PIDS,
-            load_market1501,
-        )
+    def embeddings(paths: list[str], **kwargs: object) -> np.ndarray:
+        """Track 1 and track 2 get opposite embeddings, so every query ranks its own track first."""
+        return np.array([[1.0, 0.0] if Path(p).parent.name.endswith("_1") else [0.0, 1.0] for p in paths])
 
-        query_dir = tmp_path / "query"
-        gallery_dir = tmp_path / "bounding_box_test"
-        query_dir.mkdir()
-        gallery_dir.mkdir()
-        (query_dir / "0001_c1s1_001051_00.jpg").write_bytes(b"jpeg")
-        (gallery_dir / "0000_c1s1_000151_01.jpg").write_bytes(b"jpeg")
-        (gallery_dir / "0002_c2s1_000851_01.jpg").write_bytes(b"jpeg")
+    monkeypatch.setattr(model, "extract_embeddings_from_paths", embeddings)
 
-        query, gallery = load_market1501(tmp_path)
-        assert len(query) == 1
-        assert query.pids.tolist() == [1]
-        assert gallery.pids.tolist() == [0, 2]
-        assert gallery.gallery_junk_pids == MARKET1501_GALLERY_JUNK_PIDS
+    result = model.evaluate(
+        ReIDDataset(tmp_path), protocol=ReassociationProtocol(gap_frames=30, query_stride=60), verbose=False
+    )
+
+    assert result.metrics == {"rank1": 100.0, "mrr": 100.0}
+    # Queries start every 60 frames: frame 60 finds both tracks at frame 90, frame 120 has no frame 150.
+    assert result.num_queries == 2
+    assert result.metadata["num_skipped_queries"] == 2
 
 
-class TestMSMT17Loader:
-    """MSMT17 list-file parsing."""
+def test_raises_when_no_query_can_be_scored() -> None:
+    """All-zero metrics would be indistinguishable from a model that misses every query."""
+    query = ReIDSplit(image_paths=["q"], pids=np.array([7]), camids=np.array([0]))
+    gallery = ReIDSplit(image_paths=["g"], pids=np.array([1]), camids=np.array([1]))  # person 7 is not in it
+    with pytest.raises(ValueError, match="No query has a correct match"):
+        _model_with({"q": [1.0, 0.0], "g": [1.0, 0.0]}).evaluate(query, gallery, verbose=False)
 
-    def test_load_msmt17_from_temp_lists(self, tmp_path) -> None:
-        from reid.data import load_msmt17
 
-        root = Path(tmp_path)
-        test_root = root / "test"
-        test_root.mkdir()
-        rel = "0001/0001_019_07_0303morning_0020_1.jpg"
-        image_path = test_root / rel
-        image_path.parent.mkdir(parents=True)
-        image_path.write_bytes(b"jpeg")
-        # 2-col: camid parsed from the filename camera field (07 → 6).
-        # 3-col: camid column is 1-indexed like the filename (07 → 6), so both
-        # formats resolve the same physical camera to the same 0-indexed id.
-        (root / "list_query.txt").write_text(f"{rel} 42\n")
-        (root / "list_gallery.txt").write_text(f"{rel} 42 7\n")
+def test_masked_evaluation_keeps_raw_distances() -> None:
+    """A protocol's candidate mask restricts scoring; the returned distances stay unmasked."""
 
-        query, gallery = load_msmt17(root)
-        assert query.pids.tolist() == [42]
-        assert query.camids.tolist() == [6]
-        assert gallery.pids.tolist() == [42]
-        assert gallery.camids.tolist() == [6]
-        assert gallery.gallery_junk_pids == frozenset({-1})
+    class Masked(RetrievalProtocol):
+        def _build_query_gallery(self, data, gallery=None, *, max_pairs):
+            query, gallery, _, metadata = super()._build_query_gallery(data, gallery, max_pairs=max_pairs)
+            return query, gallery, np.array([[False, True, True]]), metadata
+
+    query = ReIDSplit(image_paths=["q"], pids=np.array([1]), camids=np.array([0]))
+    gallery = ReIDSplit(image_paths=["g1", "g2", "g3"], pids=np.array([1, 2, 1]), camids=np.array([1, 2, 3]))
+    model = _model_with({"q": [1.0, 0.0], "g1": [1.0, 0.0], "g2": [0.8, 0.2], "g3": [0.0, 1.0]})
+
+    result = model.evaluate(query, gallery, protocol=Masked(), return_distmat=True, verbose=False)
+
+    # The mask drops g1, the exact match. The ranking left is g2 (another person), then g3 (a match at rank 2).
+    assert result.metrics["map"] == pytest.approx(50.0)
+    assert result.distmat[0, 0] == pytest.approx(0.0)  # the distance to g1 is still reported
+
+
+def test_rejects_more_pairs_than_max_pairs() -> None:
+    query = ReIDSplit(image_paths=["q1", "q2"], pids=np.array([1, 2]), camids=np.array([0, 0]))
+    gallery = ReIDSplit(image_paths=["g1", "g2"], pids=np.array([1, 2]), camids=np.array([1, 1]))
+
+    with pytest.raises(ValueError, match="4 pairs.*above max_pairs=3"):  # 2 queries x 2 gallery images
+        _model().evaluate(query, gallery, max_pairs=3)
+
+
+def test_protocol_must_be_an_instance() -> None:
+    split = ReIDSplit(image_paths=["a", "b"], pids=np.array([1, 2]), camids=np.array([0, 0]))
+
+    with pytest.raises(TypeError, match="EvaluationProtocol instance"):
+        _model().evaluate(split, split, protocol=RetrievalProtocol)  # the class, not RetrievalProtocol()
+
+
+def test_embeds_shared_paths_once_per_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = _model()
+    query = ReIDSplit(image_paths=["shared"], pids=np.array([1]), camids=np.array([0]))
+    gallery = ReIDSplit(image_paths=["shared", "other"], pids=np.array([1, 2]), camids=np.array([1, 2]))
+    calls = []
+
+    def extract(paths: list[str], **kwargs: object) -> np.ndarray:
+        calls.append(list(paths))
+        return np.array([[1.0, 0.0], [0.0, 1.0]])
+
+    monkeypatch.setattr(model, "extract_embeddings_from_paths", extract)
+    model.evaluate(query, gallery, verbose=False)
+    assert calls == [["shared", "other"]]
+
+
+def test_non_finite_embeddings_raise() -> None:
+    """A diverged model would otherwise produce plausible-looking metrics from NaN distances."""
+    query = ReIDSplit(image_paths=["q"], pids=np.array([1]), camids=np.array([0]))
+    gallery = ReIDSplit(image_paths=["g"], pids=np.array([1]), camids=np.array([1]))
+    with pytest.raises(ValueError, match="non-finite"):
+        _model_with({"q": [np.nan, 0.0], "g": [1.0, 0.0]}).evaluate(query, gallery, verbose=False)

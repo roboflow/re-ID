@@ -27,7 +27,7 @@ from reid import (
 
 `ReIDModel.evaluate(data, protocol=...)` takes a protocol: `RetrievalProtocol` for retrieval or `ReassociationProtocol` for matching identities across a specified frame gap. Selection is deterministic, so evaluating several models with the same data and protocol scores identical inputs.
 
-Custom protocols subclass `EvaluationProtocol` and implement `_build_query_gallery` and `metric_values`; its metadata must contain JSON-compatible values. `EvaluationProtocol` and `ReIDMetrics` live in `reid.eval`.
+To compare a different set of images, subclass an `EvaluationProtocol`. Its `_build_query_gallery` returns the query split, the gallery split, an optional candidate mask, and a metadata dictionary that `evaluate` adds to `result.metadata`; its `metric_values` picks the metrics to report. The [evaluation guide](../guides/evaluation.md#limit-which-gallery-images-each-query-is-ranked-against) walks through an example. Import `EvaluationProtocol` and `ReIDMetrics` from `reid.eval`.
 
 Use `ReIDModel.from_pretrained(architecture=...)` to initialize a model with random weights, or pass a checkpoint to load trained weights.
 

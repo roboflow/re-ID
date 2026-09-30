@@ -23,7 +23,6 @@ import pytest
 
 from reid.architectures import default_preprocessing_for_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
-from reid.architectures.osnet import OSNet
 from reid.catalog import (
     DEFAULT_MODEL,
     FASTREID_MOT17_SBS50,
@@ -64,14 +63,6 @@ def _assert_full_load_logged(caplog: pytest.LogCaptureFixture) -> None:
 class TestReIDPreprocessing:
     """Preprocessing geometry, color conversion, and config serialization."""
 
-    def test_build_transform_callable(self) -> None:
-        t = ReIDPreprocessing().build_transform()
-        from PIL import Image
-
-        img = Image.new("RGB", (128, 256))  # PIL (width, height) = (W, H)
-        out = t(img)
-        assert out.shape == (3, 256, 128)
-
     def test_stretch_resize_matches_target_size(self) -> None:
         crop = np.zeros((100, 50, 3), dtype=np.uint8)
         out = ReIDPreprocessing(input_size=(384, 128), resize_mode="stretch").resize_crop(crop)
@@ -83,11 +74,6 @@ class TestReIDPreprocessing:
         assert out.shape == (384, 128, 3)
         assert out[0, 0, 0] == 255
         assert out[-1, 0, 0] == LETTERBOX_PAD_VALUE
-
-    def test_fastreid_default_uses_stretch(self) -> None:
-        fastreid = default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE)
-        assert fastreid.input_size == (384, 128)
-        assert fastreid.resize_mode == "stretch"
 
     def test_unknown_interpolation_raises(self) -> None:
         with pytest.raises(ValueError, match="lanczos"):
@@ -106,15 +92,22 @@ class TestReIDPreprocessing:
         unchanged = p.prepare_crop_array(bgr, from_bgr_frame=False)
         np.testing.assert_array_equal(unchanged, bgr)
 
-    def test_to_dict_from_dict_roundtrip(self) -> None:
-        p = ReIDPreprocessing(input_size=(128, 64), interpolation="bicubic", to_rgb=False)
-        d = p.to_dict()
-        assert d["interpolation"] == "bicubic"
-        assert d["input_size"] == [128, 64]
-        assert d["to_rgb"] is False
-        p2 = ReIDPreprocessing.from_dict(d)
-        assert p2.interpolation is Interpolation.BICUBIC
-        assert p2 == p
+    def test_every_field_survives_the_config_roundtrip(self) -> None:
+        """Every field differs from its default, so a field dropped from ``to_dict`` fails the comparison."""
+        preprocessing = ReIDPreprocessing(
+            input_size=(128, 64),
+            mean=(0.1, 0.2, 0.3),
+            std=(0.4, 0.5, 0.6),
+            interpolation="bicubic",
+            to_rgb=False,
+            resize_mode="letterbox",
+            pad_value=7,
+        )
+
+        restored = ReIDPreprocessing.from_dict(preprocessing.to_dict())
+
+        assert restored == preprocessing
+        assert restored.interpolation is Interpolation.BICUBIC
 
     def test_from_dict_ignores_legacy_normalize_embeddings(self) -> None:
         """Old reid_config.json files carrying normalize_embeddings still load."""
@@ -149,17 +142,15 @@ class TestRegistry:
         assert card.weights is not None
         assert card.domain_warning is not None
         assert config_preprocessing is None
-        fastreid = default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE)
-        assert fastreid.input_size == (384, 128)
 
-    def test_default_preprocessing_for_architecture(self) -> None:
-        osnet = default_preprocessing_for_architecture("osnet_x1_0")
-        assert osnet.input_size == (256, 128)
-        assert osnet == OSNet.default_preprocessing()
-        fastreid = default_preprocessing_for_architecture(FASTREID_SBS_ARCHITECTURE)
-        assert fastreid.input_size == (384, 128)
-        assert fastreid == FastReIDSBSResNeSt50.default_preprocessing()
-        assert default_preprocessing_for_architecture("timm:resnet50").input_size == (256, 128)
+    @pytest.mark.parametrize(
+        "architecture, input_size",
+        [("osnet_x1_0", (256, 128)), (FASTREID_SBS_ARCHITECTURE, (384, 128)), ("timm:resnet50", (256, 128))],
+    )
+    def test_architecture_default_preprocessing(self, architecture: str, input_size: tuple[int, int]) -> None:
+        """Every architecture stretches crops to its own input size; ``timm:`` backbones use the OSNet default."""
+        expected = ReIDPreprocessing(input_size=input_size, resize_mode="stretch", to_rgb=True)
+        assert default_preprocessing_for_architecture(architecture) == expected
 
     def test_local_dir_with_config(self, tmp_path) -> None:
         import json
@@ -201,25 +192,12 @@ class TestLoaders:
     """Checkpoint path resolution, remapping, and state-dict loading."""
 
     def test_missing_local_path_raises(self) -> None:
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(FileNotFoundError, match="Weights file not found"):
             resolve_weights("/nonexistent/path/to/weights.pth")
 
     def test_malformed_hf_url_raises(self) -> None:
         with pytest.raises(ValueError, match="hf://"):
             resolve_weights("hf://only_one_part")
-
-    def test_load_state_dict_full_match(self, caplog: pytest.LogCaptureFixture) -> None:
-        import torch
-        import torch.nn as nn
-
-        model = nn.Linear(4, 2)
-        tmp_path = _save_checkpoint(model.state_dict())
-        try:
-            with caplog.at_level(logging.INFO, logger="reid.loaders"):
-                load_state_dict(model, tmp_path, torch.device("cpu"))
-            _assert_full_load_logged(caplog)
-        finally:
-            os.unlink(tmp_path)
 
     def test_load_state_dict_mismatch_warns(self) -> None:
         import torch
@@ -262,7 +240,8 @@ class TestLoaders:
         finally:
             os.unlink(tmp_path)
 
-    def test_generic_loader_preserves_backbone_prefix(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_generic_loader_copies_backbone_prefixed_weights(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A ``backbone.`` prefix is a real module name, not a wrapper to strip, so the weights must arrive."""
         import torch
         import torch.nn as nn
 
@@ -271,16 +250,14 @@ class TestLoaders:
                 super().__init__()
                 self.backbone = nn.Linear(4, 2)
 
-        model = _BackboneModel()
-        wrapped = {
-            "backbone.weight": model.backbone.weight.detach().clone(),
-            "backbone.bias": model.backbone.bias.detach().clone(),
-        }
-        tmp_path = _save_checkpoint(wrapped)
+        source, target = _BackboneModel(), _BackboneModel()
+        tmp_path = _save_checkpoint(source.state_dict())
         try:
             with caplog.at_level(logging.INFO, logger="reid.loaders"):
-                load_state_dict(model, tmp_path, torch.device("cpu"))
+                load_state_dict(target, tmp_path, torch.device("cpu"))
             _assert_full_load_logged(caplog)
+            for key, value in source.state_dict().items():
+                torch.testing.assert_close(target.state_dict()[key], value)
         finally:
             os.unlink(tmp_path)
 
@@ -307,79 +284,40 @@ class TestLoaders:
             )
         _assert_full_load_logged(caplog)
 
-    def test_remap_fastreid_sbs_keys(self) -> None:
-        import torch
+    def test_fastreid_checkpoint_loads_fully_and_skips_the_classifier(self) -> None:
+        """A BoT-SORT checkpoint (``module.`` prefix, ``heads.*`` keys, identity classifier) loads every weight.
 
-        from reid.architectures.fastreid_sbs import remap_fastreid_sbs_state_dict
+        GeM ``p`` must come from ``heads.pool_layer.p``, not the 3.0 constructor default, and the classifier
+        (``heads.weight``) has no place in the inference model.
+        """
+        import warnings
 
-        raw = {
-            "backbone.conv1.0.weight": torch.zeros(1),
-            "heads.pool_layer.p": torch.tensor([1.5]),
-            "heads.bottleneck.0.weight": torch.zeros(2048),
-            "heads.weight": torch.zeros(487, 2048),
-        }
-        mapped = remap_fastreid_sbs_state_dict(raw)
-        assert "backbone.conv1.0.weight" in mapped
-        assert "pool.p" in mapped
-        assert "bottleneck.weight" in mapped
-        assert "heads.weight" not in mapped
-
-    def test_load_fastreid_sbs_from_synthetic_checkpoint(self, caplog: pytest.LogCaptureFixture) -> None:
         import torch
 
         from reid.architectures import build_architecture
 
-        model = build_architecture(FASTREID_SBS_ARCHITECTURE)
-        source = model.state_dict()
-        wrapped: dict = {}
-        for key, value in source.items():
-            if key.startswith("backbone."):
-                wrapped[key] = value
-            elif key == "pool.p":
-                wrapped["heads.pool_layer.p"] = value
-            elif key.startswith("bottleneck."):
-                wrapped[f"heads.bottleneck.0.{key[len('bottleneck.') :]}"] = value
+        mot17_gem_p = 1.7194522619247437
+        model = cast(FastReIDSBSResNeSt50, build_architecture(FASTREID_SBS_ARCHITECTURE))
+        assert model.pool.p.item() == pytest.approx(3.0)
 
-        tmp_path = _save_checkpoint(wrapped)
+        checkpoint: dict = {"heads.pool_layer.p": torch.tensor([mot17_gem_p]), "heads.weight": torch.zeros(487, 2048)}
+        for key, value in model.state_dict().items():
+            if key.startswith("backbone."):
+                checkpoint[f"module.{key}"] = value
+            elif key.startswith("bottleneck."):
+                checkpoint[f"heads.bottleneck.0.{key[len('bottleneck.') :]}"] = value
+
+        tmp_path = _save_checkpoint(checkpoint)
         try:
-            with caplog.at_level(logging.INFO, logger="reid.loaders"):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
                 load_state_dict(
                     model,
                     tmp_path,
                     torch.device("cpu"),
                     architecture=FASTREID_SBS_ARCHITECTURE,
+                    required_match_fraction=1.0,
                 )
-            _assert_full_load_logged(caplog)
-        finally:
-            os.unlink(tmp_path)
-
-    def test_fastreid_sbs_loads_gem_p_from_checkpoint(self) -> None:
-        """GeM ``p`` must come from ``heads.pool_layer.p``, not the 3.0 constructor default."""
-        import torch
-
-        from reid.architectures import build_architecture
-        from reid.architectures.fastreid_sbs import FastReIDSBSResNeSt50
-
-        mot17_gem_p = 1.7194522619247437
-
-        model = cast(FastReIDSBSResNeSt50, build_architecture(FASTREID_SBS_ARCHITECTURE))
-        assert model.pool.p.item() == pytest.approx(3.0)
-
-        wrapped: dict = {"heads.pool_layer.p": torch.tensor([mot17_gem_p])}
-        for key, value in model.state_dict().items():
-            if key.startswith("backbone."):
-                wrapped[key] = value
-            elif key.startswith("bottleneck."):
-                wrapped[f"heads.bottleneck.0.{key[len('bottleneck.') :]}"] = value
-
-        tmp_path = _save_checkpoint(wrapped)
-        try:
-            load_state_dict(
-                model,
-                tmp_path,
-                torch.device("cpu"),
-                architecture=FASTREID_SBS_ARCHITECTURE,
-            )
             assert model.pool.p.item() == pytest.approx(mot17_gem_p)
         finally:
             os.unlink(tmp_path)
@@ -415,39 +353,21 @@ class TestLoaders:
 class TestModelSmoke:
     """Core ``ReIDModel`` construction and extraction smoke tests."""
 
-    def test_extract_features_tiny_module(self) -> None:
+    def test_out_of_frame_box_embeds_its_in_frame_part(self) -> None:
+        """A box sticking out of the frame is clipped to the part inside it, not replaced by a blank crop."""
         import numpy as np
         import supervision as sv
         import torch
 
         from reid.model import ReIDModel
 
-        device = torch.device("cpu")
-        preprocessing = ReIDPreprocessing()
-        model = ReIDModel(_tiny_encoder(), device, preprocessing)
+        model = ReIDModel(backbone=_tiny_encoder(), device=torch.device("cpu"), preprocessing=ReIDPreprocessing())
+        frame = np.random.default_rng(0).integers(0, 255, size=(128, 128, 3), dtype=np.uint8)
 
-        frame = np.zeros((128, 128, 3), dtype=np.uint8)
-        dets = sv.Detections(xyxy=np.array([[0, 0, 64, 64]], dtype=np.float32))
-        embs = model.extract_features(dets, frame)
-        assert embs.shape[0] == 1
-        assert embs.dtype == np.float32
-        # Default: embeddings are not L2-normalised
-        norms = np.linalg.norm(embs, axis=1)
-        assert not np.allclose(norms, np.ones_like(norms), atol=1e-5)
+        outside = model.extract_embeddings(sv.Detections(xyxy=np.array([[-40.0, -40.0, 10.0, 10.0]])), frame)
+        inside = model.extract_embeddings(sv.Detections(xyxy=np.array([[0.0, 0.0, 10.0, 10.0]])), frame)
 
-    def test_extract_features_clamps_out_of_frame_boxes(self) -> None:
-        import numpy as np
-        import supervision as sv
-        import torch
-
-        from reid.model import ReIDModel
-
-        device = torch.device("cpu")
-        model = ReIDModel(_tiny_encoder(), device, ReIDPreprocessing())
-        frame = np.zeros((128, 128, 3), dtype=np.uint8)
-        dets = sv.Detections(xyxy=np.array([[-40.0, -40.0, 10.0, 10.0]], dtype=np.float32))
-        embs = model.extract_features(dets, frame)
-        assert embs.shape[0] == 1
+        np.testing.assert_array_equal(outside, inside)
 
     def test_empty_detections_returns_empty(self) -> None:
         import numpy as np
@@ -459,7 +379,7 @@ class TestModelSmoke:
         device = torch.device("cpu")
         model = ReIDModel(_tiny_encoder(), device, ReIDPreprocessing())
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
-        embs = model.extract_features(sv.Detections.empty(), frame)
+        embs = model.extract_embeddings(sv.Detections.empty(), frame)
         assert embs.shape == (0, 0)
 
     def test_empty_paths_returns_empty(self) -> None:
@@ -468,7 +388,7 @@ class TestModelSmoke:
         from reid.model import ReIDModel
 
         model = ReIDModel(_tiny_encoder(), torch.device("cpu"), ReIDPreprocessing())
-        embs = model.extract_features_from_paths([])
+        embs = model.extract_embeddings_from_paths([])
         assert embs.shape == (0, 0)
 
     def test_from_pretrained_architecture_only(self) -> None:
@@ -483,7 +403,7 @@ class TestModelSmoke:
         model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
         frame = np.zeros((256, 128, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
-        embs = model.extract_features(dets, frame)
+        embs = model.extract_embeddings(dets, frame)
         assert embs.ndim == 2
         assert embs.shape[0] == 1
         assert embs.dtype == np.float32
@@ -522,8 +442,8 @@ class TestExtractContract:
         model = ReIDModel(backbone, torch.device("cpu"), ReIDPreprocessing())
         assert model._backbone.training is False
 
-    def test_extract_features_sub_batches(self) -> None:
-        """extract_features splits crops into batch_size chunks for the forward pass."""
+    def test_extract_embeddings_sub_batches(self) -> None:
+        """extract_embeddings splits crops into batch_size chunks for the forward pass."""
         import numpy as np
         import supervision as sv
         import torch
@@ -546,11 +466,11 @@ class TestExtractContract:
         boxes = np.array([[0, 0, 32, 32]] * 5, dtype=np.float32)
         dets = sv.Detections(xyxy=boxes)
 
-        embs = model.extract_features(dets, frame, batch_size=2)
+        embs = model.extract_embeddings(dets, frame, batch_size=2)
         assert embs.shape[0] == 5
         assert backbone.batch_sizes == [2, 2, 1]
 
-    def test_extract_features_rejects_bad_batch_size(self) -> None:
+    def test_extract_embeddings_rejects_bad_batch_size(self) -> None:
         import numpy as np
         import supervision as sv
 
@@ -558,7 +478,7 @@ class TestExtractContract:
         frame = np.zeros((64, 64, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 32, 32]], dtype=np.float32))
         with pytest.raises(ValueError, match="batch_size"):
-            model.extract_features(dets, frame, batch_size=0)
+            model.extract_embeddings(dets, frame, batch_size=0)
 
     def test_frame_and_path_extract_parity(self, tmp_path) -> None:
         """Same crop via a frame box vs. an on-disk file yields identical embeddings."""
@@ -576,8 +496,8 @@ class TestExtractContract:
         PILImage.fromarray(crop).save(crop_path)  # PNG is lossless
 
         dets = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
-        emb_frame = model.extract_features(dets, crop)
-        emb_path = model.extract_features_from_paths([str(crop_path)])
+        emb_frame = model.extract_embeddings(dets, crop)
+        emb_path = model.extract_embeddings_from_paths([str(crop_path)])
 
         assert emb_frame.shape == emb_path.shape
         np.testing.assert_allclose(emb_frame, emb_path, atol=1e-6)
@@ -595,12 +515,12 @@ class TestExtractContract:
         crop_path = tmp_path / "crop.png"
         PILImage.fromarray(crop).save(crop_path)
 
-        path_embs = model.extract_features_from_paths([str(crop_path)])
+        path_embs = model.extract_embeddings_from_paths([str(crop_path)])
         assert not np.allclose(np.linalg.norm(path_embs, axis=1), 1.0, atol=1e-3)
 
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 64, 64]], dtype=np.float32))
-        frame_embs = model.extract_features(dets, frame)
+        frame_embs = model.extract_embeddings(dets, frame)
         assert not np.allclose(np.linalg.norm(frame_embs, axis=1), 1.0, atol=1e-3)
 
 
@@ -627,8 +547,8 @@ class TestRoundTrip:
 
         frame = np.zeros((256, 128, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
-        embs_a = model_a.extract_features(dets, frame)
-        embs_b = model_b.extract_features(dets, frame)
+        embs_a = model_a.extract_embeddings(dets, frame)
+        embs_b = model_b.extract_embeddings(dets, frame)
         np.testing.assert_allclose(embs_a, embs_b, atol=1e-5)
 
 
@@ -646,7 +566,7 @@ def test_default_osnet_alias_loads_with_finite_output() -> None:
     frame = np.zeros((256, 128, 3), dtype=np.uint8)
     dets = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 256.0]], dtype=np.float32))
 
-    embs = model.extract_features(dets, frame)
+    embs = model.extract_embeddings(dets, frame)
     assert embs.shape == (1, 512)
     assert np.isfinite(embs).all()
     assert model.preprocessing.input_size == (256, 128)
@@ -656,8 +576,8 @@ def test_default_osnet_alias_loads_with_finite_output() -> None:
 def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
     """Download ``fastreid_mot17_sbs50`` and smoke the BoT-SORT encoder path.
 
-    ``extract_features`` returns raw BNNeck features; cosine similarity is
-    applied at distance time in ``ReIDEvaluator._distance_matrix``.
+    ``extract_embeddings`` returns raw BNNeck features; cosine similarity is
+    applied at distance time in ``reid.eval.metrics._distance_matrix``.
     """
     import supervision as sv
 
@@ -667,16 +587,16 @@ def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
     frame = np.zeros((384, 128, 3), dtype=np.uint8)
     dets = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 384.0]], dtype=np.float32))
 
-    embs = model.extract_features(dets, frame)
+    embs = model.extract_embeddings(dets, frame)
     assert embs.shape == (1, 2048)
     assert np.isfinite(embs).all()
     assert model.preprocessing.input_size == (384, 128)
 
 
-class TestCropTransformPinning:
-    """The disk-crop pipeline must resize exactly like inference resize_crop."""
+class TestCropTransform:
+    """Crops read from disk must be resized exactly like crops cut from a frame."""
 
-    def test_crop_transform_matches_resize_crop_for_non_input_sized_images(self) -> None:
+    def test_disk_crops_resize_like_frame_crops(self) -> None:
         import torch
         from PIL import Image
 
@@ -686,6 +606,7 @@ class TestCropTransformPinning:
         crop = (np.random.default_rng(0).random((200, 50, 3)) * 255).astype("uint8")
 
         tensor = preprocessing.build_crop_transform()(Image.fromarray(crop))
+        # Undo the normalisation to compare pixel values; 0.5 allows for rounding to uint8.
         pixels = (
             tensor * torch.tensor(preprocessing.std)[:, None, None] + torch.tensor(preprocessing.mean)[:, None, None]
         ) * 255
@@ -703,22 +624,11 @@ class TestModelToDevice:
         from reid import ReIDModel
         from reid.preprocessing import ReIDPreprocessing
 
-        moved: list = []
+        model = ReIDModel(backbone=torch.nn.Linear(4, 4), device=torch.device("cpu"), preprocessing=ReIDPreprocessing())
 
-        class _RecordingBackbone(torch.nn.Linear):
-            def to(self, *args, **kwargs):  # noqa: ANN002, ANN003
-                moved.append(args[0] if args else kwargs.get("device"))
-                return super().to(*args, **kwargs)
-
-        model = ReIDModel(
-            _RecordingBackbone(4, 4),
-            torch.device("cpu"),
-            ReIDPreprocessing(),
-        )
-        moved.clear()
-
-        returned = model.to("cpu")
+        # The meta device holds no data, so the move is observable on a CPU-only machine.
+        returned = model.to("meta")
 
         assert returned is model
-        assert model.device == torch.device("cpu")
-        assert moved, "to() must propagate to the backbone, not just update bookkeeping"
+        assert model.device == torch.device("meta")
+        assert all(parameter.device.type == "meta" for parameter in model._backbone.parameters())

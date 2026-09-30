@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from reid.data import MARKET1501_GALLERY_JUNK_PIDS, load_market1501, load_msmt17
 
 
-def test_load_market1501_from_temp_tree(tmp_path: Path) -> None:
+def test_market1501_reads_person_ids_from_file_names(tmp_path: Path) -> None:
     query_dir = tmp_path / "query"
     gallery_dir = tmp_path / "bounding_box_test"
     query_dir.mkdir()
@@ -30,20 +32,31 @@ def test_load_market1501_from_temp_tree(tmp_path: Path) -> None:
     assert gallery.gallery_junk_pids == MARKET1501_GALLERY_JUNK_PIDS
 
 
-def test_load_msmt17_from_temp_lists(tmp_path: Path) -> None:
-    rel = "0001/0001_019_07_0303morning_0020_1.jpg"
-    image_path = tmp_path / "test" / rel
+_MSMT17_IMAGE = "0001/0001_019_07_0303morning_0020_1.jpg"  # the third field, 07, is the camera
+
+
+def _write_msmt17(root: Path, list_line: str) -> None:
+    """Write one MSMT17 test image, and query and gallery lists that both hold ``list_line``."""
+    image_path = root / "test" / _MSMT17_IMAGE
     image_path.parent.mkdir(parents=True)
     image_path.write_bytes(b"jpeg")
-    # 2-col: camid parsed from the filename camera field (07 → 6).
-    # 3-col: camid column is 1-indexed like the filename (07 → 6), so both
-    # formats resolve the same physical camera to the same 0-indexed id.
-    (tmp_path / "list_query.txt").write_text(f"{rel} 42\n")
-    (tmp_path / "list_gallery.txt").write_text(f"{rel} 42 7\n")
+    (root / "list_query.txt").write_text(list_line + "\n")
+    (root / "list_gallery.txt").write_text(list_line + "\n")
+
+
+def test_msmt17_reads_the_camera_from_the_file_name(tmp_path: Path) -> None:
+    _write_msmt17(tmp_path, list_line=f"{_MSMT17_IMAGE} 42")
 
     query, gallery = load_msmt17(tmp_path)
-    assert query.pids.tolist() == [42]
-    assert query.camids.tolist() == [6]
-    assert gallery.pids.tolist() == [42]
+
+    assert query.pids.tolist() == [42]  # the person ID comes from the list line
+    assert query.camids.tolist() == [6]  # camera field 07 counts from 1
     assert gallery.camids.tolist() == [6]
     assert gallery.gallery_junk_pids == frozenset({-1})
+
+
+def test_msmt17_rejects_list_lines_with_extra_columns(tmp_path: Path) -> None:
+    _write_msmt17(tmp_path, list_line=f"{_MSMT17_IMAGE} 42 7")  # a camera column the official lists do not have
+
+    with pytest.raises(ValueError, match="list_query.txt:1: expected 'path pid'"):
+        load_msmt17(tmp_path)

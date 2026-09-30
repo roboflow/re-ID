@@ -19,24 +19,13 @@ from reid.data.splits import MARKET1501_GALLERY_JUNK_PIDS, ReIDSplit
 # --------------------------------------------------------------------------- #
 
 
-def _to_zero_indexed_camid(camid_1indexed: int) -> int:
-    """Convert a 1-indexed MSMT17 camera id to the 0-indexed value used here.
-
-    MSMT17 camera ids are 1-indexed both in image filenames (the camera field)
-    and in the optional camid column of the list files, so both paths share this
-    single conversion to stay consistent.
-    """
-    return camid_1indexed - 1
-
-
 def _parse_msmt17_camid(filename: str) -> int:
     """Extract 0-indexed camid from an MSMT17 image filename.
 
-    Filename format: ``<pid>_<idx>_<camid>_<scene>_<frame>_<track>.jpg``
-    Example: ``0001_019_07_0303morning_0020_1.jpg`` → camid = 6 (0-indexed).
+    Filename format: ``<pid>_<idx>_<camid>_<scene>_<frame>_<track>.jpg``, with a
+    1-indexed camera field. Example: ``0001_019_07_0303morning_0020_1.jpg`` → camid = 6.
     """
-    stem = Path(filename).stem
-    return _to_zero_indexed_camid(int(stem.split("_")[2]))
+    return int(Path(filename).stem.split("_")[2]) - 1
 
 
 def _load_msmt17_list(list_file: Path, image_root: Path) -> ReIDSplit:
@@ -44,19 +33,16 @@ def _load_msmt17_list(list_file: Path, image_root: Path) -> ReIDSplit:
     if not list_file.exists():
         raise FileNotFoundError(f"MSMT17 list file not found: {list_file}")
     paths, pids, camids = [], [], []
-    for line in list_file.read_text().splitlines():
-        line = line.strip()
-        if not line:
+    for line_number, line in enumerate(list_file.read_text().splitlines(), start=1):
+        if not line.strip():
             continue
         parts = line.split()
-        if len(parts) < 2:
-            continue
-        rel_path = parts[0]
-        pid = int(parts[1])
-        camid = _to_zero_indexed_camid(int(parts[2])) if len(parts) >= 3 else _parse_msmt17_camid(Path(rel_path).name)
+        if len(parts) != 2:
+            raise ValueError(f"{list_file}:{line_number}: expected 'path pid', got {line.strip()!r}.")
+        rel_path, pid = parts
         paths.append(str(image_root / rel_path))
-        pids.append(pid)
-        camids.append(camid)
+        pids.append(int(pid))
+        camids.append(_parse_msmt17_camid(Path(rel_path).name))
     return ReIDSplit(
         image_paths=paths,
         pids=np.array(pids, dtype=np.int32),
@@ -68,10 +54,8 @@ def _load_msmt17_list(list_file: Path, image_root: Path) -> ReIDSplit:
 def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     """Load MSMT17 query and gallery splits from ``root``.
 
-    Expects ``test/``, ``list_query.txt``, and ``list_gallery.txt``. List files
-    may be 2-column (``path pid``; camid parsed from the filename) or 3-column
-    (``path pid camid``). In both cases the camera id is treated as 1-indexed
-    and converted to 0-indexed, so the two formats stay consistent.
+    Expects ``test/``, ``list_query.txt``, and ``list_gallery.txt``, whose lines
+    read ``path pid``. The camera ID comes from the image file name.
 
     Args:
         root: Path to the MSMT17 directory.
@@ -82,6 +66,7 @@ def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     Raises:
         FileNotFoundError: If ``root``, ``list_query.txt``, or ``list_gallery.txt``
             does not exist.
+        ValueError: If a list line is not ``path pid``.
     """
     root = Path(root)
     if not root.exists():

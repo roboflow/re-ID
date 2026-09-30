@@ -45,13 +45,11 @@ _COL_CLASS = 7
 _COL_VISIBILITY = 8
 
 
-def sequence_qualified_track_key(sequence: str, track_id: int) -> str:
-    """Build a track key that is unique across MOT sequences.
+def _identity_folder_name(sequence: str, track_id: int) -> str:
+    """Name the identity folder of one track, such as ``MOT17-02_12``.
 
-    Raw MOT ground-truth track IDs restart per sequence, so the same integer can
-    label different people in ``MOT17-02`` and ``MOT17-04``. Diagnostics that
-    pool detections across sequences must qualify IDs (for example
-    ``MOT17-02-FRCNN_12``) before treating labels as identities.
+    MOT track IDs restart in every sequence, so the same number labels different
+    people in ``MOT17-02`` and ``MOT17-04``; the sequence keeps them apart.
     """
     return f"{sequence}_{int(track_id)}"
 
@@ -170,17 +168,12 @@ def _discover_sequences(mot_root: Path) -> list[Path]:
     return sequences
 
 
-def _dedupe_detector_variants(
-    sequence_dirs: list[Path],
-    prefer_detector: str,
-) -> list[Path]:
-    """Keep one directory per base sequence, preferring ``prefer_detector``."""
-    preferred_suffix = f"-{prefer_detector}"
+def _dedupe_detector_variants(sequence_dirs: list[Path]) -> list[Path]:
+    """Keep one directory per base sequence; the variants hold the same frames and ground truth."""
     by_base: dict[str, Path] = {}
-    for sequence_dir in sequence_dirs:
+    for sequence_dir in sorted(sequence_dirs):
         base = _sequence_base_name(sequence_dir.name)
-        current = by_base.get(base)
-        if current is None or sequence_dir.name.endswith(preferred_suffix):
+        if base not in by_base:
             by_base[base] = sequence_dir
     return [by_base[base] for base in sorted(by_base)]
 
@@ -212,10 +205,9 @@ def _crop_rows_from_sequence(
     image_ext: str,
     stats: PatchGenerationStats,
     identities: set[str],
-    strip_detector_suffix: bool = True,
 ) -> None:
     """Crop one sequence and update ``stats`` / ``identities`` in place."""
-    base = _sequence_base_name(seq_name) if strip_detector_suffix else seq_name
+    base = _sequence_base_name(seq_name)
     gt_rows = _load_gt_rows(gt_path)
     if len(gt_rows) == 0:
         return
@@ -272,7 +264,7 @@ def _crop_rows_from_sequence(
             stats.skipped_small += 1
             continue
 
-        identity = sequence_qualified_track_key(base, row[_COL_ID])
+        identity = _identity_folder_name(base, row[_COL_ID])
         identity_dir = output_dir / identity
         identity_dir.mkdir(parents=True, exist_ok=True)
         crop_path = identity_dir / f"{base}_{frame:06d}.{image_ext}"
@@ -299,8 +291,6 @@ def generate_mot_patches(
     class_ids: Sequence[int] | None = None,
     min_visibility: float = 0.0,
     min_side: int = 0,
-    prefer_detector: str = "FRCNN",
-    dedupe_detectors: bool = True,
     image_ext: str = "jpg",
 ) -> PatchGenerationStats:
     """Crop MOT ground-truth boxes to ``output_dir/<seq>_<id>/<seq>_<frame>.jpg``.
@@ -317,10 +307,6 @@ def generate_mot_patches(
             box ``1``, so the default already keeps exactly the tracked subjects.
         min_visibility: Minimum GT visibility to keep a box.
         min_side: Minimum crop short side in pixels.
-        prefer_detector: Preferred MOT17 detector variant when de-duplicating.
-        dedupe_detectors: Keep one detector variant per base sequence. When
-            ``False``, each variant keeps its full directory name in crop paths
-            so FRCNN/DPM/SDP outputs do not overwrite each other.
         image_ext: Frame file extension.
 
     Returns:
@@ -361,11 +347,10 @@ def generate_mot_patches(
     if not sequence_dirs:
         raise FileNotFoundError(f"No valid MOT sequences found under {mot_root}")
 
-    if dedupe_detectors:
-        sequence_dirs = _dedupe_detector_variants(sequence_dirs, prefer_detector)
+    sequence_dirs = _dedupe_detector_variants(sequence_dirs)
 
     if output_dir.is_dir():
-        to_write = {_sequence_base_name(d.name) if dedupe_detectors else d.name for d in sequence_dirs}
+        to_write = {_sequence_base_name(d.name) for d in sequence_dirs}
         folders = [child.name for child in output_dir.iterdir() if child.is_dir()]
         written = {identity[0] for identity in map(_split_identity_folder_name, folders) if identity is not None}
         if overlap := sorted(to_write & written):
@@ -390,7 +375,6 @@ def generate_mot_patches(
             image_ext=image_ext,
             stats=stats,
             identities=identities,
-            strip_detector_suffix=dedupe_detectors,
         )
 
     stats.num_identities = len(identities)
