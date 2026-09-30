@@ -23,14 +23,6 @@ from reid.data.splits import ReIDSplit
 from reid.eval.metrics import ReIDMetrics, _validate_distance
 
 
-def _validate_split(split: ReIDSplit, name: str) -> None:
-    """Reject IDs that do not line up with the images; ranking would pair images with the wrong person."""
-    for field in ("pids", "camids"):
-        values = getattr(split, field)
-        if np.ndim(values) != 1 or len(values) != len(split):
-            raise ValueError(f"{name}.{field} must hold one value per image, got shape {np.shape(values)}.")
-
-
 class EvaluationProtocol(ABC):
     """How to evaluate: which images are compared and which metrics are reported.
 
@@ -79,8 +71,6 @@ class EvaluationProtocol(ABC):
         _validate_distance(self.distance)
         selection = self._build_query_gallery(data, gallery, max_pairs=max_pairs)
         query, gallery_split, candidate_mask, _ = selection
-        _validate_split(query, "query")
-        _validate_split(gallery_split, "gallery")
         if not query.image_paths or not gallery_split.image_paths:
             raise ValueError("Selected query and gallery must both be nonempty.")
         validate_pair_budget(len(query), len(gallery_split), max_pairs)
@@ -134,7 +124,6 @@ class RetrievalProtocol(EvaluationProtocol):
             validate_positive_int(queries_per_id, "queries_per_id")
         if min_crops is not None:
             validate_positive_int(min_crops, "min_crops")
-        _validate_distance(distance)
         self._sampling_set = any(value is not None for value in (queries_per_id, min_crops, seed))
         self.queries_per_id = 1 if queries_per_id is None else queries_per_id
         self.min_crops = self.queries_per_id + 1 if min_crops is None else min_crops

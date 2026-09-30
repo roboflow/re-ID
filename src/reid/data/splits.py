@@ -30,5 +30,17 @@ class ReIDSplit:
     camids: np.ndarray
     gallery_junk_pids: frozenset[int] = frozenset({-1})
 
+    def __post_init__(self) -> None:
+        """Check that each image has one person ID and one camera ID, so no image is ranked as the wrong person."""
+        expected_shape = (len(self.image_paths),)
+        if self.pids.shape != expected_shape:
+            raise ValueError(
+                f"pids must hold one ID per image: expected shape {expected_shape}, got {self.pids.shape}."
+            )
+        if self.camids.shape != expected_shape:
+            raise ValueError(
+                f"camids must hold one ID per image: expected shape {expected_shape}, got {self.camids.shape}."
+            )
+
     def __len__(self) -> int:
         return len(self.image_paths)
