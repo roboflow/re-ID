@@ -480,6 +480,27 @@ class TestExtractContract:
         with pytest.raises(ValueError, match="batch_size"):
             model.extract_embeddings(dets, frame, batch_size=0)
 
+    def test_rejects_embeddings_too_large_to_compare(self) -> None:
+        """Their distances would overflow float32 and give meaningless rankings."""
+        import numpy as np
+        import supervision as sv
+        import torch
+        import torch.nn as nn
+
+        from reid.model import ReIDModel
+
+        class _Huge(nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                # 512 values of 4.1e17: squared length 8.6e37, just above float32 max / 4 (8.5e37)
+                return torch.full((x.shape[0], 512), 4.1e17)
+
+        model = ReIDModel(_Huge(), torch.device("cpu"), ReIDPreprocessing())
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        dets = sv.Detections(xyxy=np.array([[0, 0, 32, 32]], dtype=np.float32))
+
+        with pytest.raises(ValueError, match="embeddings are too large to compare"):
+            model.extract_embeddings(dets, frame)
+
     def test_frame_and_path_extract_parity(self, tmp_path) -> None:
         """Same crop via a frame box vs. an on-disk file yields identical embeddings."""
         import numpy as np

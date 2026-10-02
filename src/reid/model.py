@@ -38,6 +38,9 @@ from reid.preprocessing import ReIDPreprocessing
 
 logger = logging.getLogger(__name__)
 
+# Distances reach up to 4x the largest squared embedding length, which must stay within float32.
+_MAX_SQUARED_LENGTH = float(np.finfo(np.float32).max) / 4
+
 
 def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray:
     """Clip a box to frame bounds with at least 1 px width and height."""
@@ -250,7 +253,8 @@ class ReIDModel:
         Raises:
             TypeError: If ``protocol`` is not an ``EvaluationProtocol``.
             ValueError: If an input is invalid, the model returns non-finite
-                embeddings, or no query can be scored.
+                embeddings or embeddings too large to compare, or no query can
+                be scored.
         """
         validate_positive_int(batch_size, "batch_size")
         if protocol is None:
@@ -317,6 +321,11 @@ class ReIDModel:
             raise ValueError(f"embeddings must be 2-D, got shape {out.shape}")
         if out.size > 0 and not np.all(np.isfinite(out)):
             raise ValueError("embeddings must contain only finite values")
+        if out.size > 0 and np.square(out, dtype=np.float64).sum(axis=1).max() >= _MAX_SQUARED_LENGTH:
+            raise ValueError(
+                f"embeddings are too large to compare in float32: each squared length must stay below "
+                f"{_MAX_SQUARED_LENGTH:.3g}"
+            )
         return out
 
     def extract_embeddings_from_paths(
@@ -342,7 +351,9 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``.
 
         Raises:
-            ValueError: If ``batch_size`` is not a positive integer.
+            ValueError: If ``batch_size`` is not a positive integer, or the
+                model returns non-finite embeddings or embeddings too large to
+                compare.
         """
         if not image_paths:
             return np.empty((0, 0), dtype=np.float32)
@@ -383,7 +394,9 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
 
         Raises:
-            ValueError: If ``batch_size`` is not a positive integer.
+            ValueError: If ``batch_size`` is not a positive integer, or the
+                model returns non-finite embeddings or embeddings too large to
+                compare.
         """
         if len(detections) == 0:
             return np.empty((0, 0), dtype=np.float32)
