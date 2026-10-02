@@ -36,7 +36,7 @@ Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="eucl
 
 ## Crops from video
 
-Avoid retrieval on crops cut from video: a query's closest gallery images are usually the same person a few frames apart, so retrieval scores come out higher than tracking accuracy. `ReassociationProtocol` instead measures whether the model can match a person to their appearance a set number of frames later, among the people present in the same sequence at that moment.
+Evaluate a model the way you will use it: the queries and gallery should look like the comparisons the model makes in your application. When re-ID helps a tracker such as [Roboflow Trackers](https://github.com/roboflow/trackers) associate people across frames, the model has to recognize a person again among the people visible a number of frames later. `ReassociationProtocol` measures that. For a person's crop at one frame, the query, it takes the people present in the same sequence a set number of frames later, ranks them by similarity to the query, and records the rank of that same person. Retrieval on the same crops would overstate this ability, because a query's closest gallery images are usually the same person a few frames apart.
 
 `generate_mot_patches` builds its input from sequences with MOT-format ground truth (a `gt/gt.txt` file and an `img1/` frame folder per sequence): one folder per identity (`<sequence>_<track_id>`) with one crop per box, named by frame.
 
@@ -64,7 +64,7 @@ Use `"full"` for sequences kept only for evaluation. Use `"train_half"` and `"va
 
 Re-association reports `rank1`, the percentage of queries whose correct match is the closest of their candidates, and `mrr`, the [mean reciprocal rank](../learn/metrics.md#mrr): each query scores 1/r, where r is the rank of its correct match (1 at rank 1, 1/2 at rank 2), and `mrr` averages these scores. Each query has exactly one correct match, so mean average precision is the mean reciprocal rank.
 
-Re-association evaluates identity matching on saved crops; it does not run a tracker. If your goal is tracking, choose a frame gap and candidate images that reflect how the tracker will use the model. Then measure tracking performance separately with [Roboflow Trackers](https://github.com/roboflow/trackers).
+Re-association scores rankings of saved crops; it does not run a tracker or decide any match. Set `gap_frames` to the gaps your tracker has to bridge, and measure tracking performance separately with [Roboflow Trackers](https://github.com/roboflow/trackers).
 
 ## Limit which gallery images each query is ranked against
 

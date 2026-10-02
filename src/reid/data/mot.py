@@ -6,8 +6,9 @@
 
 """Generate per-identity ReID crops from MOT-format sequences.
 
-Use ``split="train_half"`` to stay frame-disjoint from the standard MOT17
-val-half tracking evaluation.
+Works with any dataset in the MOT format, such as MOT17, DanceTrack, and
+SportsMOT. On MOT17, ``split="train_half"`` stays frame-disjoint from the
+standard val-half tracking evaluation.
 """
 
 from __future__ import annotations
@@ -23,7 +24,14 @@ import numpy as np
 
 
 class MOTSplit(str, Enum):
-    """Frame range selected from each MOT sequence."""
+    """Frames cropped from each MOT sequence.
+
+    ``FULL`` keeps every frame. ``TRAIN_HALF`` keeps the first half of each
+    sequence (``seqLength`` in ``seqinfo.ini``) and ``VAL_HALF`` the second, so
+    training and evaluating on the same sequences never share a frame. The names
+    follow the MOT17 half-split convention; the cut works for any MOT-format
+    dataset.
+    """
 
     TRAIN_HALF = "train_half"
     VAL_HALF = "val_half"
