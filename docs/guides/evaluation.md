@@ -45,7 +45,7 @@ from reid import ReIDDataset
 from reid.data.mot import generate_mot_patches
 from reid.eval import ReassociationProtocol
 
-generate_mot_patches("/path/to/dancetrack/val", "/path/to/crops", split="full")
+generate_mot_patches(mot_root="/path/to/dancetrack/val", output_dir="/path/to/crops", split="full")
 
 crops = ReIDDataset("/path/to/crops")
 result = model.evaluate(crops, protocol=ReassociationProtocol(gap_frames=30, query_stride=60))
