@@ -13,15 +13,22 @@ Curated weight downloads live in the ``@pytest.mark.slow`` test below.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
+import warnings
 from typing import Any, cast
 
 import numpy as np
 import pytest
+import supervision as sv
+import torch
+import torch.nn as nn
+from PIL import Image
 
-from reid.architectures import default_preprocessing_for_architecture
+from reid import ReIDModel
+from reid.architectures import build_architecture, default_preprocessing_for_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
 from reid.catalog import (
     DEFAULT_MODEL,
@@ -38,8 +45,6 @@ from reid.preprocessing import (
 
 
 def _save_checkpoint(state_dict: object, suffix: str = ".pth") -> str:
-    import torch
-
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
         tmp_path = f.name
     torch.save(state_dict, tmp_path)
@@ -47,8 +52,6 @@ def _save_checkpoint(state_dict: object, suffix: str = ".pth") -> str:
 
 
 def _tiny_encoder():
-    import torch.nn as nn
-
     class _TinyEncoder(nn.Module):
         def forward(self, x):
             return x.flatten(1)[:, :16]
@@ -153,8 +156,6 @@ class TestRegistry:
         assert default_preprocessing_for_architecture(architecture) == expected
 
     def test_local_dir_with_config(self, tmp_path) -> None:
-        import json
-
         config = {
             "architecture": "osnet_x1_0",
             "preprocessing": ReIDPreprocessing().to_dict(),
@@ -173,14 +174,10 @@ class TestRegistry:
 
     def test_bare_path_without_architecture_raises(self) -> None:
         """from_pretrained on a bare weights file without architecture → ValueError."""
-        from reid.model import ReIDModel
-
         with tempfile.NamedTemporaryFile(suffix=".pth", delete=False) as f:
             tmp_path = f.name
         try:
             # Write a minimal torch save so the file exists
-            import torch
-
             torch.save({}, tmp_path)
             with pytest.raises(ValueError, match="architecture"):
                 ReIDModel.from_pretrained(tmp_path)
@@ -200,9 +197,6 @@ class TestLoaders:
             resolve_weights("hf://only_one_part")
 
     def test_load_state_dict_mismatch_warns(self) -> None:
-        import torch
-        import torch.nn as nn
-
         source = nn.Linear(4, 2)
         target = nn.Linear(8, 4)
         tmp_path = _save_checkpoint(source.state_dict())
@@ -214,8 +208,6 @@ class TestLoaders:
 
     def test_partial_load_in_high_band_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         """A 50–99% match (missing keys, not a full mismatch) still warns."""
-        import torch
-        import torch.nn as nn
 
         class _TwoLayer(nn.Module):
             def __init__(self) -> None:
@@ -242,8 +234,6 @@ class TestLoaders:
 
     def test_generic_loader_copies_backbone_prefixed_weights(self, caplog: pytest.LogCaptureFixture) -> None:
         """A ``backbone.`` prefix is a real module name, not a wrapper to strip, so the weights must arrive."""
-        import torch
-        import torch.nn as nn
 
         class _BackboneModel(nn.Module):
             def __init__(self) -> None:
@@ -263,10 +253,6 @@ class TestLoaders:
 
     def test_osnet_backbone_loads_with_full_match(self, tmp_path, caplog: pytest.LogCaptureFixture) -> None:
         """Inference OSNet has no classifier, so strict checkpoint loads succeed."""
-        import torch
-
-        from reid.architectures import build_architecture
-
         source = build_architecture("osnet_x0_25")
         assert not any(key.startswith("classifier.") for key in source.state_dict())
 
@@ -290,12 +276,6 @@ class TestLoaders:
         GeM ``p`` must come from ``heads.pool_layer.p``, not the 3.0 constructor default, and the classifier
         (``heads.weight``) has no place in the inference model.
         """
-        import warnings
-
-        import torch
-
-        from reid.architectures import build_architecture
-
         mot17_gem_p = 1.7194522619247437
         model = cast(FastReIDSBSResNeSt50, build_architecture(FASTREID_SBS_ARCHITECTURE))
         assert model.pool.p.item() == pytest.approx(3.0)
@@ -324,11 +304,6 @@ class TestLoaders:
 
     def test_fastreid_sbs_last_stride_patch(self) -> None:
         """``layer4[0]`` must match FastReID LAST_STRIDE=1 (not raw timm output_stride=16)."""
-        import torch.nn as nn
-
-        from reid.architectures import build_architecture
-        from reid.architectures.fastreid_sbs import FastReIDSBSResNeSt50
-
         model = cast(FastReIDSBSResNeSt50, build_architecture(FASTREID_SBS_ARCHITECTURE))
         block = cast(Any, cast(Any, model.backbone).layer4[0])
         assert isinstance(block.downsample[0], nn.AvgPool2d)
@@ -339,10 +314,6 @@ class TestLoaders:
         assert block.avd_last.stride == (1, 1) or block.avd_last.stride == 1
 
     def test_fastreid_sbs_forward_shape(self) -> None:
-        import torch
-
-        from reid.architectures import build_architecture
-
         model = build_architecture(FASTREID_SBS_ARCHITECTURE)
         model.eval()
         with torch.inference_mode():
@@ -355,12 +326,6 @@ class TestModelSmoke:
 
     def test_out_of_frame_box_embeds_its_in_frame_part(self) -> None:
         """A box sticking out of the frame is clipped to the part inside it, not replaced by a blank crop."""
-        import numpy as np
-        import supervision as sv
-        import torch
-
-        from reid.model import ReIDModel
-
         model = ReIDModel(backbone=_tiny_encoder(), device=torch.device("cpu"), preprocessing=ReIDPreprocessing())
         frame = np.random.default_rng(0).integers(0, 255, size=(128, 128, 3), dtype=np.uint8)
 
@@ -370,12 +335,6 @@ class TestModelSmoke:
         np.testing.assert_array_equal(outside, inside)
 
     def test_empty_detections_returns_empty(self) -> None:
-        import numpy as np
-        import supervision as sv
-        import torch
-
-        from reid.model import ReIDModel
-
         device = torch.device("cpu")
         model = ReIDModel(_tiny_encoder(), device, ReIDPreprocessing())
         frame = np.zeros((128, 128, 3), dtype=np.uint8)
@@ -383,21 +342,12 @@ class TestModelSmoke:
         assert embs.shape == (0, 0)
 
     def test_empty_paths_returns_empty(self) -> None:
-        import torch
-
-        from reid.model import ReIDModel
-
         model = ReIDModel(_tiny_encoder(), torch.device("cpu"), ReIDPreprocessing())
         embs = model.extract_embeddings_from_paths([])
         assert embs.shape == (0, 0)
 
     def test_from_pretrained_architecture_only(self) -> None:
         """from_pretrained(architecture=...) builds an OSNet model with no downloads."""
-        import numpy as np
-        import supervision as sv
-
-        from reid.model import ReIDModel
-
         # osnet_x0_25 is a clean-room architecture with no external weights, so
         # this builds entirely offline (random init).
         model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
@@ -415,18 +365,10 @@ class TestExtractContract:
     """Extraction parity, batching, eval mode, and raw-embedding behavior."""
 
     def _tiny_model(self, preprocessing):
-        import torch
-
-        from reid.model import ReIDModel
-
         return ReIDModel(_tiny_encoder(), torch.device("cpu"), preprocessing)
 
     def test_init_forces_backbone_eval(self) -> None:
         """A backbone left in train() mode is switched to eval() on construction."""
-        import torch
-        import torch.nn as nn
-
-        from reid.model import ReIDModel
 
         class _WithBN(nn.Module):
             def __init__(self) -> None:
@@ -444,12 +386,6 @@ class TestExtractContract:
 
     def test_extract_embeddings_sub_batches(self) -> None:
         """extract_embeddings splits crops into batch_size chunks for the forward pass."""
-        import numpy as np
-        import supervision as sv
-        import torch
-        import torch.nn as nn
-
-        from reid.model import ReIDModel
 
         class _Counting(nn.Module):
             def __init__(self) -> None:
@@ -471,9 +407,6 @@ class TestExtractContract:
         assert backbone.batch_sizes == [2, 2, 1]
 
     def test_extract_embeddings_rejects_bad_batch_size(self) -> None:
-        import numpy as np
-        import supervision as sv
-
         model = self._tiny_model(ReIDPreprocessing())
         frame = np.zeros((64, 64, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 32, 32]], dtype=np.float32))
@@ -482,12 +415,6 @@ class TestExtractContract:
 
     def test_rejects_embeddings_too_large_to_compare(self) -> None:
         """Their distances would overflow float32 and give meaningless rankings."""
-        import numpy as np
-        import supervision as sv
-        import torch
-        import torch.nn as nn
-
-        from reid.model import ReIDModel
 
         class _Huge(nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -503,10 +430,6 @@ class TestExtractContract:
 
     def test_frame_and_path_extract_parity(self, tmp_path) -> None:
         """Same crop via a frame box vs. an on-disk file yields identical embeddings."""
-        import numpy as np
-        import supervision as sv
-        from PIL import Image as PILImage
-
         # to_rgb=False keeps frame bytes as-is; PIL path loads RGB on disk the same way.
         preprocessing = ReIDPreprocessing(input_size=(256, 128), to_rgb=False)
         model = self._tiny_model(preprocessing)
@@ -514,7 +437,7 @@ class TestExtractContract:
         rng = np.random.default_rng(0)
         crop = rng.integers(0, 255, size=(256, 128, 3), dtype=np.uint8)
         crop_path = tmp_path / "crop.png"
-        PILImage.fromarray(crop).save(crop_path)  # PNG is lossless
+        Image.fromarray(crop).save(crop_path)  # PNG is lossless
 
         dets = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
         emb_frame = model.extract_embeddings(dets, crop)
@@ -525,16 +448,12 @@ class TestExtractContract:
 
     def test_extract_returns_raw_embeddings(self, tmp_path) -> None:
         """extract_* always returns raw embeddings; normalisation is a distance-time concern."""
-        import numpy as np
-        import supervision as sv
-        from PIL import Image as PILImage
-
         model = self._tiny_model(ReIDPreprocessing(to_rgb=False))
 
         rng = np.random.default_rng(1)
         crop = rng.integers(0, 255, size=(256, 128, 3), dtype=np.uint8)
         crop_path = tmp_path / "crop.png"
-        PILImage.fromarray(crop).save(crop_path)
+        Image.fromarray(crop).save(crop_path)
 
         path_embs = model.extract_embeddings_from_paths([str(crop_path)])
         assert not np.allclose(np.linalg.norm(path_embs, axis=1), 1.0, atol=1e-3)
@@ -549,11 +468,6 @@ class TestRoundTrip:
     """``save_pretrained`` / ``from_pretrained`` round-trip behavior."""
 
     def test_save_and_reload_produces_identical_embeddings(self, tmp_path) -> None:
-        import numpy as np
-        import supervision as sv
-
-        from reid.model import ReIDModel
-
         # osnet_x0_25 builds offline; its random init is fixed for this process,
         # so the saved weights reload to byte-identical parameters.
         model_a = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
@@ -579,10 +493,6 @@ def test_default_osnet_alias_loads_with_finite_output() -> None:
 
     Curated aliases require a 100% state-dict match; loading must not raise.
     """
-    import supervision as sv
-
-    from reid.model import ReIDModel
-
     model = ReIDModel.from_pretrained(DEFAULT_MODEL, device="cpu")
     frame = np.zeros((256, 128, 3), dtype=np.uint8)
     dets = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 256.0]], dtype=np.float32))
@@ -600,10 +510,6 @@ def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
     ``extract_embeddings`` returns raw BNNeck features; cosine similarity is
     applied at distance time in ``reid.eval.metrics._distance_matrix``.
     """
-    import supervision as sv
-
-    from reid.model import ReIDModel
-
     model = ReIDModel.from_pretrained("fastreid_mot17_sbs50", device="cpu")
     frame = np.zeros((384, 128, 3), dtype=np.uint8)
     dets = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 384.0]], dtype=np.float32))
@@ -618,11 +524,6 @@ class TestCropTransform:
     """Crops read from disk must be resized exactly like crops cut from a frame."""
 
     def test_disk_crops_resize_like_frame_crops(self) -> None:
-        import torch
-        from PIL import Image
-
-        from reid.preprocessing import ReIDPreprocessing
-
         preprocessing = ReIDPreprocessing(resize_mode="letterbox", interpolation="bicubic")
         crop = (np.random.default_rng(0).random((200, 50, 3)) * 255).astype("uint8")
 
@@ -640,11 +541,6 @@ class TestModelToDevice:
     """``ReIDModel.to`` must move the backbone with the bookkeeping."""
 
     def test_to_moves_the_backbone_and_returns_self(self) -> None:
-        import torch
-
-        from reid import ReIDModel
-        from reid.preprocessing import ReIDPreprocessing
-
         model = ReIDModel(backbone=torch.nn.Linear(4, 4), device=torch.device("cpu"), preprocessing=ReIDPreprocessing())
 
         # The meta device holds no data, so the move is observable on a CPU-only machine.
