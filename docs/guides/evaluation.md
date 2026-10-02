@@ -17,7 +17,7 @@ print(result.metrics)
 print(result.num_queries)
 ```
 
-For images organized in identity folders, `RetrievalProtocol` selects query images and uses the remaining eligible images as the gallery:
+Your own images usually come without such splits. If they are in identity folders, one per person (`<root>/<identity>/<image>.jpg`), `RetrievalProtocol` builds the split: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
 
 ```python
 from reid import ReIDDataset
@@ -28,9 +28,9 @@ data = ReIDDataset("/path/to/identity/folders")
 result = model.evaluate(data, protocol=RetrievalProtocol(queries_per_id=2, min_crops=3, seed=7))
 ```
 
-Omit `protocol` to use retrieval with one query per identity. The same data and protocol always select the same images, so evaluating several models this way compares them on identical inputs. `RetrievalProtocol(...).build_query_gallery(data)` returns the query and gallery images it evaluates, the candidate mask (`None` for retrieval), and the metadata. To compare query and gallery images you chose yourself, build a `ReIDSplit` for each and pass both to `model.evaluate`.
+Omit `protocol` to use retrieval with one query per identity. The same data and protocol, including its `seed`, always select the same images, so evaluating several models this way compares them on identical inputs. `RetrievalProtocol(...).build_query_gallery(data)` returns the query and gallery images it evaluates, the candidate mask (`None` for retrieval), and the metadata. To compare query and gallery images you chose yourself, build a `ReIDSplit` for each and pass both to `model.evaluate`.
 
-`result.metrics` is a dictionary with metric names as keys and percentages as values. For retrieval, `map` measures ranking across all correct matches, `rank1`, `rank5`, and `rank10` report the percentage of queries with a correct match in the top 1, 5, or 10 results, and `minp` reflects the position of the last correct match. `result.num_queries` counts queries included in the metrics; `result.metadata` records the protocol settings and the number of query and gallery images.
+`result.metrics` is a dictionary with metric names as keys and percentages as values. For retrieval, `map` (mean average precision) measures ranking across all correct matches, `rank1`, `rank5`, and `rank10` report the percentage of queries with a correct match among the 1, 5, or 10 gallery images closest to the query, and `minp` (mean inverse negative penalty) reflects the position of the last correct match. Re-association reports `rank1` and `mrr` instead, described [below](#crops-from-video). [ReID metrics](../learn/metrics.md#metrics) gives each metric's formula. `result.num_queries` counts queries included in the metrics; `result.metadata` records the protocol settings and the number of query and gallery images.
 
 Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="euclidean")` when the benchmark specifies Euclidean distance. `max_pairs` limits the number of query–gallery comparisons to control memory use; a larger evaluation raises with its matrix size and memory, and MSMT17's official split needs `max_pairs=1_000_000_000`.
 
@@ -62,7 +62,7 @@ print(result.metrics)
 
 Use `"full"` for sequences kept only for evaluation. Use `"train_half"` and `"val_half"` when training and evaluating on the same sequences, so no frame is used for both. `class_ids` selects which ground-truth classes become identities. DanceTrack and SportsMOT label every box as class 1, so the default keeps all of them; MOT17 also labels vehicles, static people, distractors, and occluders, so pass `class_ids=[1]` there.
 
-Re-association reports `rank1` and `mrr`. Each query has exactly one correct match, so mean average precision is the mean reciprocal rank.
+Re-association reports `rank1`, the percentage of queries whose correct match is the closest of their candidates, and `mrr`, the [mean reciprocal rank](../learn/metrics.md#mrr): each query scores 1/r, where r is the rank of its correct match (1 at rank 1, 1/2 at rank 2), and `mrr` averages these scores. Each query has exactly one correct match, so mean average precision is the mean reciprocal rank.
 
 Re-association evaluates identity matching on saved crops; it does not run a tracker. If your goal is tracking, choose a frame gap and candidate images that reflect how the tracker will use the model. Then measure tracking performance separately with [Roboflow Trackers](https://github.com/roboflow/trackers).
 

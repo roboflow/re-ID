@@ -88,6 +88,8 @@ print(result.metrics)
 
 ## Metrics
 
+For each query, the model compares the query's embedding with every gallery image's embedding using the chosen [distance](#distance), and sorts the gallery from closest to farthest. An image's **rank** is its position in that list: rank 1 is the closest.
+
 Every metric is computed on each query's ranking after junk filtering, averaged over the queries that have at least one valid match, and reported as a percentage. The notation used below:
 
 | Symbol | Meaning |
@@ -99,14 +101,14 @@ Every metric is computed on each query's ranking after junk filtering, averaged 
 
 ### Rank-k (CMC)
 
-**Cumulative Matching Characteristic.** Rank-k is the fraction of queries with at least one match in the top $k$, as reported in the [Market-1501 benchmark](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html):
+**Cumulative Matching Characteristic**, not to be confused with camera motion compensation, which trackers such as BoT-SORT also abbreviate CMC. Rank-k is the fraction of queries with at least one match in the top $k$, as reported in the [Market-1501 benchmark](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html):
 
 $$
 \text{Rank-}k = \frac{1}{|Q|} \sum_{q \in Q} \mathbb{1}\left[\, \sum_{i=1}^{k} \mathrm{rel}_q(i) \geq 1 \right]
 $$
 
-- **Rank-1:** Is the nearest neighbor the correct identity?
-- **Rank-5 / Rank-10:** Is a correct identity among the first 5 or 10?
+- **Rank-1:** Is the gallery image closest to the query the same person?
+- **Rank-5 / Rank-10:** Is the same person among the 5 or 10 closest gallery images?
 
 CMC answers "how often is a hit early in the list?" It does not reward finding every gallery instance of that person.
 
