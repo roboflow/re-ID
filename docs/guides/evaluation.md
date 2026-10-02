@@ -28,7 +28,7 @@ data = ReIDDataset("/path/to/identity/folders")
 result = model.evaluate(data, protocol=RetrievalProtocol(queries_per_id=2, min_crops=3, seed=7))
 ```
 
-Omit `protocol` to use retrieval with one query per identity. The same data and protocol always select the same images, so evaluating several models this way compares them on identical inputs. `RetrievalProtocol(...).build_query_gallery(data)` returns the query and gallery images it evaluates, the candidate mask (`None` for retrieval), and the metadata. For a split you filtered yourself, `reid.data.build_identity_crop_retrieval_split` derives the query and gallery; pass both to `model.evaluate`.
+Omit `protocol` to use retrieval with one query per identity. The same data and protocol always select the same images, so evaluating several models this way compares them on identical inputs. `RetrievalProtocol(...).build_query_gallery(data)` returns the query and gallery images it evaluates, the candidate mask (`None` for retrieval), and the metadata. To compare query and gallery images you chose yourself, build a `ReIDSplit` for each and pass both to `model.evaluate`.
 
 `result.metrics` is a dictionary with metric names as keys and percentages as values. For retrieval, `map` measures ranking across all correct matches, `rank1`, `rank5`, and `rank10` report the percentage of queries with a correct match in the top 1, 5, or 10 results, and `minp` reflects the position of the last correct match. `result.num_queries` counts queries included in the metrics; `result.metadata` records the protocol settings and the number of query and gallery images.
 
