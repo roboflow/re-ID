@@ -17,9 +17,12 @@ import numpy as np
 MARKET1501_GALLERY_JUNK_PIDS = frozenset({-1, 0})
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReIDSplit:
     """Query or gallery split: image paths, person IDs, and camera IDs.
+
+    A split cannot be changed once built; to filter or relabel one, build a new
+    split, or use ``dataclasses.replace``.
 
     ``gallery_junk_pids`` controls which gallery person IDs are excluded from
     ranking during retrieval evaluation.
