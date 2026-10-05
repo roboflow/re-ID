@@ -26,6 +26,7 @@ import supervision as sv
 import torch
 import torch.nn as nn
 from PIL import Image
+from safetensors.torch import load_file, save_file
 
 from reid import ReIDModel
 from reid.architectures import build_architecture, default_preprocessing_for_architecture
@@ -187,6 +188,21 @@ class TestRegistry:
 
 class TestLoaders:
     """Checkpoint path resolution, remapping, and state-dict loading."""
+
+    def test_rejects_weights_from_another_architecture(self, tmp_path) -> None:
+        weights = tmp_path / "weights.pth"
+        torch.save(nn.Linear(4, 2).state_dict(), weights)  # no parameter OSNet has
+
+        with pytest.raises(ValueError, match=r"matched only 0 of 565 'osnet_x0_25' weight tensors \(required >= 50%\)"):
+            ReIDModel.from_pretrained(str(weights), architecture="osnet_x0_25", device="cpu")
+
+    def test_saved_model_must_load_completely(self, tmp_path) -> None:
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(tmp_path))
+        weights = load_file(tmp_path / "weights.safetensors")
+        save_file({k: v for k, v in list(weights.items())[1:]}, tmp_path / "weights.safetensors")  # drop one tensor
+
+        with pytest.raises(ValueError, match=r"matched only 564 of 565 .* \(required >= 100%\)"):
+            ReIDModel.from_pretrained(str(tmp_path), device="cpu")
 
     def test_missing_local_path_raises(self) -> None:
         with pytest.raises(FileNotFoundError, match="Weights file not found"):

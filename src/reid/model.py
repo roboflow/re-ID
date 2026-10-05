@@ -140,7 +140,8 @@ class ReIDModel:
 
         Args:
             source: Model source (alias, Hub URL, local path, or ``None``).
-            architecture: Backbone override; required for bare weight files.
+            architecture: Backbone override; required for bare weight files, and
+                must be the architecture the weights were trained with.
             preprocessing: Preprocessing override.
             device: Compute device (``"auto"`` picks the best available).
 
@@ -148,7 +149,10 @@ class ReIDModel:
             Loaded model with the backbone on ``device``.
 
         Raises:
-            ValueError: If a bare weights file is given without ``architecture``.
+            ValueError: If a bare weights file is given without ``architecture``,
+                or the weights cover less of the architecture than required:
+                all of it for a pretrained name or saved model, half for a bare
+                weights file.
         """
         resolved_device = _select_device(device)
 
