@@ -32,7 +32,7 @@ Omit `protocol` to use retrieval with one query per identity. The same data and 
 
 `result.metrics` is a dictionary with metric names as keys and percentages as values. For retrieval, `map` (mean average precision) measures ranking across all correct matches, `rank1`, `rank5`, and `rank10` report the percentage of queries with a correct match among the 1, 5, or 10 gallery images closest to the query, and `minp` (mean inverse negative penalty) reflects the position of the last correct match. Re-association reports `rank1` and `mrr` instead, described [below](#crops-from-video). [ReID metrics](../learn/metrics.md#metrics) gives each metric's formula. `result.num_queries` counts queries included in the metrics; `result.metadata` records the protocol settings and the number of query and gallery images.
 
-Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="euclidean")` when the benchmark specifies Euclidean distance. `max_pairs` limits the number of query–gallery comparisons to control memory use; a larger evaluation raises with its matrix size and memory, and MSMT17's official split needs `max_pairs=1_000_000_000`.
+Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="euclidean")` when the benchmark specifies Euclidean distance. `max_pairs` caps how large an evaluation may be, to protect memory: when the query and gallery images give more pairs than `max_pairs`, evaluation raises before any image is embedded, and the error gives the matrix size and the memory it would take, 4 bytes per pair. Nothing is subsampled to fit. Set it as high as your memory allows; MSMT17's official split needs `max_pairs=1_000_000_000`, about 3.8 GB.
 
 ## Crops from video
 
