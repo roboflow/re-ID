@@ -37,7 +37,7 @@ Metrics are percentages. A typical result looks like:
 3368
 ```
 
-The default alias (`osnet_x1_0_msmt17_combineall`) is trained on MSMT17 with train and test combined, so Market-1501 scores here measure **cross-domain** transfer (Rank-1 around 61 in [`notebooks/eval_reid.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb)). To match the torchreid OSNet x1.0 **same-domain** Market-1501 benchmark results (Rank-1 94.2, mAP 82.6, euclidean), load that checkpoint with `ReIDModel.from_pretrained(path, architecture="osnet_x1_0")`. Full Market-1501 and MSMT17 evaluation examples are in the same notebook.
+The default model was trained on MSMT17, so these Market-1501 numbers measure cross-domain transfer; [Benchmarks](#benchmarks) shows how to reproduce the published same-domain results.
 
 ---
 
@@ -75,7 +75,7 @@ When using ReID for object tracking with [Trackers](https://github.com/roboflow/
 | `"cosine"` (default) | Cosine distance after L2-normalizing embeddings |
 | `"euclidean"`        | Euclidean distance on the raw embedding vectors |
 
-The torchreid model zoo reports OSNet x1.0 same-domain numbers with **euclidean** distance (94.2 / 82.6 on Market-1501). Match whatever distance a published table used before comparing, and do not mix distance choices across runs you want to compare.
+The torchreid model zoo reports OSNet x1.0 same-domain numbers with **euclidean** distance (94.2 / 82.6 on Market-1501). Use the same distance as the published table you compare against, and do not mix distance choices across runs you want to compare.
 
 ```python
 from reid.eval import RetrievalProtocol
@@ -124,7 +124,7 @@ Unlike Rank-1, mAP cares about **all** valid gallery matches for that identity, 
 
 ### mINP
 
-**Mean Inverse Negative Penalty**, proposed by [Ye et al. (TPAMI 2021)](https://arxiv.org/abs/2001.04193). With $R_q$ the rank of the **last** match of query $q$:
+**Mean Inverse Negative Penalty**, proposed by [Ye et al. (TPAMI 2021)](https://arxiv.org/abs/2001.04193). With $R_q$ being the rank of the **last** match of query $q$:
 
 $$
 \mathrm{INP}_q = \frac{G_q}{R_q}, \qquad \mathrm{mINP} = \frac{1}{|Q|} \sum_{q \in Q} \mathrm{INP}_q
@@ -134,13 +134,15 @@ mINP penalizes models that bury hard positive gallery images deep in the ranking
 
 ### MRR
 
-**Mean reciprocal rank** ([definition](https://en.wikipedia.org/wiki/Mean_reciprocal_rank)) is what re-association reports next to Rank-1. With $r_q$ the rank of the single correct match among the query's candidates:
+**Mean reciprocal rank** ([definition](https://en.wikipedia.org/wiki/Mean_reciprocal_rank)) is what re-association reports next to Rank-1. With $r_q$ being the rank of the single correct match among the query's candidates:
 
 $$
 \mathrm{MRR} = \frac{1}{|Q|} \sum_{q \in Q} \frac{1}{r_q}
 $$
 
 First place contributes 1, second place 1/2, and so on. With exactly one correct match per query, average precision equals the reciprocal rank, so MRR is the mAP of the re-association ranking.
+
+### Comparing the metrics
 
 | Metric           | Sensitive to         | Typical use                                 |
 | :--------------- | :------------------- | :------------------------------------------ |
@@ -152,22 +154,37 @@ First place contributes 1, second place 1/2, and so on. With exactly one correct
 
 ---
 
-## MSMT17
+## Benchmarks
 
-To evaluate on MSMT17, load its query and gallery splits:
+Use a checkpoint trained on the training split of the dataset you evaluate. The default `osnet_x1_0_msmt17_combineall` was trained on all of MSMT17, test identities included: on MSMT17 it leaks the test split, and on Market-1501 it measures **cross-domain** transfer (Rank-1 around 61 in [`notebooks/eval_reid.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb)). The examples below load the torchreid same-domain OSNet x1.0 checkpoints and use **euclidean** distance, as the model zoo does; the notebook runs both end to end.
+
+### Market-1501
 
 ```python
-from reid import ReIDModel, load_msmt17
+from reid import ReIDModel, load_market1501
+from reid.eval import RetrievalProtocol
 
-model = ReIDModel.from_pretrained("/path/to/osnet_x1_0_msmt17.pth", architecture="osnet_x1_0")
-query, gallery = load_msmt17("/path/to/MSMT17_V1")
-result = model.evaluate(query, gallery, max_pairs=1_000_000_000)
+model = ReIDModel.from_pretrained("/path/to/osnet_x1_0_market1501.pth", architecture="osnet_x1_0")
+query, gallery = load_market1501("/path/to/Market-1501-v15.09.15")
+result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"))
 print(result.metrics)
 ```
 
-The official test split compares 11,659 queries with 82,161 gallery images: about 958 million pairs and a 3.8 GB distance matrix, above the default `max_pairs` of 100 million.
+The model zoo reports Rank-1 94.2 and mAP 82.6 for this checkpoint.
 
-Use a checkpoint trained for the dataset you evaluate. The default `combineall` MSMT17 weight includes MSMT17 test identities, so evaluating it on MSMT17 test leaks the split. Market-trained weights on MSMT17 (or the reverse) measure cross-domain transfer, rather than performance within the training domain.
+### MSMT17
+
+```python
+from reid import ReIDModel, load_msmt17
+from reid.eval import RetrievalProtocol
+
+model = ReIDModel.from_pretrained("/path/to/osnet_x1_0_msmt17.pth", architecture="osnet_x1_0")
+query, gallery = load_msmt17("/path/to/MSMT17_V1")
+result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"), max_pairs=1_000_000_000)
+print(result.metrics)
+```
+
+The model zoo reports Rank-1 74.9 and mAP 43.8 for this checkpoint. The official test split compares 11,659 queries with 82,161 gallery images: about 958 million pairs and a 3.8 GB distance matrix, above the default `max_pairs` of 100 million.
 
 ---
 
