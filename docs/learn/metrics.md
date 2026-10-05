@@ -180,11 +180,11 @@ from reid.eval import RetrievalProtocol
 
 model = ReIDModel.from_pretrained("/path/to/osnet_x1_0_msmt17.pth", architecture="osnet_x1_0")
 query, gallery = load_msmt17("/path/to/MSMT17_V1")
-result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"), max_pairs=1_000_000_000)
+result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"))
 print(result.metrics)
 ```
 
-The model zoo reports Rank-1 74.9 and mAP 43.8 for this checkpoint. The official test split compares 11,659 queries with 82,161 gallery images: about 958 million pairs and a 3.8 GB distance matrix, above the default `max_pairs` of 100 million.
+The model zoo reports Rank-1 74.9 and mAP 43.8 for this checkpoint. The official test split compares 11,659 queries with 82,161 gallery images: about 958 million pairs and a 3.8 GB distance matrix, so make sure the machine has that memory free.
 
 ---
 

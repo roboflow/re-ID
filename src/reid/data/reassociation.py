@@ -13,7 +13,6 @@ from pathlib import Path
 
 import numpy as np
 
-from reid.checks import validate_pair_budget
 from reid.data.mot import _parse_crop_path
 from reid.data.splits import ReIDSplit
 
@@ -34,7 +33,6 @@ def _build_reassociation_candidates(
     *,
     gap_frames: int,
     query_stride: int,
-    max_pairs: int,
 ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray, dict]:
     """Return fixed queries, deduplicated gallery, eligibility mask and counts.
 
@@ -74,7 +72,6 @@ def _build_reassociation_candidates(
     gallery_records = sorted(
         {(sequence, identity, path) for sequence, _, _, candidates in records for identity, path in candidates}
     )
-    validate_pair_budget(len(records), len(gallery_records), max_pairs)
 
     gallery_index = {record: index for index, record in enumerate(gallery_records)}
     # TODO: Store per-query candidate indices and score only eligible pairs to avoid

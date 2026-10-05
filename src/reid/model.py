@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
-from reid.checks import DEFAULT_MAX_PAIRS, validate_positive_int
+from reid.checks import validate_positive_int
 from reid.crop_dataset import CropDataset
 from reid.data import ReIDDataset, ReIDSplit
 from reid.eval import EvaluationProtocol, ReIDResult, RetrievalProtocol
@@ -230,7 +230,6 @@ class ReIDModel:
         *,
         protocol: EvaluationProtocol | None = None,
         batch_size: int = 64,
-        max_pairs: int = DEFAULT_MAX_PAIRS,
         return_distmat: bool = False,
         verbose: bool = True,
     ) -> ReIDResult:
@@ -246,7 +245,6 @@ class ReIDModel:
             protocol: Evaluation protocol. Defaults to
                 :class:`~reid.eval.RetrievalProtocol`.
             batch_size: Images per embedding batch.
-            max_pairs: Largest query-by-gallery matrix to allocate.
             return_distmat: Keep the query-by-gallery distance matrix in the result.
             verbose: Log progress.
 
@@ -265,9 +263,7 @@ class ReIDModel:
             protocol = RetrievalProtocol()
         elif not isinstance(protocol, EvaluationProtocol):
             raise TypeError("protocol must be an EvaluationProtocol instance.")
-        query, gallery_split, candidate_mask, metadata = protocol.build_query_gallery(
-            data, gallery, max_pairs=max_pairs
-        )
+        query, gallery_split, candidate_mask, metadata = protocol.build_query_gallery(data, gallery)
 
         # A crop may be both a query and a gallery image. Embed it once.
         paths = list(dict.fromkeys([*query.image_paths, *gallery_split.image_paths]))

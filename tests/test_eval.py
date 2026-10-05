@@ -94,8 +94,8 @@ def test_masked_evaluation_keeps_raw_distances() -> None:
     """A protocol's candidate mask restricts scoring; the returned distances stay unmasked."""
 
     class Masked(RetrievalProtocol):
-        def _build_query_gallery(self, data, gallery=None, *, max_pairs):
-            query, gallery, _, metadata = super()._build_query_gallery(data, gallery, max_pairs=max_pairs)
+        def _build_query_gallery(self, data, gallery=None):
+            query, gallery, _, metadata = super()._build_query_gallery(data, gallery)
             return query, gallery, np.array([[False, True, True]]), metadata
 
     query = ReIDSplit(image_paths=["q"], pids=np.array([1]), camids=np.array([0]))
@@ -107,14 +107,6 @@ def test_masked_evaluation_keeps_raw_distances() -> None:
     # The mask drops g1, the exact match. The ranking left is g2 (another person), then g3 (a match at rank 2).
     assert result.metrics["map"] == pytest.approx(50.0)
     assert result.distmat[0, 0] == pytest.approx(0.0)  # the distance to g1 is still reported
-
-
-def test_rejects_more_pairs_than_max_pairs() -> None:
-    query = ReIDSplit(image_paths=["q1", "q2"], pids=np.array([1, 2]), camids=np.array([0, 0]))
-    gallery = ReIDSplit(image_paths=["g1", "g2"], pids=np.array([1, 2]), camids=np.array([1, 1]))
-
-    with pytest.raises(ValueError, match="4 pairs.*above max_pairs=3"):  # 2 queries x 2 gallery images
-        _model().evaluate(query, gallery, max_pairs=3)
 
 
 def test_protocol_must_be_an_instance() -> None:

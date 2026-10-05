@@ -32,7 +32,7 @@ Omit `protocol` to use retrieval with one query per identity. The same data and 
 
 `result.metrics` is a dictionary with metric names as keys and percentages as values. For retrieval, `map` (mean average precision) measures ranking across all correct matches, `rank1`, `rank5`, and `rank10` report the percentage of queries with a correct match among the 1, 5, or 10 gallery images closest to the query, and `minp` (mean inverse negative penalty) reflects the position of the last correct match. Re-association reports `rank1` and `mrr` instead, described [below](#crops-from-video). [ReID metrics](../learn/metrics.md#metrics) gives each metric's formula. `result.num_queries` counts queries included in the metrics; `result.metadata` records the protocol settings and the number of query and gallery images.
 
-Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="euclidean")` when the benchmark specifies Euclidean distance. `max_pairs` caps how large an evaluation may be, to protect memory: when the query and gallery images give more pairs than `max_pairs`, evaluation raises before any image is embedded, and the error gives the matrix size and the memory it would take, 4 bytes per pair. Nothing is subsampled to fit. Set it as high as your memory allows; MSMT17's official split needs `max_pairs=1_000_000_000`, about 3.8 GB.
+Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="euclidean")` when the benchmark specifies Euclidean distance. Evaluation keeps the whole query-by-gallery distance matrix in memory, 4 bytes per pair, so check the size before evaluating a large dataset: MSMT17's official split, 11,659 queries by 82,161 gallery images, needs about 3.8 GB.
 
 ## Crops from video
 
@@ -83,8 +83,8 @@ class SameSceneRetrieval(RetrievalProtocol):
         super().__init__(**kwargs)
         self.scene_of = scene_of
 
-    def _build_query_gallery(self, data, gallery=None, *, max_pairs):
-        query, gallery, _, metadata = super()._build_query_gallery(data, gallery, max_pairs=max_pairs)
+    def _build_query_gallery(self, data, gallery=None):
+        query, gallery, _, metadata = super()._build_query_gallery(data, gallery)
         query_scenes = np.array([self.scene_of[path] for path in query.image_paths])
         gallery_scenes = np.array([self.scene_of[path] for path in gallery.image_paths])
         return query, gallery, query_scenes[:, None] == gallery_scenes[None, :], metadata
@@ -93,4 +93,4 @@ class SameSceneRetrieval(RetrievalProtocol):
 result = model.evaluate(data, protocol=SameSceneRetrieval(scene_of))
 ```
 
-Camera and junk-ID filtering still apply inside the candidate set. Set `exclude_same_pid_camid = False` on the class when same-person, same-camera matches should count, as in re-association. Queries with no correct match among their candidates are left out of the averages and of `num_queries`; if no query can be scored, `evaluate` raises a `ValueError`. The distance matrix is still computed in full, so `max_pairs` counts every query–gallery pair, including those outside the candidate sets.
+Camera and junk-ID filtering still apply inside the candidate set. Set `exclude_same_pid_camid = False` on the class when same-person, same-camera matches should count, as in re-association. Queries with no correct match among their candidates are left out of the averages and of `num_queries`; if no query can be scored, `evaluate` raises a `ValueError`. The distance matrix is still computed in full, including the pairs outside the candidate sets, so it takes the same memory as without a mask.

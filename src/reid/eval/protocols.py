@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from reid.checks import DEFAULT_MAX_PAIRS, validate_candidate_mask, validate_pair_budget, validate_positive_int
+from reid.checks import validate_candidate_mask, validate_positive_int
 from reid.data.identity_crops import (
     ReIDDataset,
     _check_query_params,
@@ -51,15 +51,12 @@ class EvaluationProtocol(ABC):
         self,
         data: ReIDDataset | ReIDSplit,
         gallery: ReIDSplit | None = None,
-        *,
-        max_pairs: int = DEFAULT_MAX_PAIRS,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         """Pick the query images, gallery images, and candidates to compare.
 
         Args:
             data: Identity-folder dataset, or a query split with ``gallery``.
             gallery: Gallery split when ``data`` is the query split.
-            max_pairs: Largest query-by-gallery matrix to allow.
 
         Returns:
             ``(query, gallery, candidate_mask, metadata)``. ``candidate_mask``
@@ -67,13 +64,11 @@ class EvaluationProtocol(ABC):
             ranks against all of them); ``metadata`` records the protocol
             settings and counts.
         """
-        validate_positive_int(max_pairs, "max_pairs")
         _validate_distance(self.distance)
-        selection = self._build_query_gallery(data, gallery, max_pairs=max_pairs)
+        selection = self._build_query_gallery(data, gallery)
         query, gallery_split, candidate_mask, _ = selection
         if not query.image_paths or not gallery_split.image_paths:
             raise ValueError("Selected query and gallery must both be nonempty.")
-        validate_pair_budget(len(query), len(gallery_split), max_pairs)
         if candidate_mask is not None:
             validate_candidate_mask(candidate_mask, len(query), len(gallery_split))
         return selection
@@ -83,8 +78,6 @@ class EvaluationProtocol(ABC):
         self,
         data: ReIDDataset | ReIDSplit,
         gallery: ReIDSplit | None = None,
-        *,
-        max_pairs: int,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         """Build this protocol's query, gallery, candidate mask, and metadata."""
 
@@ -135,8 +128,6 @@ class RetrievalProtocol(EvaluationProtocol):
         self,
         data: ReIDDataset | ReIDSplit,
         gallery: ReIDSplit | None = None,
-        *,
-        max_pairs: int,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         if gallery is not None:
             if not isinstance(data, ReIDSplit) or not isinstance(gallery, ReIDSplit):
@@ -195,15 +186,13 @@ class ReassociationProtocol(EvaluationProtocol):
         self,
         data: ReIDDataset | ReIDSplit,
         gallery: ReIDSplit | None = None,
-        *,
-        max_pairs: int,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         if gallery is not None:
             raise ValueError("ReassociationProtocol constructs its own gallery; gallery must be omitted.")
         if not isinstance(data, ReIDDataset):
             raise TypeError(f"Re-association needs a ReIDDataset of MOT crops, got {type(data).__name__}.")
         query, gallery_split, mask, counts = _build_reassociation_candidates(
-            data.split, gap_frames=self.gap_frames, query_stride=self.query_stride, max_pairs=max_pairs
+            data.split, gap_frames=self.gap_frames, query_stride=self.query_stride
         )
         skipped = (
             counts["skipped_missing_future"]
