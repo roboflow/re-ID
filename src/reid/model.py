@@ -31,7 +31,7 @@ from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
 from reid.checks import validate_positive_int
 from reid.crop_dataset import CropDataset
-from reid.data import ReIDDataset, ReIDSplit
+from reid.data import ReIDSplit
 from reid.eval import EvaluationProtocol, ReIDResult, RetrievalProtocol
 from reid.eval.metrics import _compute_reid_metrics, _distance_matrix
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
@@ -226,7 +226,7 @@ class ReIDModel:
 
     def evaluate(
         self,
-        data: ReIDDataset | ReIDSplit,
+        data: ReIDSplit,
         gallery: ReIDSplit | None = None,
         *,
         protocol: EvaluationProtocol | None = None,
@@ -241,8 +241,12 @@ class ReIDModel:
         same data and protocol score identical inputs for every model.
 
         Args:
-            data: Identity-folder dataset, or a query split with ``gallery``.
-            gallery: Gallery split when ``data`` is the query split.
+            data: Images to evaluate. The protocol splits them into query and
+                gallery images; when ``gallery`` is provided, they are the query
+                images.
+            gallery: Gallery images for the queries in ``data``. When provided,
+                both splits are used as given; re-association builds its own
+                gallery and rejects one.
             protocol: Evaluation protocol. Defaults to
                 :class:`~reid.eval.RetrievalProtocol`.
             batch_size: Images per embedding batch.

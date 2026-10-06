@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from reid.architectures import list_architectures
 from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50, list_aliases
-from reid.data import ReIDDataset, ReIDSplit, load_market1501, load_msmt17
+from reid.data import ReIDSplit, load_identity_folders, load_market1501, load_msmt17
 from reid.eval import (
     ReassociationProtocol,
     ReIDResult,
@@ -30,7 +30,6 @@ __all__ = [
     "DEFAULT_MODEL",
     "FASTREID_MOT17_SBS50",
     "Interpolation",
-    "ReIDDataset",
     "ReassociationProtocol",
     "ReIDModel",
     "ReIDPreprocessing",
@@ -39,6 +38,7 @@ __all__ = [
     "RetrievalProtocol",
     "list_aliases",
     "list_architectures",
+    "load_identity_folders",
     "load_market1501",
     "load_msmt17",
 ]

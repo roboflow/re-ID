@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import torch
 
-from reid import ReIDDataset, ReIDModel
+from reid import ReIDModel, load_identity_folders
 from reid.data import ReIDSplit
 from reid.eval import ReassociationProtocol, RetrievalProtocol
 from reid.preprocessing import ReIDPreprocessing
@@ -37,7 +37,7 @@ def _model_with(vectors: dict[str, list[float]]) -> ReIDModel:
 def test_real_model_evaluates_a_dataset_and_its_explicit_splits(tmp_path: Path) -> None:
     """The default protocol, custom sampling, and explicit splits all run through a real encoder."""
     write_identity_crops(tmp_path, num_ids=6, num_per=6)
-    data = ReIDDataset(tmp_path)
+    data = load_identity_folders(tmp_path)
     model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
 
     # One query per identity by default, two when asked: 6 identities give 6 and 12 queries.
@@ -73,7 +73,7 @@ def test_reassociation_scores_mot_crops(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(model, "extract_embeddings_from_paths", embeddings)
 
     result = model.evaluate(
-        ReIDDataset(tmp_path), protocol=ReassociationProtocol(gap_frames=30, query_stride=60), verbose=False
+        load_identity_folders(tmp_path), protocol=ReassociationProtocol(gap_frames=30, query_stride=60), verbose=False
     )
 
     assert result.metrics == {"rank1": 100.0, "mrr": 100.0}

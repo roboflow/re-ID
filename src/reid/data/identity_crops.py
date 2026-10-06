@@ -7,7 +7,7 @@
 """Load and partition per-identity crop folders into ``ReIDSplit`` objects.
 
 The canonical flow is ``source format -> loader -> ReIDSplit -> optional
-partitioning -> Dataset/evaluator``. :class:`ReIDDataset` turns an
+partitioning -> Dataset/evaluator``. :func:`load_identity_folders` turns an
 identity-folder layout (``<root>/<identity>/<crop>.jpg``) into a single
 ``ReIDSplit``. The split builders below then cut a split into query/gallery
 (and optional train) splits; they never touch the filesystem.
@@ -45,13 +45,16 @@ def _iter_identity_crops(root: Path) -> Iterator[list[Path]]:
             yield images
 
 
-def _load_identity_crops(root: str | Path) -> ReIDSplit:
-    """Scan an identity-folder crop dataset into a single :class:`ReIDSplit`.
+def load_identity_folders(root: str | Path) -> ReIDSplit:
+    """Load identity folders into one :class:`ReIDSplit`, scanning the disk once.
 
-    Expects ``<root>/<identity>/<crop>.(jpg|jpeg|png|bmp)``. Identity folders are
-    sorted by name and assigned contiguous person IDs (``0..N-1``). Camera IDs
-    are set to ``-1`` because on-disk crops carry no camera information; the
-    split builders assign synthetic camera IDs where retrieval needs them.
+    Expects ``<root>/<identity>/<image>.(jpg|jpeg|png|bmp)``: tracking crops or
+    any identity-labelled pictures. Identity folders are sorted by name and
+    assigned contiguous person IDs (``0..N-1``). Camera IDs are set to ``-1``
+    because the folders carry no camera information; protocols assign synthetic
+    camera IDs where retrieval needs them. Pass the split to
+    :meth:`reid.ReIDModel.evaluate`, whose protocol picks the query and gallery
+    images from it.
 
     Args:
         root: Dataset root with one subdirectory per identity.
@@ -100,7 +103,7 @@ def _retrieval_split(
     not tied to filename order.
 
     Args:
-        split: A crop split, typically ``ReIDDataset(root).split``.
+        split: A crop split, typically from :func:`load_identity_folders`.
         queries_per_id: Query crops taken from each eligible identity.
         min_crops: Minimum crops required for an identity to be eligible.
         seed: Shuffle seed for per-identity query selection.
@@ -210,50 +213,3 @@ def _subset_split(
         pids=pids,
         camids=np.full(len(indices), camid, dtype=np.int32),
     )
-
-
-class ReIDDataset:
-    """An identity-folder image dataset, scanned once.
-
-    An index of identity-labelled images, not a ``torch.utils.data.Dataset``: pass
-    it to :meth:`reid.ReIDModel.evaluate`, or read ``split`` for its image paths
-    and person IDs.
-
-    Images may be tracking crops or any identity-labelled pictures; only the
-    ``<root>/<identity>/<image>`` layout matters. The filesystem scan happens once,
-    in the constructor, so hold one instance and reuse it; evaluation protocols
-    select query and gallery images from it.
-
-    Benchmark datasets are not covered: Market-1501 and MSMT17 ship their own
-    query/gallery definitions, so load those with
-    :func:`~reid.data.load_market1501` / :func:`~reid.data.load_msmt17` and pass
-    the two splits explicitly rather than re-deriving them here.
-
-    Args:
-        root: Dataset root holding one folder per identity.
-    """
-
-    def __init__(self, root: str | Path) -> None:
-        self._root = Path(root)
-        self._split = _load_identity_crops(self._root)
-
-    @property
-    def root(self) -> Path:
-        """Folder the dataset was scanned from."""
-        return self._root
-
-    @property
-    def split(self) -> ReIDSplit:
-        """Every image found, with its person ID and camera ID."""
-        return self._split
-
-    def __len__(self) -> int:
-        return len(self.split)
-
-    @property
-    def num_identities(self) -> int:
-        """Distinct identities in the folder."""
-        return len(set(self.split.pids.tolist()))
-
-    def __repr__(self) -> str:
-        return f"ReIDDataset({str(self.root)!r}, images={len(self)}, identities={self.num_identities})"

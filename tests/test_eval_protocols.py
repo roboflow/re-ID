@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from reid.data import ReIDDataset, ReIDSplit
+from reid.data import ReIDSplit, load_identity_folders
 from reid.eval import EvaluationProtocol, ReassociationProtocol, RetrievalProtocol
 from reid.eval.metrics import ReIDMetrics
 
@@ -44,7 +44,7 @@ class TestRetrievalSelection:
     def test_cuts_each_identity_into_query_and_gallery(self, tmp_path: Path) -> None:
         write_identity_crops(tmp_path, num_ids=8, num_per=4)
 
-        query, gallery, _, _ = RetrievalProtocol().build_query_gallery(ReIDDataset(tmp_path))
+        query, gallery, _, _ = RetrievalProtocol().build_query_gallery(load_identity_folders(tmp_path))
 
         assert len(query) == 8  # one query per identity
         assert len(gallery) == 8 * 3
@@ -56,11 +56,11 @@ class TestRetrievalSelection:
     def test_same_seed_selects_the_same_images(self, tmp_path: Path) -> None:
         """Models and training epochs scored with one protocol see identical inputs."""
         write_identity_crops(tmp_path, num_ids=6, num_per=5)
-        dataset = ReIDDataset(tmp_path)
+        crops = load_identity_folders(tmp_path)
 
-        query, _, _, _ = RetrievalProtocol(seed=7).build_query_gallery(dataset)
-        same_seed, _, _, _ = RetrievalProtocol(seed=7).build_query_gallery(dataset)
-        other_seed, _, _, _ = RetrievalProtocol(seed=8).build_query_gallery(dataset)
+        query, _, _, _ = RetrievalProtocol(seed=7).build_query_gallery(crops)
+        same_seed, _, _, _ = RetrievalProtocol(seed=7).build_query_gallery(crops)
+        other_seed, _, _, _ = RetrievalProtocol(seed=8).build_query_gallery(crops)
 
         assert same_seed.image_paths == query.image_paths
         assert other_seed.image_paths != query.image_paths
@@ -68,7 +68,7 @@ class TestRetrievalSelection:
     def test_min_crops_defaults_to_one_more_than_queries_per_id(self, tmp_path: Path) -> None:
         write_identity_crops(tmp_path, num_ids=1, num_per=4)
 
-        query, gallery, _, _ = RetrievalProtocol(queries_per_id=3).build_query_gallery(ReIDDataset(tmp_path))
+        query, gallery, _, _ = RetrievalProtocol(queries_per_id=3).build_query_gallery(load_identity_folders(tmp_path))
 
         assert len(query) == 3  # 4 crops meet the default min_crops of 3 + 1
         assert len(gallery) == 1
@@ -77,7 +77,7 @@ class TestRetrievalSelection:
         write_identity_crops(tmp_path, num_ids=3, num_per=4)
         write_identity_crops(tmp_path, num_ids=1, num_per=1, prefix="single")  # one crop cannot be query and gallery
 
-        query, _, _, _ = RetrievalProtocol().build_query_gallery(ReIDDataset(tmp_path))
+        query, _, _, _ = RetrievalProtocol().build_query_gallery(load_identity_folders(tmp_path))
 
         assert len(query) == 3
 
@@ -85,7 +85,7 @@ class TestRetrievalSelection:
         write_identity_crops(tmp_path, num_ids=3, num_per=2)
 
         with pytest.raises(ValueError, match="No identity has >= 3 crops"):
-            RetrievalProtocol(min_crops=3).build_query_gallery(ReIDDataset(tmp_path))
+            RetrievalProtocol(min_crops=3).build_query_gallery(load_identity_folders(tmp_path))
 
 
 class TestReportedMetrics:
@@ -130,13 +130,9 @@ class TestInputs:
     """What ``build_query_gallery`` accepts as data and gallery."""
 
     @pytest.mark.parametrize("protocol_class", [RetrievalProtocol, ReassociationProtocol])
-    def test_folder_paths_must_be_wrapped_in_a_dataset(self, protocol_class: type[EvaluationProtocol]) -> None:
-        with pytest.raises(TypeError, match="needs a ReIDDataset.*got str"):
+    def test_folder_paths_must_be_loaded_first(self, protocol_class: type[EvaluationProtocol]) -> None:
+        with pytest.raises(TypeError, match="needs a ReIDSplit.*got str"):
             protocol_class().build_query_gallery("crops")
-
-    def test_a_split_alone_needs_a_gallery_split(self) -> None:
-        with pytest.raises(TypeError, match="Derived retrieval needs a ReIDDataset, got ReIDSplit"):
-            RetrievalProtocol().build_query_gallery(_ONE_IMAGE)
 
     def test_an_explicit_gallery_needs_a_query_split(self) -> None:
         with pytest.raises(TypeError, match="explicit gallery"):

@@ -62,14 +62,14 @@ For every way to load a model, including saved models, Hugging Face repositories
 `model.evaluate` scores a model on benchmark splits or on your own identity folders, one folder of crops per person.
 
 ```python
-from reid import ReIDDataset, ReIDModel, load_market1501
+from reid import ReIDModel, load_identity_folders, load_market1501
 
 model = ReIDModel.from_pretrained()
 
 query, gallery = load_market1501("/path/to/Market-1501")
 result = model.evaluate(query, gallery)
 
-result = model.evaluate(ReIDDataset("/path/to/identity/folders"))
+result = model.evaluate(load_identity_folders("/path/to/identity/folders"))
 result.metrics
 # {'map': ..., 'rank1': ..., 'rank5': ..., 'rank10': ..., 'minp': ...}
 ```

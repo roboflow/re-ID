@@ -13,11 +13,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 from reid.checks import validate_candidate_mask, validate_positive_int
-from reid.data.identity_crops import (
-    ReIDDataset,
-    _check_query_params,
-    _retrieval_split,
-)
+from reid.data.identity_crops import _check_query_params, _retrieval_split
 from reid.data.reassociation import _build_reassociation_candidates
 from reid.data.splits import ReIDSplit
 from reid.eval.metrics import ReIDMetrics, _validate_distance
@@ -49,14 +45,18 @@ class EvaluationProtocol(ABC):
 
     def build_query_gallery(
         self,
-        data: ReIDDataset | ReIDSplit,
+        data: ReIDSplit,
         gallery: ReIDSplit | None = None,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         """Pick the query images, gallery images, and candidates to compare.
 
         Args:
-            data: Identity-folder dataset, or a query split with ``gallery``.
-            gallery: Gallery split when ``data`` is the query split.
+            data: Images to evaluate. The protocol splits them into query and
+                gallery images; when ``gallery`` is provided, they are the query
+                images.
+            gallery: Gallery images for the queries in ``data``. When provided,
+                both splits are used as given; re-association builds its own
+                gallery and rejects one.
 
         Returns:
             ``(query, gallery, candidate_mask, metadata)``. ``candidate_mask``
@@ -76,7 +76,7 @@ class EvaluationProtocol(ABC):
     @abstractmethod
     def _build_query_gallery(
         self,
-        data: ReIDDataset | ReIDSplit,
+        data: ReIDSplit,
         gallery: ReIDSplit | None = None,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         """Build this protocol's query, gallery, candidate mask, and metadata."""
@@ -126,7 +126,7 @@ class RetrievalProtocol(EvaluationProtocol):
 
     def _build_query_gallery(
         self,
-        data: ReIDDataset | ReIDSplit,
+        data: ReIDSplit,
         gallery: ReIDSplit | None = None,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         if gallery is not None:
@@ -136,10 +136,13 @@ class RetrievalProtocol(EvaluationProtocol):
                 raise ValueError("Crop derivation settings only apply when the partition is derived.")
             query, gallery_split, source, parameters = data, gallery, "explicit", {}
         else:
-            if not isinstance(data, ReIDDataset):
-                raise TypeError(f"Derived retrieval needs a ReIDDataset, got {type(data).__name__}.")
+            if not isinstance(data, ReIDSplit):
+                raise TypeError(
+                    f"Derived retrieval needs a ReIDSplit, got {type(data).__name__}; "
+                    "load identity folders with reid.load_identity_folders."
+                )
             parameters = {"queries_per_id": self.queries_per_id, "min_crops": self.min_crops, "seed": self.seed}
-            query, gallery_split = _retrieval_split(data.split, **parameters)
+            query, gallery_split = _retrieval_split(data, **parameters)
             source = "derived"
         metadata = {
             "protocol": self.name,
@@ -184,15 +187,18 @@ class ReassociationProtocol(EvaluationProtocol):
 
     def _build_query_gallery(
         self,
-        data: ReIDDataset | ReIDSplit,
+        data: ReIDSplit,
         gallery: ReIDSplit | None = None,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
         if gallery is not None:
             raise ValueError("ReassociationProtocol constructs its own gallery; gallery must be omitted.")
-        if not isinstance(data, ReIDDataset):
-            raise TypeError(f"Re-association needs a ReIDDataset of MOT crops, got {type(data).__name__}.")
+        if not isinstance(data, ReIDSplit):
+            raise TypeError(
+                f"Re-association needs a ReIDSplit of MOT crops, got {type(data).__name__}; "
+                "load the crops with reid.load_identity_folders."
+            )
         query, gallery_split, mask, counts = _build_reassociation_candidates(
-            data.split, gap_frames=self.gap_frames, query_stride=self.query_stride
+            data, gap_frames=self.gap_frames, query_stride=self.query_stride
         )
         skipped = (
             counts["skipped_missing_future"]

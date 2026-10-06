@@ -4,7 +4,7 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""ReID query/gallery split containers and benchmark-specific junk-pid rules."""
+"""The ReID split: image paths with their person and camera IDs."""
 
 from __future__ import annotations
 
@@ -15,13 +15,19 @@ import numpy as np
 
 @dataclass(frozen=True)
 class ReIDSplit:
-    """Query or gallery split: image paths, person IDs, and camera IDs.
+    """Holds one split: its image paths and each image's person and camera IDs.
 
-    A split cannot be changed once built; to filter or relabel one, build a new
-    split, or use ``dataclasses.replace``.
+    A split is a query split, a gallery split, or a full dataset that an
+    evaluation protocol divides into query and gallery. A split cannot be
+    changed once built; to filter or relabel one, build a new split, or use
+    ``dataclasses.replace``.
 
-    ``gallery_junk_pids`` controls which gallery person IDs are excluded from
-    ranking during retrieval evaluation.
+    Attributes:
+        image_paths: Path of each image, ``N`` in total.
+        pids: Person ID of each image. Shape ``(N,)``.
+        camids: Camera ID of each image. Shape ``(N,)``.
+        gallery_junk_pids: Person IDs whose gallery images are ignored when
+            ranking, such as Market-1501's bad detections (``-1``).
     """
 
     image_paths: list[str]

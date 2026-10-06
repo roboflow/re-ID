@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from reid.data import ReIDDataset
+from reid.data import load_identity_folders
 from reid.eval import ReassociationProtocol
 from reid.eval.metrics import _compute_reid_metrics
 
@@ -36,8 +36,10 @@ def _track_and_frame(path: str) -> tuple[int, int]:
 def test_candidates_are_deterministic_and_stay_in_their_sequence(tmp_path: Path) -> None:
     for sequence in ("seq_B", "seq_A"):  # underscores inside sequence names must survive parsing
         _write_crops(tmp_path, sequence, track_ids=(2, 1), frames=(0, 30))
-    query, gallery, mask, _ = ReassociationProtocol().build_query_gallery(ReIDDataset(tmp_path))
-    again_query, again_gallery, again_mask, _ = ReassociationProtocol().build_query_gallery(ReIDDataset(tmp_path))
+    query, gallery, mask, _ = ReassociationProtocol().build_query_gallery(load_identity_folders(tmp_path))
+    again_query, again_gallery, again_mask, _ = ReassociationProtocol().build_query_gallery(
+        load_identity_folders(tmp_path)
+    )
     assert query.image_paths == again_query.image_paths
     assert gallery.image_paths == again_gallery.image_paths
     assert mask.tolist() == again_mask.tolist()
@@ -59,7 +61,7 @@ def test_skipped_queries_are_counted_by_reason(tmp_path: Path) -> None:
     _write_crops(tmp_path, "S", track_ids=(1, 2, 3), frames=(0,))
     _write_crops(tmp_path, "S", track_ids=(1, 2), frames=(30,))
     _write_crops(tmp_path, "S", track_ids=(3,), frames=(60,))
-    query, _, _, metadata = ReassociationProtocol(query_stride=30).build_query_gallery(ReIDDataset(tmp_path))
+    query, _, _, metadata = ReassociationProtocol(query_stride=30).build_query_gallery(load_identity_folders(tmp_path))
     # With a 30-frame gap: at frame 0, tracks 1 and 2 reappear at frame 30 and are scored, while track 3 does not
     # reappear (absent positive). At frame 30, tracks 1 and 2 face a single person at frame 60 (insufficient
     # candidates). At frame 60, track 3 has no frame 90 at all (missing future).
@@ -78,7 +80,7 @@ def test_each_query_is_compared_with_the_people_exactly_gap_frames_later(tmp_pat
     _write_crops(tmp_path, "S", track_ids=(1, 2), frames=(0, 29, 30, 31, 60, 90))
 
     query, gallery, mask, _ = ReassociationProtocol(gap_frames=30, query_stride=60).build_query_gallery(
-        ReIDDataset(tmp_path)
+        load_identity_folders(tmp_path)
     )
 
     # (track, frame) of each query, mapped to the (track, frame) of the crops it is compared with.
@@ -99,7 +101,7 @@ def test_each_query_is_compared_with_the_people_exactly_gap_frames_later(tmp_pat
 def test_mrr_gives_partial_credit_to_matches_below_rank_1(tmp_path: Path) -> None:
     """Two queries: one finds its match first, the other second, so rank-1 is 50% and MRR is (1 + 1/2) / 2 = 75%."""
     _write_crops(tmp_path, "S", track_ids=(1, 2), frames=(0, 30))
-    query, gallery, mask, _ = ReassociationProtocol().build_query_gallery(ReIDDataset(tmp_path))
+    query, gallery, mask, _ = ReassociationProtocol().build_query_gallery(load_identity_folders(tmp_path))
 
     assert [_track_and_frame(path) for path in query.image_paths] == [(1, 0), (2, 0)]
     assert [_track_and_frame(path) for path in gallery.image_paths] == [(1, 30), (2, 30)]
@@ -128,14 +130,14 @@ def test_mrr_gives_partial_credit_to_matches_below_rank_1(tmp_path: Path) -> Non
 def test_no_scorable_query_raises(tmp_path: Path) -> None:
     _write_crops(tmp_path, "S", track_ids=(1, 2), frames=(0,))
     with pytest.raises(ValueError, match="No re-association queries"):
-        ReassociationProtocol().build_query_gallery(ReIDDataset(tmp_path))
+        ReassociationProtocol().build_query_gallery(load_identity_folders(tmp_path))
 
 
 def test_duplicate_frame_record_rejected(tmp_path: Path) -> None:
     _write_crops(tmp_path, "S", track_ids=(1, 2), frames=(0, 30))
     (tmp_path / "S_1" / "S_000000.png").touch()  # a second crop of track 1 at frame 0
     with pytest.raises(ValueError, match="Duplicate"):
-        ReassociationProtocol().build_query_gallery(ReIDDataset(tmp_path))
+        ReassociationProtocol().build_query_gallery(load_identity_folders(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -151,4 +153,4 @@ def test_malformed_names_rejected(tmp_path: Path, directory: str, filename: str,
     (tmp_path / directory).mkdir()
     (tmp_path / directory / filename).touch()
     with pytest.raises(ValueError, match=match):
-        ReassociationProtocol().build_query_gallery(ReIDDataset(tmp_path))
+        ReassociationProtocol().build_query_gallery(load_identity_folders(tmp_path))

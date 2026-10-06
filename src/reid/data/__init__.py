@@ -9,12 +9,12 @@
 from __future__ import annotations
 
 from reid.data.benchmarks import load_market1501, load_msmt17
-from reid.data.identity_crops import ReIDDataset
+from reid.data.identity_crops import load_identity_folders
 from reid.data.splits import ReIDSplit
 
 __all__ = [
-    "ReIDDataset",
     "ReIDSplit",
+    "load_identity_folders",
     "load_market1501",
     "load_msmt17",
 ]

@@ -74,13 +74,13 @@ print(result.metrics)
 print(result.num_queries)
 ```
 
-To evaluate your own images, either arrange them like Market-1501 or MSMT17 and load them with `load_market1501` or `load_msmt17`, or put them in identity folders, one per person (`<root>/<identity>/<image>.jpg`). For identity folders, `RetrievalProtocol` builds the split: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
+To evaluate your own images, either arrange them like Market-1501 or MSMT17 and load them with `load_market1501` or `load_msmt17`, or put them in identity folders, one per person (`<root>/<identity>/<image>.jpg`), and load them with `load_identity_folders`. `RetrievalProtocol` then splits them: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
 
 ```python
-from reid import ReIDDataset
+from reid import load_identity_folders
 from reid.eval import RetrievalProtocol
 
-data = ReIDDataset("/path/to/identity/folders")
+data = load_identity_folders("/path/to/identity/folders")
 
 result = model.evaluate(data, protocol=RetrievalProtocol(queries_per_id=2, min_crops=3, seed=7))
 ```
@@ -96,13 +96,13 @@ Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="eucl
 [Re-association](#retrieval-or-re-association) evaluates crops cut from video. `generate_mot_patches` builds its input from sequences with MOT-format ground truth (a `gt/gt.txt` file and an `img1/` frame folder per sequence): one folder per identity (`<sequence>_<track_id>`) with one crop per box, named by frame.
 
 ```python
-from reid import ReIDDataset
+from reid import load_identity_folders
 from reid.data.mot import generate_mot_patches
 from reid.eval import ReassociationProtocol
 
 generate_mot_patches(mot_root="/path/to/dancetrack/val", output_dir="/path/to/crops", split="full")
 
-crops = ReIDDataset("/path/to/crops")
+crops = load_identity_folders("/path/to/crops")
 result = model.evaluate(crops, protocol=ReassociationProtocol(gap_frames=30, query_stride=60))
 print(result.metrics)
 ```
