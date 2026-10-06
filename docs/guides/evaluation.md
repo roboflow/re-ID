@@ -4,7 +4,64 @@ title: Evaluate a ReID model
 
 # Evaluate a model
 
-`ReIDModel.evaluate` measures how accurately a model matches identities. Retrieval compares each query image with a gallery of candidate images and ranks them by appearance similarity. Market-1501 and MSMT17 provide their own query and gallery splits; pass these directly to the model.
+`ReIDModel.evaluate` measures how accurately a model matches people. [How evaluation works](#how-evaluation-works) explains what is compared; the sections after it show the code.
+
+## How evaluation works
+
+### Query and gallery
+
+Re-ID works as a search. The crop of the person you want to find is the **query**, and the crops you search are the **gallery**. The model ranks the gallery by the distance of each crop to the query, closest first. A good model puts the query's person at the top.
+
+![A query player, a gallery of 12 crops from other clips, and the same crops ranked by similarity to the query](../assets/query-gallery.webp)
+
+<p align="center" style="margin-top: -0.4em;"><small>One query from a SoccerNet clip, ranked by the default model against 12 crops from the game's other clips. The query's person lands at ranks 1, 2, 4, and 7. Which images the gallery holds depends on the evaluation setup.</small></p>
+
+### Query set and gallery set
+
+To measure a model, you repeat that search for many people. The test images are split into a **query set** and a **gallery set**: Market-1501 and MSMT17 ship this split, and for your own identity folders `RetrievalProtocol` takes one query image of each person with at least two images and puts their other images in the gallery set. Each query is ranked against the whole gallery set, and the [metrics](../learn/metrics.md) summarize how high the correct matches land.
+
+![A query set with one image per person, and a gallery set with the other images of those people and of everyone else](../assets/query-gallery-sets.webp)
+
+<p align="center" style="margin-top: -0.4em;"><small><code>RetrievalProtocol</code> with its defaults on 25 SoccerNet identity folders: one query for each of the 21 people with at least two images, ranked against their other 124 images.</small></p>
+
+Whether a gallery image is a match, a distractor, or junk is decided for each query, so the same image can count differently for two queries. An image of person 5 from camera 1 is junk for a query of person 5 from camera 1, and a match for a query of person 5 from camera 2.
+
+| Term       | Meaning                                                                                         |
+| :--------- | :---------------------------------------------------------------------------------------------- |
+| Match      | Gallery image of the query's person from a different camera                                     |
+| Distractor | Gallery image of anyone else; it counts as a wrong candidate                                    |
+| Junk       | Gallery image ignored when ranking: the query's person from the same camera, or a bad detection |
+
+Junk entries are removed from the query's ranked list before scoring. They never count as hits or as wrong candidates that push a hit down the ranking. Same-camera images of the query's person are junk because the goal is to find the person in other cameras.
+
+### Distance
+
+The distance between two embeddings can be computed in more than one way. Both protocols take a `distance` argument, as in `RetrievalProtocol(distance=...)`:
+
+| `distance`           | Behavior                                        |
+| :------------------- | :---------------------------------------------- |
+| `"cosine"` (default) | Cosine distance after L2-normalizing embeddings |
+| `"euclidean"`        | Euclidean distance on the raw embedding vectors |
+
+Rankings, and so metrics, change with the distance, so use the same one for every run you compare, and the one a published table used when you compare against it.
+
+```python
+from reid.eval import RetrievalProtocol
+
+result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"))
+print(result.metrics)
+```
+
+### Retrieval or re-association
+
+Evaluate a model the way you will use it: the queries and gallery should look like the comparisons the model makes in your application.
+
+- **Retrieval** asks whether the model finds a person in other cameras. Market-1501 and MSMT17 measure this, and `RetrievalProtocol` does it on your own identity folders.
+- **Re-association** asks whether the model finds a person again a number of frames later in the same video. When re-ID helps a tracker such as [Roboflow Trackers](https://github.com/roboflow/trackers) associate people across frames, this is the comparison it makes. `ReassociationProtocol` takes a person's crop at one frame as the query, ranks the people present in the same sequence a set number of frames later, and records the rank of that same person. Retrieval on the same crops would overstate this ability, because a query's closest gallery images are usually the same person a few frames apart.
+
+## Evaluate on a benchmark or your own images
+
+Market-1501 and MSMT17 provide their own query and gallery splits; pass these directly to the model.
 
 ```python
 from reid import ReIDModel, load_market1501
@@ -17,7 +74,7 @@ print(result.metrics)
 print(result.num_queries)
 ```
 
-Your own images usually come without such splits. If they are in identity folders, one per person (`<root>/<identity>/<image>.jpg`), `RetrievalProtocol` builds the split: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
+To evaluate your own images, either arrange them like Market-1501 or MSMT17 and load them with `load_market1501` or `load_msmt17`, or put them in identity folders, one per person (`<root>/<identity>/<image>.jpg`). For identity folders, `RetrievalProtocol` builds the split: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
 
 ```python
 from reid import ReIDDataset
@@ -36,9 +93,7 @@ Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="eucl
 
 ## Crops from video
 
-Evaluate a model the way you will use it: the queries and gallery should look like the comparisons the model makes in your application. When re-ID helps a tracker such as [Roboflow Trackers](https://github.com/roboflow/trackers) associate people across frames, the model has to recognize a person again among the people visible a number of frames later. `ReassociationProtocol` measures that. For a person's crop at one frame, the query, it takes the people present in the same sequence a set number of frames later, ranks them by similarity to the query, and records the rank of that same person. Retrieval on the same crops would overstate this ability, because a query's closest gallery images are usually the same person a few frames apart.
-
-`generate_mot_patches` builds its input from sequences with MOT-format ground truth (a `gt/gt.txt` file and an `img1/` frame folder per sequence): one folder per identity (`<sequence>_<track_id>`) with one crop per box, named by frame.
+[Re-association](#retrieval-or-re-association) evaluates crops cut from video. `generate_mot_patches` builds its input from sequences with MOT-format ground truth (a `gt/gt.txt` file and an `img1/` frame folder per sequence): one folder per identity (`<sequence>_<track_id>`) with one crop per box, named by frame.
 
 ```python
 from reid import ReIDDataset

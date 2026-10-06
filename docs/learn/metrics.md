@@ -5,14 +5,12 @@ description: Understand Rank-k, mAP, mINP, and MRR and use them to evaluate ReID
 
 # ReID Metrics
 
-ReID metrics measure how well a model finds images of the same person among candidate images. Standard retrieval benchmarks such as Market-1501 and MSMT17 test matching across cameras. Re-association evaluation tests matching within a sequence across a specified frame gap.
+ReID metrics measure how well a model finds images of the same person among candidate images. Standard retrieval benchmarks such as Market-1501 and MSMT17 test matching across cameras. Re-association evaluation tests matching within a sequence across a specified frame gap. [How evaluation works](../guides/evaluation.md#how-evaluation-works) explains how re-ID test data is split into query and gallery images, and which gallery images count as matches.
 
 **What you'll learn:**
 
-- How queries are compared with gallery images, and which gallery images are ignored
 - What Rank-k (CMC), mAP, mINP, and MRR measure, and how each is computed
 - How to evaluate a model with `ReIDModel.evaluate`
-- When to use cosine vs Euclidean distance
 
 ---
 
@@ -41,55 +39,9 @@ The default model was trained on MSMT17, so these Market-1501 numbers measure cr
 
 ---
 
-## Evaluation setup
-
-### Retrieval
-
-In standard [Market-1501](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html) and [MSMT17](https://arxiv.org/abs/1711.08565) evaluation, the model ranks **gallery** images by their distance to each **query** image. A valid match shows the same person from a different camera.
-
-| Term       | Meaning                                                                                         |
-| :--------- | :---------------------------------------------------------------------------------------------- |
-| Query      | Image of the person you want to find                                                            |
-| Gallery    | Candidate crops to search                                                                       |
-| Match      | Gallery image of the query's person from a different camera                                     |
-| Distractor | Gallery image of anyone else; it counts as a wrong candidate                                    |
-| Junk       | Gallery image ignored when ranking: the query's person from the same camera, or a bad detection |
-
-Junk entries are removed from the ranked list before scoring. They never count as hits or as wrong candidates that push a hit down the ranking.
-
-**Same-(pid, camid) junk.** Standard single-query Market / MSMT protocol: a gallery crop of the same person from the same camera is discarded. Cross-camera retrieval is the goal.
-
-**Market-1501 labels.** Besides its people, numbered 1 to 1501, the Market-1501 gallery has two labels: `pid=0` marks background images, which stay in the gallery as distractors, and `pid=-1` marks bad detections, which `load_market1501` treats as junk (`gallery_junk_pids={-1}`). torchreid scores Market-1501 the same way. MSMT17 has no such labels.
-
-### Re-association
-
-When using ReID for object tracking with [Trackers](https://github.com/roboflow/trackers), measure your model the way the tracker will use it. For short-term association, randomly picking frames throughout the whole video might not reflect how your ReID model is queried during real tracking.
-
-`ReassociationProtocol` compares a query image only with the people present at `query_frame + gap_frames` in the same sequence, so each query has exactly one correct match among its candidates. For protocol configuration and the distinction from running a tracker, see the [evaluation guide](../guides/evaluation.md). Measure tracking outcomes separately with [Trackers](https://github.com/roboflow/trackers).
-
-### Distance
-
-`RetrievalProtocol(distance=...)` chooses how the model's embeddings are compared to rank candidate matches.
-
-| `distance`           | Behavior                                        |
-| :------------------- | :---------------------------------------------- |
-| `"cosine"` (default) | Cosine distance after L2-normalizing embeddings |
-| `"euclidean"`        | Euclidean distance on the raw embedding vectors |
-
-The torchreid model zoo reports OSNet x1.0 same-domain numbers with **euclidean** distance (94.2 / 82.6 on Market-1501). Use the same distance as the published table you compare against, and do not mix distance choices across runs you want to compare.
-
-```python
-from reid.eval import RetrievalProtocol
-
-result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"))
-print(result.metrics)
-```
-
----
-
 ## Metrics
 
-For each query, the model compares the query's embedding with every gallery image's embedding using the chosen [distance](#distance), and sorts the gallery from closest to farthest. An image's **rank** is its position in that list: rank 1 is the closest.
+For each query, the model compares the query's embedding with every gallery image's embedding using the chosen [distance](../guides/evaluation.md#distance), and sorts the gallery from closest to farthest. An image's **rank** is its position in that list: rank 1 is the closest.
 
 Every metric is computed on each query's ranking after junk filtering, averaged over the queries that have at least one valid match, and reported as a percentage. The notation used below:
 
@@ -135,13 +87,15 @@ mINP penalizes models that bury hard positive gallery images deep in the ranking
 
 ### MRR
 
-**Mean reciprocal rank** ([definition](https://en.wikipedia.org/wiki/Mean_reciprocal_rank)) is what re-association reports next to Rank-1. With $r_q$ being the rank of the single correct match among the query's candidates:
+**Mean reciprocal rank** ([definition](https://en.wikipedia.org/wiki/Mean_reciprocal_rank)) is what re-association reports next to Rank-1. Re-association ranks each query against the people visible at one later frame, `gap_frames` after the query, as a tracker does when it looks for a person it lost. A person appears at most once in a frame, so each query has exactly one correct match. With $r_q$ being the rank of that match among the query's candidates:
 
 $$
 \mathrm{MRR} = \frac{1}{|Q|} \sum_{q \in Q} \frac{1}{r_q}
 $$
 
-First place contributes 1, second place 1/2, and so on. With exactly one correct match per query, average precision equals the reciprocal rank, so MRR is the mAP of the re-association ranking.
+First place contributes 1, second place 1/2, and so on. Rank-1 only says whether the right person comes first. MRR also gives credit when the right person comes second or third, where a tracker's motion and box overlap can still settle the choice, and almost none when the right person is far down the list.
+
+With exactly one correct match, average precision equals the reciprocal rank, so MRR is also the mAP of the re-association ranking, and mINP is the same number too. mAP and mINP only differ from MRR when a query has several correct matches, which is why retrieval reports them instead.
 
 ### Comparing the metrics
 
@@ -172,6 +126,8 @@ print(result.metrics)
 ```
 
 The model zoo reports Rank-1 94.2 and mAP 82.6 for this checkpoint.
+
+**Market-1501 labels.** Besides its people, numbered 1 to 1501, the Market-1501 gallery has two labels: `pid=0` marks background images, which stay in the gallery as distractors, and `pid=-1` marks bad detections, which `load_market1501` treats as junk (`gallery_junk_pids={-1}`). torchreid scores Market-1501 the same way. MSMT17 has no such labels.
 
 ### MSMT17
 
