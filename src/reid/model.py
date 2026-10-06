@@ -111,8 +111,9 @@ class ReIDModel:
 
     def to(self, device: str | torch.device) -> ReIDModel:
         """Move the encoder to ``device`` and return self, for chaining."""
-        self._device = _select_device(device) if isinstance(device, str) else device
-        self._backbone.to(self._device)
+        target = _select_device(device) if isinstance(device, str) else device
+        self._backbone.to(target)
+        self._device = target
         return self
 
     @property

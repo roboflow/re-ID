@@ -567,3 +567,15 @@ class TestModelToDevice:
         assert returned is model
         assert model.device == torch.device("meta")
         assert all(parameter.device.type == "meta" for parameter in model._backbone.parameters())
+
+    def test_failed_move_keeps_the_recorded_device(self) -> None:
+        class Unmovable(torch.nn.Linear):
+            def to(self, *args: object, **kwargs: object) -> torch.nn.Module:
+                raise RuntimeError("cannot move")
+
+        model = ReIDModel(backbone=Unmovable(4, 4), device=torch.device("cpu"), preprocessing=ReIDPreprocessing())
+
+        with pytest.raises(RuntimeError, match="cannot move"):
+            model.to("meta")
+
+        assert model.device == torch.device("cpu")
