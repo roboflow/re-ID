@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from safetensors.torch import load_file, save_file
+from torchvision.transforms import Compose, Normalize, Resize, ToTensor
 
 from reid import ReIDModel
 from reid.architectures import build_architecture, default_preprocessing_for_architecture
@@ -39,6 +40,8 @@ from reid.catalog import (
 )
 from reid.loaders import load_state_dict, resolve_weights
 from reid.preprocessing import (
+    IMAGENET_MEAN,
+    IMAGENET_STD,
     LETTERBOX_PAD_VALUE,
     Interpolation,
     ReIDPreprocessing,
@@ -67,14 +70,21 @@ def _assert_full_load_logged(caplog: pytest.LogCaptureFixture) -> None:
 class TestReIDPreprocessing:
     """Preprocessing geometry, color conversion, and config serialization."""
 
+    def test_crop_transform_matches_torchreid(self) -> None:
+        """OSNet was trained and benchmarked with torchreid's test transform."""
+        crop = Image.fromarray(np.random.default_rng(0).integers(0, 255, (300, 140, 3), dtype=np.uint8))
+        torchreid_transform = Compose([Resize((256, 128)), ToTensor(), Normalize(IMAGENET_MEAN, IMAGENET_STD)])
+
+        assert torch.equal(ReIDPreprocessing().build_crop_transform()(crop), torchreid_transform(crop))
+
     def test_stretch_resize_matches_target_size(self) -> None:
-        crop = np.zeros((100, 50, 3), dtype=np.uint8)
-        out = ReIDPreprocessing(input_size=(384, 128), resize_mode="stretch").resize_crop(crop)
+        crop = Image.fromarray(np.zeros((100, 50, 3), dtype=np.uint8))
+        out = np.asarray(ReIDPreprocessing(input_size=(384, 128), resize_mode="stretch").resize_image(crop))
         assert out.shape == (384, 128, 3)
 
     def test_letterbox_preserves_aspect_and_pads(self) -> None:
-        crop = np.full((200, 100, 3), 255, dtype=np.uint8)
-        out = ReIDPreprocessing(input_size=(384, 128), resize_mode="letterbox").resize_crop(crop)
+        crop = Image.fromarray(np.full((200, 100, 3), 255, dtype=np.uint8))
+        out = np.asarray(ReIDPreprocessing(input_size=(384, 128), resize_mode="letterbox").resize_image(crop))
         assert out.shape == (384, 128, 3)
         assert out[0, 0, 0] == 255
         assert out[-1, 0, 0] == LETTERBOX_PAD_VALUE
@@ -534,23 +544,6 @@ def test_fastreid_mot17_alias_loads_with_finite_output() -> None:
     assert embs.shape == (1, 2048)
     assert np.isfinite(embs).all()
     assert model.preprocessing.input_size == (384, 128)
-
-
-class TestCropTransform:
-    """Crops read from disk must be resized exactly like crops cut from a frame."""
-
-    def test_disk_crops_resize_like_frame_crops(self) -> None:
-        preprocessing = ReIDPreprocessing(resize_mode="letterbox", interpolation="bicubic")
-        crop = (np.random.default_rng(0).random((200, 50, 3)) * 255).astype("uint8")
-
-        tensor = preprocessing.build_crop_transform()(Image.fromarray(crop))
-        # Undo the normalisation to compare pixel values; 0.5 allows for rounding to uint8.
-        pixels = (
-            tensor * torch.tensor(preprocessing.std)[:, None, None] + torch.tensor(preprocessing.mean)[:, None, None]
-        ) * 255
-        expected = torch.from_numpy(preprocessing.resize_crop(crop)).permute(2, 0, 1).float()
-
-        assert torch.allclose(pixels, expected, atol=0.5)
 
 
 class TestModelToDevice:

@@ -23,6 +23,7 @@ import numpy as np
 import supervision as sv
 import torch
 import torch.nn as nn
+from PIL import Image as PILImage
 from safetensors.torch import save_file
 from torch.utils.data import DataLoader
 
@@ -99,7 +100,7 @@ class ReIDModel:
         self._backbone.eval()
         self._device = device
         self._preprocessing = preprocessing
-        self._transforms = preprocessing.build_transform()
+        self._crop_transform = preprocessing.build_crop_transform()
         self._architecture = architecture
         logger.info("ReIDModel preprocessing: %s", preprocessing.describe())
 
@@ -306,11 +307,6 @@ class ReIDModel:
             },
         )
 
-    def _crop_to_tensor(self, rgb_crop: np.ndarray) -> torch.Tensor:
-        """Resize an RGB crop to the model input and apply tensor normalisation."""
-        resized = self._preprocessing.resize_crop(rgb_crop)
-        return self._transforms(resized)
-
     def _embed_batch(self, batch: torch.Tensor) -> np.ndarray:
         """Run one pre-collated crop batch through the backbone → ``(B, D)`` float32."""
         batch = batch.to(self._device)
@@ -408,7 +404,7 @@ class ReIDModel:
             safe_box = _clamp_xyxy_to_frame(box, frame_h, frame_w)
             crop = sv.crop_image(image=frame, xyxy=safe_box.astype(int))
             crop = self._preprocessing.prepare_crop_array(crop, from_bgr_frame=True)
-            tensors.append(self._crop_to_tensor(crop))
+            tensors.append(self._crop_transform(PILImage.fromarray(crop)))
 
         all_embeddings: list[np.ndarray] = []
         for start in range(0, len(tensors), batch_size):

@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
-import cv2
 import numpy as np
 from PIL import Image as PILImage
 from torchvision.transforms import Compose, Normalize, ToTensor
@@ -39,10 +38,10 @@ class Interpolation(str, Enum):
     NEAREST = "nearest"
 
 
-_OPENCV_INTERPOLATION = {
-    Interpolation.BILINEAR: cv2.INTER_LINEAR,
-    Interpolation.BICUBIC: cv2.INTER_CUBIC,
-    Interpolation.NEAREST: cv2.INTER_NEAREST,
+_PIL_RESAMPLE = {
+    Interpolation.BILINEAR: PILImage.Resampling.BILINEAR,
+    Interpolation.BICUBIC: PILImage.Resampling.BICUBIC,
+    Interpolation.NEAREST: PILImage.Resampling.NEAREST,
 }
 
 
@@ -85,7 +84,7 @@ class ReIDPreprocessing:
         )
 
     def prepare_crop_array(self, crop: np.ndarray, *, from_bgr_frame: bool) -> np.ndarray:
-        """Normalise crop colour to RGB before :meth:`resize_crop`.
+        """Normalise crop colour to RGB before it is resized.
 
         Video frames from OpenCV / supervision are BGR; when ``to_rgb`` is
         ``True``, they are converted here. On-disk crops loaded via PIL are
@@ -95,55 +94,27 @@ class ReIDPreprocessing:
             return crop[:, :, ::-1].copy()
         return crop
 
-    def resize_crop(self, crop: np.ndarray) -> np.ndarray:
-        """Resize an ``HxWxC`` crop to ``input_size`` using OpenCV.
+    def resize_image(self, image: PILImage.Image) -> PILImage.Image:
+        """Resize a PIL crop to ``input_size`` with PIL, as torchvision's ``Resize`` does.
 
-        ``stretch`` ignores aspect ratio (``cv2.resize`` to the target size).
-        ``letterbox`` preserves aspect ratio and pads with ``pad_value``.
-
-        Returns:
-            Crop resized to ``input_size``.
+        ``stretch`` ignores aspect ratio. ``letterbox`` preserves aspect ratio and
+        pads with ``pad_value``.
         """
-        if crop.size == 0:
-            target_h, target_w = self.input_size
-            channels = crop.shape[2] if crop.ndim == 3 else 1
-            shape = (target_h, target_w, channels) if crop.ndim == 3 else (target_h, target_w)
-            return np.zeros(shape, dtype=crop.dtype)
-
         target_h, target_w = self.input_size
-        interpolation = _OPENCV_INTERPOLATION[self.interpolation]
-
+        resample = _PIL_RESAMPLE[self.interpolation]
         if self.resize_mode == "letterbox":
-            height, width = crop.shape[:2]
-            scale = min(target_h / height, target_w / width)
-            new_w = max(round(width * scale), 1)
-            new_h = max(round(height * scale), 1)
-            resized = cv2.resize(crop, (new_w, new_h), interpolation=interpolation)
-            if crop.ndim == 3:
-                padded = np.full((target_h, target_w, crop.shape[2]), self.pad_value, dtype=crop.dtype)
-            else:
-                padded = np.full((target_h, target_w), self.pad_value, dtype=crop.dtype)
-            padded[:new_h, :new_w] = resized
-            return padded
-
-        return cv2.resize(crop, (target_w, target_h), interpolation=interpolation)
-
-    def resize_transform(self) -> ResizeCrop:
-        """Transform applying :meth:`resize_crop` to an RGB PIL crop."""
-        return ResizeCrop(self)
+            scale = min(target_h / image.height, target_w / image.width)
+            new_w = max(round(image.width * scale), 1)
+            new_h = max(round(image.height * scale), 1)
+            fill = self.pad_value if len(image.getbands()) == 1 else (self.pad_value,) * len(image.getbands())
+            canvas = PILImage.new(image.mode, (target_w, target_h), fill)
+            canvas.paste(image.resize((new_w, new_h), resample), (0, 0))
+            return canvas
+        return image.resize((target_w, target_h), resample)
 
     def build_crop_transform(self) -> Compose:
-        """Full crop pipeline for an RGB PIL image: resize then tensor normalisation."""
-        return Compose([self.resize_transform(), *self.build_transform().transforms])
-
-    def build_transform(self) -> Compose:
-        """Tensor normalisation for a crop already at ``input_size`` (RGB PIL in)."""
-        return Compose(
-            [
-                ToTensor(),
-                Normalize(mean=list(self.mean), std=list(self.std)),
-            ]
-        )
+        """Full crop pipeline for an RGB PIL image: resize, then tensor normalisation."""
+        return Compose([self.resize_image, ToTensor(), Normalize(mean=list(self.mean), std=list(self.std))])
 
     def to_dict(self) -> dict:
         """Serialise for ``reid_config.json``."""
@@ -180,17 +151,3 @@ class ReIDPreprocessing:
         if "pad_value" in data:
             kwargs["pad_value"] = data["pad_value"]
         return cls(**kwargs)
-
-
-class ResizeCrop:
-    """Resize an RGB PIL crop with :meth:`ReIDPreprocessing.resize_crop`.
-
-    Keeps ``resize_mode`` / ``interpolation`` and the OpenCV resampler identical
-    between training and serving.
-    """
-
-    def __init__(self, preprocessing: ReIDPreprocessing) -> None:
-        self.preprocessing = preprocessing
-
-    def __call__(self, image: PILImage.Image) -> PILImage.Image:
-        return PILImage.fromarray(self.preprocessing.resize_crop(np.asarray(image)))
