@@ -37,7 +37,7 @@ class TestLoadIdentityFolders:
         (folder / "notes.txt").touch()
         (tmp_path / "empty").mkdir()
 
-        assert load_identity_folders(tmp_path).image_paths == [str(image)]
+        assert load_identity_folders(tmp_path).image_paths == (str(image),)
 
     def test_missing_root_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="Crop dataset root not found"):

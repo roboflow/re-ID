@@ -37,8 +37,8 @@ class TestRetrievalSelection:
 
         selected_query, selected_gallery, mask, _ = RetrievalProtocol().build_query_gallery(query, gallery)
 
-        assert selected_query.image_paths == ["q"]
-        assert selected_gallery.image_paths == ["g"]
+        assert selected_query.image_paths == ("q",)
+        assert selected_gallery.image_paths == ("g",)
         assert mask is None  # every query is ranked against the whole gallery
 
     def test_cuts_each_identity_into_query_and_gallery(self, tmp_path: Path) -> None:
