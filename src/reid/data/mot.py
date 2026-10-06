@@ -26,11 +26,11 @@ import numpy as np
 class MOTSplit(str, Enum):
     """Frames cropped from each MOT sequence.
 
-    ``FULL`` keeps every frame. ``TRAIN_HALF`` keeps the first half of each
-    sequence (``seqLength`` in ``seqinfo.ini``) and ``VAL_HALF`` the second, so
-    training and evaluating on the same sequences never share a frame. The names
-    follow the MOT17 half-split convention; the cut works for any MOT-format
-    dataset.
+    ``FULL`` keeps every frame. ``TRAIN_HALF`` keeps frames up to
+    ``seqLength // 2 + 1`` (``seqLength`` in ``seqinfo.ini``) and ``VAL_HALF`` the
+    rest, so training and evaluating on the same sequences never share a frame.
+    The cut is the MOT17 half split used in the tracking literature, for example
+    by ByteTrack; it works for any MOT-format dataset.
     """
 
     TRAIN_HALF = "train_half"
@@ -135,7 +135,10 @@ def _load_gt_rows(gt_path: Path) -> np.ndarray:
 
 
 def _train_half_cutoff(sequence_dir: Path) -> int:
-    """Return ``L // 2``, the last frame index belonging to the train-half.
+    """Return ``L // 2 + 1``, the last frame of the train half, as ByteTrack splits MOT17.
+
+    ByteTrack's ``tools/convert_mot17_to_coco.py`` keeps 0-based frames ``[0, L // 2]``
+    for the train half, as CenterTrack's ``src/tools/convert_mot_to_coco.py`` did before it.
 
     Raises:
         FileNotFoundError: If ``seqinfo.ini`` is missing or lacks ``seqLength``;
@@ -148,7 +151,7 @@ def _train_half_cutoff(sequence_dir: Path) -> int:
             f"Cannot read seqLength from {sequence_dir / 'seqinfo.ini'}; "
             "the train_half/val_half splits need it to place the frame cutoff."
         )
-    return length // 2
+    return length // 2 + 1
 
 
 def _select_split_mask(

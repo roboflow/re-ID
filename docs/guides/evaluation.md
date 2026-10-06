@@ -57,8 +57,10 @@ print(result.metrics)
 | `split` | Frames cropped |
 | :-- | :-- |
 | `"full"` | every frame |
-| `"train_half"` (default) | the first half of each sequence |
-| `"val_half"` | the second half of each sequence |
+| `"train_half"` (default) | frames 1 to L // 2 + 1 of a sequence of L frames (1 to 451 of 900) |
+| `"val_half"` | the remaining frames, L // 2 + 2 to L (452 to 900 of 900) |
+
+This is the MOT17 half split used in the tracking literature, for example by ByteTrack, so the train half has one frame more than the val half when L is even.
 
 Use `"full"` for sequences kept only for evaluation. Use `"train_half"` and `"val_half"` when training and evaluating on the same sequences, so no frame is used for both. `class_ids` selects which ground-truth classes become identities. DanceTrack and SportsMOT label every box as class 1, so the default keeps all of them; MOT17 also labels vehicles, static people, distractors, and occluders, so pass `class_ids=[1]` there.
 

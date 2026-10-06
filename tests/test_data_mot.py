@@ -107,14 +107,15 @@ class TestFrameSplits:
     """Which frames of each sequence are cropped."""
 
     def test_train_and_val_halves_share_no_frame(self, mot_root: Path, tmp_path: Path) -> None:
-        # train_half is frames 1 to seqLength // 2, val_half the rest.
+        # train_half is frames 1 to seqLength // 2 + 1 and val_half the rest, as ByteTrack's
+        # tools/convert_mot17_to_coco.py splits MOT17.
         _write_pedestrians(mot_root, "SEQ-01", track_ids=[1, 2], seq_length=4)
 
         generate_mot_patches(mot_root, tmp_path / "train", split="train_half")
         generate_mot_patches(mot_root, tmp_path / "val", split="val_half")
 
-        assert _crop_frames(tmp_path / "train") == {1, 2}
-        assert _crop_frames(tmp_path / "val") == {3, 4}
+        assert _crop_frames(tmp_path / "train") == {1, 2, 3}
+        assert _crop_frames(tmp_path / "val") == {4}
 
     def test_half_splits_need_the_sequence_length(self, mot_root: Path, output: Path) -> None:
         sequence_dir = _write_pedestrians(mot_root, "SEQ-01", track_ids=[1], seq_length=2)
@@ -284,12 +285,12 @@ class TestOutputFolder:
 
     def test_refuses_crops_of_a_sequence_the_folder_already_holds(self, mot_root: Path, output: Path) -> None:
         _write_pedestrians(mot_root, "SEQ-01", track_ids=[1], seq_length=4)
-        generate_mot_patches(mot_root, output, split="val_half")  # crops frames 3 and 4
+        generate_mot_patches(mot_root, output, split="val_half")  # crops frame 4
 
-        # Adding frames 1 and 2 would mix both halves of SEQ-01 in one folder.
+        # Adding frames 1 to 3 would mix both halves of SEQ-01 in one folder.
         with pytest.raises(FileExistsError, match="already holds crops from .*SEQ-01"):
             generate_mot_patches(mot_root, output, split="train_half")
-        assert _crop_frames(output) == {3, 4}
+        assert _crop_frames(output) == {4}
 
     def test_accepts_crops_of_a_sequence_the_folder_does_not_hold(self, mot_root: Path, output: Path) -> None:
         _write_pedestrians(mot_root, "SEQ-01", track_ids=[1], seq_length=2)
