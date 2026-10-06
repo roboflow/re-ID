@@ -214,6 +214,15 @@ class TestLoaders:
         with pytest.raises(ValueError, match=r"matched only 564 of 565 .* \(required >= 100%\)"):
             ReIDModel.from_pretrained(str(tmp_path), device="cpu")
 
+    def test_saved_fastreid_model_reloads_with_the_same_weights(self, tmp_path) -> None:
+        model = ReIDModel.from_pretrained(architecture=FASTREID_SBS_ARCHITECTURE, device="cpu")
+        model.save_pretrained(str(tmp_path))
+
+        reloaded = ReIDModel.from_pretrained(str(tmp_path), device="cpu")
+
+        original, restored = model._backbone.state_dict(), reloaded._backbone.state_dict()
+        assert all(torch.equal(original[key], restored[key]) for key in original)
+
     def test_missing_local_path_raises(self) -> None:
         with pytest.raises(FileNotFoundError, match="Weights file not found"):
             resolve_weights("/nonexistent/path/to/weights.pth")
