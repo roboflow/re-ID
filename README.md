@@ -10,7 +10,7 @@
 
 https://github.com/user-attachments/assets/036a7949-2206-49fc-9a1b-89f9d3c51f20
 
-Gallery retrieval with OSNet: a query player ranks crops from other clips by cosine distance, lowest first.
+Gallery retrieval with the default model, `osnet_x1_0_msmt17_combineall`: crops from other clips ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
 
 ## Install
 
@@ -31,18 +31,18 @@ For development, clone the repository and run `uv sync --all-extras` or `pip ins
 
 ## Quick start
 
-Embed every detection in a frame. `from_pretrained()` with no name downloads the default model, OSNet x1.0 trained on MSMT17.
+`extract_embeddings` computes one embedding for each bounding box in a frame. Pass the boxes as `sv.Detections`, which you can get from a detector like [RF-DETR](https://github.com/roboflow/rf-detr). Below, two people are boxed in the first frame of a sample video. `from_pretrained()` with no name downloads the default model, OSNet x1.0 trained on MSMT17.
 
 ```python
-import cv2
 import numpy as np
 import supervision as sv
+from supervision.assets import VideoAssets, download_assets
 from reid import ReIDModel
 
 model = ReIDModel.from_pretrained()
 
-frame = cv2.imread("frame.jpg")
-detections = sv.Detections(xyxy=np.array([[100, 40, 180, 300], [300, 60, 370, 310]], dtype=np.float32))
+frame = next(sv.get_video_frames_generator(download_assets(VideoAssets.PEOPLE_WALKING)))
+detections = sv.Detections(xyxy=np.array([[746, 446, 828, 628], [1136, 502, 1214, 660]], dtype=np.float32))
 embeddings = model.extract_embeddings(detections, frame)
 
 embeddings.shape
