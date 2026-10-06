@@ -111,7 +111,7 @@ With exactly one correct match, average precision equals the reciprocal rank, so
 
 ## Benchmarks
 
-Use a checkpoint trained on the training split of the dataset you evaluate. The default `osnet_x1_0_msmt17_combineall` was trained on all of MSMT17, test identities included: on MSMT17 it leaks the test split, and on Market-1501 it measures **cross-domain** transfer (Rank-1 around 61 in [`notebooks/eval_reid.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb)). The examples below load the torchreid same-domain OSNet x1.0 checkpoints and use **euclidean** distance, as the model zoo does; the notebook runs both end to end.
+Use a checkpoint trained on the training split of the dataset you evaluate. The default `osnet_x1_0_msmt17_combineall` was trained on all of MSMT17, test identities included: on MSMT17 it leaks the test split, and on Market-1501 it measures **cross-domain** transfer: Rank-1 66.3 and mAP 37.4 with euclidean distance. The examples below load the same-domain OSNet x1.0 checkpoints from torchreid. Their published results use **euclidean** distance, so the examples do too; [`notebooks/eval_reid.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb) runs both end to end.
 
 ### Market-1501
 
@@ -125,7 +125,7 @@ result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euc
 print(result.metrics)
 ```
 
-The model zoo reports Rank-1 94.2 and mAP 82.6 for this checkpoint.
+This gives Rank-1 94.4 and mAP 82.5, the same as torchreid's own evaluation of this checkpoint, which we ran on the same data. torchreid's published model zoo table lists 94.2 / 82.6; torchreid reproduces that only with Pillow 6.0, from April 2019, because newer Pillow versions resize the crops slightly differently.
 
 **Market-1501 labels.** Besides its people, numbered 1 to 1501, the Market-1501 gallery has two labels: `pid=0` marks background images, which stay in the gallery as distractors, and `pid=-1` marks bad detections, which `load_market1501` treats as junk (`gallery_junk_pids={-1}`). torchreid scores Market-1501 the same way. MSMT17 has no such labels.
 
@@ -141,7 +141,7 @@ result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euc
 print(result.metrics)
 ```
 
-The model zoo reports Rank-1 74.9 and mAP 43.8 for this checkpoint. The official test split compares 11,659 queries with 82,161 gallery images: about 958 million pairs and a 3.8 GB distance matrix, so make sure the machine has that memory free.
+This gives Rank-1 74.8 and mAP 43.7, the same as torchreid's own evaluation of this checkpoint, which we ran on the same data. torchreid's published model zoo table lists 74.9 / 43.8. The official test split compares 11,659 queries with 82,161 gallery images: about 958 million pairs and a 3.8 GB distance matrix, so make sure the machine has that memory free.
 
 ---
 
