@@ -47,18 +47,19 @@ The default model was trained on MSMT17, so these Market-1501 numbers measure cr
 
 In standard [Market-1501](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html) and [MSMT17](https://arxiv.org/abs/1711.08565) evaluation, the model ranks **gallery** images by their distance to each **query** image. A valid match shows the same person from a different camera.
 
-| Term    | Meaning                                                         |
-| :------ | :-------------------------------------------------------------- |
-| Query   | Image of the person you want to find                            |
-| Gallery | Candidate crops to search                                       |
-| Match   | Same person ID, different camera ID                             |
-| Junk    | Same person and same camera, or labeled distractors (see below) |
+| Term       | Meaning                                                                                         |
+| :--------- | :---------------------------------------------------------------------------------------------- |
+| Query      | Image of the person you want to find                                                            |
+| Gallery    | Candidate crops to search                                                                       |
+| Match      | Gallery image of the query's person from a different camera                                     |
+| Distractor | Gallery image of anyone else; it counts as a wrong candidate                                    |
+| Junk       | Gallery image ignored when ranking: the query's person from the same camera, or a bad detection |
 
-Junk entries are removed from the ranked list before scoring. They never count as hits or as distractors that push a hit down the ranking.
+Junk entries are removed from the ranked list before scoring. They never count as hits or as wrong candidates that push a hit down the ranking.
 
 **Same-(pid, camid) junk.** Standard single-query Market / MSMT protocol: a gallery crop of the same person from the same camera is discarded. Cross-camera retrieval is the goal.
 
-**Gallery junk person IDs.** Market-1501 marks background distractors as `pid=0` and junk detections as `pid=-1`. `load_market1501` sets `gallery_junk_pids={-1, 0}` so both are ignored during ranking. Datasets where `pid=0` is a real identity keep the default `{-1}` only.
+**Market-1501 labels.** Besides its people, numbered 1 to 1501, the Market-1501 gallery has two labels: `pid=0` marks background images, which stay in the gallery as distractors, and `pid=-1` marks bad detections, which `load_market1501` treats as junk (`gallery_junk_pids={-1}`). torchreid scores Market-1501 the same way. MSMT17 has no such labels.
 
 ### Re-association
 

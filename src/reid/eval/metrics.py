@@ -94,9 +94,7 @@ def _compute_reid_metrics(
     """Compute CMC, mAP, and mINP from a query x gallery distance matrix.
 
     Excludes same-(pid, camid) gallery matches by default and gallery junk person IDs
-    (``pid in gallery_junk_pids``). Market-1501 gallery distractors use
-    ``gallery_junk_pids=frozenset({-1, 0})``; datasets where ``pid=0`` is
-    valid should keep the default ``{-1}`` only.
+    (``pid in gallery_junk_pids``).
 
     Args:
         distmat: Distance matrix ``(num_queries, num_gallery)`` (lower = closer).

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from reid.data import MARKET1501_GALLERY_JUNK_PIDS, load_market1501, load_msmt17
+from reid.data import load_market1501, load_msmt17
 
 
 def test_market1501_reads_person_ids_from_file_names(tmp_path: Path) -> None:
@@ -29,7 +29,8 @@ def test_market1501_reads_person_ids_from_file_names(tmp_path: Path) -> None:
     assert len(query) == 1
     assert query.pids.tolist() == [1]
     assert gallery.pids.tolist() == [0, 2]
-    assert gallery.gallery_junk_pids == MARKET1501_GALLERY_JUNK_PIDS
+    # Distractors (person 0) stay wrong candidates: torchreid's market1501.py drops only pid -1 images.
+    assert gallery.gallery_junk_pids == frozenset({-1})
 
 
 _MSMT17_IMAGE = "0001/0001_019_07_0303morning_0020_1.jpg"  # the third field, 07, is the camera

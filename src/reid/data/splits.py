@@ -12,10 +12,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-# Market-1501 gallery ``0000_*`` images are distractors (pid 0). Query identities
-# remain valid when pid=0 on other datasets (e.g. MSMT17).
-MARKET1501_GALLERY_JUNK_PIDS = frozenset({-1, 0})
-
 
 @dataclass(frozen=True)
 class ReIDSplit:

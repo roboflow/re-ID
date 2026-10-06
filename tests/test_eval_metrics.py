@@ -11,7 +11,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from reid.data import MARKET1501_GALLERY_JUNK_PIDS
 from reid.eval.metrics import ReIDMetrics, _compute_reid_metrics, _distance_matrix
 
 
@@ -49,18 +48,6 @@ def _score_example(mask: np.ndarray | None = None) -> ReIDMetrics:
 
 class TestComputeReidMetrics:
     """Retrieval scores on hand-computed rankings."""
-
-    def test_market1501_pid_zero_is_junk_in_gallery(self) -> None:
-        """The closest gallery image is a Market-1501 distractor (person 0), so the match behind it counts as rank 1."""
-        metrics = _compute_reid_metrics(
-            np.array([[0.1, 0.2, 0.3]], dtype=np.float32),
-            q_pids=np.array([1]),
-            g_pids=np.array([0, 1, 2]),
-            q_camids=np.array([0]),
-            g_camids=np.array([0, 1, 0]),
-            gallery_junk_pids=MARKET1501_GALLERY_JUNK_PIDS,
-        )
-        assert metrics.rank1 == pytest.approx(100.0)
 
     def test_short_gallery_still_reports_rank5_and_rank10(self) -> None:
         """With two gallery images and the match second, rank 1 misses while rank 5 and rank 10 hit."""

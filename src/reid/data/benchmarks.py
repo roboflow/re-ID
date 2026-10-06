@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from reid.data.splits import MARKET1501_GALLERY_JUNK_PIDS, ReIDSplit
+from reid.data.splits import ReIDSplit
 
 # --------------------------------------------------------------------------- #
 # MSMT17
@@ -86,7 +86,8 @@ def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
 def _parse_market_filename(filename: str) -> tuple[int, int]:
     """Parse ``(pid, camid)`` from a Market-1501 filename.
 
-    ``-1_*`` → junk (``pid=-1``); ``0000_*`` → distractor (``pid=0``).
+    ``-1_*`` → junk (``pid=-1``), ignored when ranking; ``0000_*`` → distractor
+    (``pid=0``), kept as a wrong candidate, as torchreid's ``market1501.py`` does.
     """
     stem = Path(filename).stem
     parts = stem.split("_")
@@ -143,6 +144,6 @@ def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     )
     gallery = _load_market1501_dir(
         root / "bounding_box_test",
-        gallery_junk_pids=MARKET1501_GALLERY_JUNK_PIDS,
+        gallery_junk_pids=frozenset({-1}),
     )
     return query, gallery
