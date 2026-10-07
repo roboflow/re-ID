@@ -34,14 +34,14 @@ Weights download the first time a model is loaded and are kept on disk, so later
 
 Each architecture has default preprocessing: OSNet resizes crops to 256 × 128 and FastReID SBS to 384 × 128, both by stretching. Pass a `ReIDPreprocessing` to `from_pretrained(..., preprocessing=...)` to override it. These are its fields, and what `reid_config.json` stores under `"preprocessing"`:
 
-| Field | Meaning | Typical |
-| :-- | :-- | :-- |
-| `input_size` | Image height and width | OSNet `(256, 128)`; FastReID `(384, 128)` |
-| `resize_mode` | `stretch` or `letterbox` | `stretch` |
-| `interpolation` | Image resizing method | `bilinear` |
-| `to_rgb` | Swap BGR to RGB for crops cut from video frames; crops read from disk are already RGB | `True` |
-| `mean` / `std` | Per-channel normalization | ImageNet values |
-| `pad_value` | Padding pixel value for `letterbox` | `114` |
+| Field           | Meaning                                                                               | Typical                                   |
+| :-------------- | :------------------------------------------------------------------------------------ | :---------------------------------------- |
+| `input_size`    | Image height and width                                                                | OSNet `(256, 128)`; FastReID `(384, 128)` |
+| `resize_mode`   | `stretch` or `letterbox`                                                              | `stretch`                                 |
+| `interpolation` | Image resizing method                                                                 | `bilinear`                                |
+| `to_rgb`        | Swap BGR to RGB for crops cut from video frames; crops read from disk are already RGB | `True`                                    |
+| `mean` / `std`  | Per-channel normalization                                                             | ImageNet values                           |
+| `pad_value`     | Padding pixel value for `letterbox`                                                   | `114`                                     |
 
 `extract_embeddings` returns raw embedding vectors; evaluation normalizes them when it computes cosine distance.
 

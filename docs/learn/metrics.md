@@ -45,12 +45,12 @@ For each query, the model compares the query's embedding with every gallery imag
 
 Every metric is computed on each query's ranking after junk filtering, averaged over the queries that have at least one valid match, and reported as a percentage. The notation used below:
 
-| Symbol | Meaning |
-| :-- | :-- |
-| $Q$ | Queries with at least one valid match |
-| $\mathrm{rel}_q(i)$ | 1 if the gallery image at rank $i$ matches query $q$, otherwise 0 |
-| $G_q$ | Number of valid matches for query $q$ |
-| $P_q(i)$ | Precision at rank $i$: the fraction of the top $i$ that are matches |
+| Symbol              | Meaning                                                             |
+| :------------------ | :------------------------------------------------------------------ |
+| $Q$                 | Queries with at least one valid match                               |
+| $\mathrm{rel}_q(i)$ | 1 if the gallery image at rank $i$ matches query $q$, otherwise 0   |
+| $G_q$               | Number of valid matches for query $q$                               |
+| $P_q(i)$            | Precision at rank $i$: the fraction of the top $i$ that are matches |
 
 ### Rank-k (CMC)
 
@@ -67,7 +67,7 @@ CMC answers "how often is a hit early in the list?" It does not reward finding e
 
 ### mAP
 
-**Mean Average Precision.** Average precision takes the precision at every rank where a match occurs, averaged over the query's matches; mAP averages it over queries. The [Market-1501 paper](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html) introduced it to re-identification, borrowing the [information-retrieval measure](https://en.wikipedia.org/wiki/Evaluation_measures_(information_retrieval)#Mean_average_precision):
+**Mean Average Precision.** Average precision takes the precision at every rank where a match occurs, averaged over the query's matches; mAP averages it over queries. The [Market-1501 paper](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html) introduced it to re-identification, borrowing the [information-retrieval measure](<https://en.wikipedia.org/wiki/Evaluation_measures_(information_retrieval)#Mean_average_precision>):
 
 $$
 \mathrm{AP}_q = \frac{1}{G_q} \sum_{i} P_q(i)\, \mathrm{rel}_q(i), \qquad \mathrm{mAP} = \frac{1}{|Q|} \sum_{q \in Q} \mathrm{AP}_q
@@ -99,12 +99,12 @@ With exactly one correct match, average precision equals the reciprocal rank, so
 
 ### Comparing the metrics
 
-| Metric           | Sensitive to         | Typical use                                 |
-| :--------------- | :------------------- | :------------------------------------------ |
-| Rank-1           | First hit only       | Quick sanity check; often reported with mAP |
-| Rank-5 / Rank-10 | Early list quality   | CMC curves                                  |
-| mAP              | Full match set       | Primary gallery benchmark score             |
-| mINP             | Hardest (last) match | Complements mAP when hard positives matter  |
+| Metric           | Sensitive to          | Typical use                                 |
+| :--------------- | :-------------------- | :------------------------------------------ |
+| Rank-1           | First hit only        | Quick sanity check; often reported with mAP |
+| Rank-5 / Rank-10 | Early list quality    | CMC curves                                  |
+| mAP              | Full match set        | Primary gallery benchmark score             |
+| mINP             | Hardest (last) match  | Complements mAP when hard positives matter  |
 | MRR              | Rank of the one match | Re-association, one correct match per query |
 
 ---

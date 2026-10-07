@@ -109,11 +109,11 @@ print(result.metrics)
 
 `split` chooses which frames of each sequence are cropped:
 
-| `split` | Frames cropped |
-| :-- | :-- |
-| `"full"` | every frame |
+| `split`                  | Frames cropped                                                     |
+| :----------------------- | :----------------------------------------------------------------- |
+| `"full"`                 | every frame                                                        |
 | `"train_half"` (default) | frames 1 to L // 2 + 1 of a sequence of L frames (1 to 451 of 900) |
-| `"val_half"` | the remaining frames, L // 2 + 2 to L (452 to 900 of 900) |
+| `"val_half"`             | the remaining frames, L // 2 + 2 to L (452 to 900 of 900)          |
 
 This is the MOT17 half split used in the tracking literature, for example by ByteTrack, so the train half has one frame more than the val half when L is even.
 

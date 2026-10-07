@@ -78,21 +78,21 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 
 ## Pretrained models
 
-| Name | Architecture | Trained on | Use for |
-| :-- | :-- | :-- | :-- |
-| `osnet_x1_0_msmt17_combineall` (default) | OSNet x1.0 | MSMT17, all splits combined | General pedestrian embeddings. Not for evaluating on MSMT17, whose test identities it has seen. |
-| `fastreid_mot17_sbs50` | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | MOT17 tracking, as in BoT-SORT |
+| Name                                     | Architecture             | Trained on                          | Use for                                                                                         |
+| :--------------------------------------- | :----------------------- | :---------------------------------- | :---------------------------------------------------------------------------------------------- |
+| `osnet_x1_0_msmt17_combineall` (default) | OSNet x1.0               | MSMT17, all splits combined         | General pedestrian embeddings. Not for evaluating on MSMT17, whose test identities it has seen. |
+| `fastreid_mot17_sbs50`                   | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | MOT17 tracking, as in BoT-SORT                                                                  |
 
 `list_aliases()` lists these names. Any `timm:<name>` backbone and other OSNet sizes load from a weights file; see the [loading guide](docs/guides/loading.md).
 
 ## Tutorials
 
-| Tutorial | What you will do |
-| :-- | :-- |
-| [Load a model](docs/guides/loading.md) | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
-| [Evaluate a model](docs/guides/evaluation.md) | Score a model on Market-1501, your own identity folders, or crops cut from video |
-| [Understand the metrics](docs/learn/metrics.md) | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association |
-| [Reproduce the OSNet benchmarks](notebooks/eval_reid.ipynb) | Evaluate OSNet x1.0 on Market-1501 and MSMT17 against the torchreid model zoo, on a Colab T4 |
+| Tutorial                                                    | What you will do                                                                                               |
+| :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
+| [Load a model](docs/guides/loading.md)                      | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
+| [Evaluate a model](docs/guides/evaluation.md)               | Score a model on Market-1501, your own identity folders, or crops cut from video                               |
+| [Understand the metrics](docs/learn/metrics.md)             | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association                                     |
+| [Reproduce the OSNet benchmarks](notebooks/eval_reid.ipynb) | Evaluate OSNet x1.0 on Market-1501 and MSMT17 against the torchreid model zoo, on a Colab T4                   |
 
 ## Citation
 
