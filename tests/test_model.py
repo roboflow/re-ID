@@ -214,6 +214,13 @@ class TestLoaders:
         with pytest.raises(ValueError, match=r"matched only 564 of 565 .* \(required >= 100%\)"):
             ReIDModel.from_pretrained(str(tmp_path), device="cpu")
 
+    def test_saved_model_needs_its_weights_file(self, tmp_path) -> None:
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(tmp_path))
+        (tmp_path / "weights.safetensors").unlink()
+
+        with pytest.raises(FileNotFoundError, match="Weights file not found"):
+            ReIDModel.from_pretrained(str(tmp_path), device="cpu")
+
     def test_saved_fastreid_model_reloads_with_the_same_weights(self, tmp_path) -> None:
         model = ReIDModel.from_pretrained(architecture=FASTREID_SBS_ARCHITECTURE, device="cpu")
         model.save_pretrained(str(tmp_path))
