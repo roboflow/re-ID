@@ -103,7 +103,7 @@ class TestReportedMetrics:
 
 
 class TestSettings:
-    """Invalid protocol settings are rejected before any image is embedded."""
+    """Protocol settings: the distance each one ranks with, and invalid values rejected before embedding."""
 
     @pytest.mark.parametrize(
         "protocol_class, setting",
@@ -121,9 +121,12 @@ class TestSettings:
         with pytest.raises(ValueError, match="min_crops must be > queries_per_id"):
             RetrievalProtocol(queries_per_id=2, min_crops=2)  # both crops would become queries
 
-    def test_unknown_distance_is_rejected(self) -> None:
+    @pytest.mark.parametrize("protocol_class", [RetrievalProtocol, ReassociationProtocol])
+    def test_every_protocol_takes_a_distance(self, protocol_class: type[EvaluationProtocol]) -> None:
+        assert protocol_class().distance == "cosine"
+        assert protocol_class(distance="euclidean").distance == "euclidean"  # what evaluate ranks with
         with pytest.raises(ValueError, match="distance must be"):
-            RetrievalProtocol(distance="manhattan").build_query_gallery(_ONE_IMAGE, _ONE_IMAGE)
+            protocol_class(distance="manhattan").build_query_gallery(_ONE_IMAGE)
 
 
 class TestInputs:

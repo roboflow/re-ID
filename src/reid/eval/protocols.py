@@ -173,17 +173,19 @@ class ReassociationProtocol(EvaluationProtocol):
     Args:
         gap_frames: Frames between a query and its candidates.
         query_stride: Queries are taken at frames divisible by this value.
+        distance: ``"cosine"`` or ``"euclidean"``.
     """
 
     name = "reassociation"
     metric_names = ("rank1", "mrr")
     exclude_same_pid_camid = False
 
-    def __init__(self, *, gap_frames: int = 30, query_stride: int = 60) -> None:
+    def __init__(self, *, gap_frames: int = 30, query_stride: int = 60, distance: str = "cosine") -> None:
         validate_positive_int(gap_frames, "gap_frames")
         validate_positive_int(query_stride, "query_stride")
         self.gap_frames = gap_frames
         self.query_stride = query_stride
+        self.distance = distance
 
     def _build_query_gallery(
         self,
