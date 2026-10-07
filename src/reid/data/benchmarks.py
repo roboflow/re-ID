@@ -64,8 +64,8 @@ def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
         Query and gallery as ``(ReIDSplit, ReIDSplit)``.
 
     Raises:
-        FileNotFoundError: If ``root``, ``list_query.txt``, or ``list_gallery.txt``
-            does not exist.
+        FileNotFoundError: If ``root``, ``test/``, ``list_query.txt``, or
+            ``list_gallery.txt`` does not exist.
         ValueError: If a list line is not ``path pid``.
     """
     root = Path(root)
@@ -73,6 +73,8 @@ def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
         raise FileNotFoundError(f"MSMT17 root not found: {root}")
 
     test_root = root / "test"
+    if not test_root.is_dir():
+        raise FileNotFoundError(f"MSMT17 sub-directory not found: {test_root}")
     query = _load_msmt17_list(root / "list_query.txt", test_root)
     gallery = _load_msmt17_list(root / "list_gallery.txt", test_root)
     return query, gallery
@@ -89,10 +91,14 @@ def _parse_market_filename(filename: str) -> tuple[int, int]:
     ``-1_*`` → junk (``pid=-1``), ignored when ranking; ``0000_*`` → distractor
     (``pid=0``), kept as a wrong candidate, as torchreid's ``market1501.py`` does.
     """
-    stem = Path(filename).stem
-    parts = stem.split("_")
-    pid = int(parts[0])
-    camid = int(parts[1][1]) - 1  # "c1" → 0
+    parts = Path(filename).stem.split("_")
+    try:
+        pid = int(parts[0])
+        camid = int(parts[1][1]) - 1  # "c1" → 0
+    except (IndexError, ValueError):
+        raise ValueError(
+            f"Market-1501 file name {Path(filename).name!r} does not follow '<person>_c<camera>...jpg'."
+        ) from None
     return pid, camid
 
 
@@ -133,6 +139,8 @@ def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     Raises:
         FileNotFoundError: If ``root``, ``query/``, or ``bounding_box_test/``
             does not exist.
+        ValueError: If an image file name does not start with
+            ``<person>_c<camera>``, such as a hidden ``._*`` file macOS writes.
     """
     root = Path(root)
     if not root.exists():
