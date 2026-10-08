@@ -10,7 +10,7 @@
 
 https://github.com/user-attachments/assets/036a7949-2206-49fc-9a1b-89f9d3c51f20
 
-Gallery retrieval with the default model, `osnet_x1_0_msmt17_combineall`: crops from other clips ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
+Gallery retrieval with the default model, `osnet_x1_0_msmt17_combineall`: crops ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
 
 ## Install
 

@@ -10,7 +10,7 @@ title: Evaluate a ReID model
 
 ### Query and gallery
 
-Re-ID works as a search. The crop of the person you want to find is the **query**, and the crops you search are the **gallery**. The model ranks the gallery by the distance of each crop to the query, closest first. A good model puts the query's person at the top.
+Re-ID works as a search. The crop of the person you want to find is the **query**, and the crops you search are the **gallery**. The model ranks the gallery by the distance of each crop to the query, closest first. A good model ranks the gallery crops of the same person at the top.
 
 ![A query player, a gallery of 12 crops from other clips, and the same crops ranked by similarity to the query](../assets/query-gallery.webp)
 
@@ -22,7 +22,7 @@ To measure a model, you repeat that search for many people. The test images are 
 
 ![A query set with one image per person, and a gallery set with the other images of those people and of everyone else](../assets/query-gallery-sets.webp)
 
-<p align="center" style="margin-top: -0.4em;"><small><code>RetrievalProtocol</code> with its defaults on 25 SoccerNet identity folders: one query for each of the 21 people with at least two images, ranked against their other 124 images.</small></p>
+<p align="center" style="margin-top: -0.4em;"><small><code>RetrievalProtocol</code> with its defaults on SoccerNet identity folders: one query for each of the 21 people with at least two images, ranked against their other 124 images.</small></p>
 
 Whether a gallery image is a match, a distractor, or junk is decided for each query, so the same image can count differently for two queries. An image of person 5 from camera 1 is junk for a query of person 5 from camera 1, and a match for a query of person 5 from camera 2.
 

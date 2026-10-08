@@ -13,7 +13,7 @@ Person re-identification (re-ID) recognizes the same person in different images:
   <source src="assets/reid-gallery-retrieval.mp4" type="video/mp4">
 </video>
 
-<p align="center" style="margin-top: -0.4em;"><small>Gallery retrieval with the default model, <code>osnet_x1_0_msmt17_combineall</code>: crops from other clips ranked by cosine distance to a query player, closest first.</small></p>
+<p align="center" style="margin-top: -0.4em;"><small>Gallery retrieval with the default model, <code>osnet_x1_0_msmt17_combineall</code>: crops ranked by cosine distance to a query player, closest first.</small></p>
 
 ---
 

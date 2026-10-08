@@ -28,7 +28,7 @@ model = ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")
 | `osnet_x1_0_msmt17_combineall` (default) | OSNet x1.0               | MSMT17, all splits combined         | [torchreid model zoo](https://kaiyangzhou.github.io/deep-person-reid/MODEL_ZOO), via Hugging Face `kaiyangzhou/osnet` |
 | `fastreid_mot17_sbs50`                   | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | [BoT-SORT](https://github.com/NirAharon/BoT-SORT) release, via Google Drive                                           |
 
-Weights download the first time a model is loaded and are kept on disk, so later loads skip the download; [Weight cache](#weight-cache) says where.
+Weights download the first time a model is loaded and are kept on disk, so later loads skip the download. See [weight cache](#weight-cache) for more details.
 
 ## Preprocessing
 
