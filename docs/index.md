@@ -9,8 +9,8 @@ Re-ID provides tools to load and evaluate re-identification models. Extract appe
 
 Person re-identification (re-ID) recognizes the same person in different images: in another camera, or later in a video after they were out of view. A re-ID model turns each crop of a person into an embedding, a vector of numbers. Crops of the same person get embeddings that are close together and crops of different people get embeddings far apart, so the distance between two embeddings tells how likely the two crops show the same person.
 
-<video width="100%" style="aspect-ratio: 16/9;" controls muted loop preload="metadata" aria-label="Gallery retrieval with the default reid model">
-  <source src="https://github.com/user-attachments/assets/036a7949-2206-49fc-9a1b-89f9d3c51f20" type="video/mp4">
+<video width="100%" style="aspect-ratio: 16/9;" controls muted loop preload="none" poster="assets/reid-gallery-retrieval-poster.webp" aria-label="Gallery retrieval with the default reid model">
+  <source src="assets/reid-gallery-retrieval.mp4" type="video/mp4">
 </video>
 
 <p align="center" style="margin-top: -0.4em;"><small>Gallery retrieval with the default model, <code>osnet_x1_0_msmt17_combineall</code>: crops from other clips ranked by cosine distance to a query player, closest first.</small></p>
