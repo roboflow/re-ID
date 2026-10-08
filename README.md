@@ -8,7 +8,7 @@
 
 `reid` turns a person crop into an appearance embedding, a vector that is close for crops of the same person and far apart for different people. It loads pretrained OSNet and FastReID checkpoints, embeds `supervision.Detections` from any detector or crops saved on disk, and measures how well a model matches people: across cameras with retrieval on Market-1501 and MSMT17, or over time with re-association on crops cut from MOT-format video. Requires Python 3.10 or newer.
 
-https://github.com/user-attachments/assets/036a7949-2206-49fc-9a1b-89f9d3c51f20
+https://github.com/user-attachments/assets/68fe0a58-1414-4776-a4a0-412cbcb68643
 
 Gallery retrieval with the default model, `osnet_x1_0_msmt17_combineall`: crops ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
 
