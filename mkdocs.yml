@@ -39,8 +39,8 @@ theme:
   custom_dir: docs/overrides/
   icon:
     edit: material/pencil
-  logo: assets/roboflow-logo.svg
-  favicon: assets/roboflow-logo.svg
+  logo: assets/roboflow-symbol-ink.svg
+  favicon: assets/roboflow-symbol-ink.svg
   features:
     - content.code.annotate
     - content.code.copy

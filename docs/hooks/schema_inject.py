@@ -100,7 +100,7 @@ def on_page_context(context, page, config, nav):  # type: ignore[no-untyped-def]
         page.meta = {}  # type: ignore[assignment]
 
     site_url = config.get("site_url", "").rstrip("/")
-    logo = {"@type": "ImageObject", "url": f"{site_url}/assets/roboflow-logo.svg"}
+    logo = {"@type": "ImageObject", "url": f"{site_url}/assets/roboflow-symbol-ink.svg"}
 
     if description:
         article = {
