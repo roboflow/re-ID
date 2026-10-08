@@ -311,11 +311,9 @@ def generate_mot_patches(
         output_dir: Destination crop root.
         split: Frame range per sequence; a :class:`MOTSplit` or its string value.
         sequences: Optional sequence names to process.
-        class_ids: Ground-truth class ids to crop. ``None`` keeps every class.
-            Class ids are dataset-specific: MOT17 marks pedestrians as ``1`` and
-            reserves other ids for vehicles, static persons, distractors, and
-            occluders, so pass ``[1]`` there. DanceTrack and SportsMOT label every
-            box ``1``, so the default already keeps exactly the tracked subjects.
+        class_ids: Ground-truth class ids to crop among the boxes with a nonzero
+            confidence. ``None`` keeps every class. Boxes with confidence 0, the
+            MOTChallenge flag for boxes to ignore, are always skipped.
         min_visibility: Minimum GT visibility to keep a box.
         min_side: Minimum crop short side in pixels.
         image_ext: Frame file extension.

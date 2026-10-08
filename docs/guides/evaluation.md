@@ -57,7 +57,7 @@ print(result.metrics)
 Evaluate a model the way you will use it: the queries and gallery should look like the comparisons the model makes in your application.
 
 - **Retrieval** asks whether the model finds a person in other cameras. Market-1501 and MSMT17 measure this, and `RetrievalProtocol` does it on your own identity folders.
-- **Re-association** asks whether the model finds a person again a number of frames later in the same video. When re-ID helps a tracker such as [Roboflow Trackers](https://github.com/roboflow/trackers) associate people across frames, this is the comparison it makes. `ReassociationProtocol` takes a person's crop at one frame as the query, ranks the people present in the same sequence a set number of frames later, and records the rank of that same person. Retrieval on the same crops would overstate this ability, because a query's closest gallery images are usually the same person a few frames apart.
+- **Re-association** asks whether the model finds a person again a number of frames later in the same video. When re-ID helps a tracker such as [Roboflow Trackers](https://github.com/roboflow/trackers) associate people across frames, this is the comparison it makes. `ReassociationProtocol` takes a person's crop at one frame as the query, ranks the people who have a crop in the same sequence a set number of frames later, and records the rank of that same person. Retrieval on the same crops would overstate this ability, because a query's closest gallery images are usually the same person a few frames apart.
 
 ## Evaluate on a benchmark or your own images
 
@@ -117,7 +117,7 @@ print(result.metrics)
 
 This is the MOT17 half split used in the tracking literature, for example by ByteTrack, so the train half has one frame more than the val half when L is even.
 
-Use `"full"` for sequences kept only for evaluation. Use `"train_half"` and `"val_half"` when training and evaluating on the same sequences, so no frame is used for both. `class_ids` selects which ground-truth classes become identities. DanceTrack and SportsMOT label every box as class 1, so the default keeps all of them; MOT17 also labels vehicles, static people, distractors, and occluders, so pass `class_ids=[1]` there.
+Use `"full"` for sequences kept only for evaluation. Use `"train_half"` and `"val_half"` when training and evaluating on the same sequences, so no frame is used for both. Boxes with confidence 0, which MOTChallenge ground truth uses to mark boxes to ignore, are always skipped. Among the boxes with a nonzero confidence, `class_ids` keeps only the listed ground-truth classes.
 
 Re-association reports `rank1`, the percentage of queries whose correct match is the closest of their candidates, and `mrr`, the [mean reciprocal rank](../learn/metrics.md#mrr): each query scores 1/r, where r is the rank of its correct match (1 at rank 1, 1/2 at rank 2), and `mrr` averages these scores. Each query has exactly one correct match, so mean average precision is the mean reciprocal rank.
 
@@ -125,7 +125,7 @@ Re-association scores rankings of saved crops; it does not run a tracker or deci
 
 ## Limit which gallery images each query is ranked against
 
-By default, each query is ranked against the whole gallery. A candidate set limits a query to some of the gallery images. `ReassociationProtocol` builds one for every query: with `gap_frames=30`, a query at frame 100 is ranked only against the people present at frame 130 of the same sequence.
+By default, each query is ranked against the whole gallery. A candidate set limits a query to some of the gallery images. `ReassociationProtocol` builds one for every query: with `gap_frames=30`, a query at frame 100 is ranked only against the crops at frame 130 of the same sequence. People without a crop there, such as someone whose box the visibility or size filters dropped, are not candidates, and a query whose own person has no crop there is skipped.
 
 To define your own candidate sets, subclass a protocol and return a candidate mask from `_build_query_gallery`. The mask is a boolean array shaped `(num_queries, num_gallery)`: `True` keeps a gallery image in that query's ranking, and `False` removes it from both the ranking and the count of correct matches. This protocol ranks each query only against gallery images from the same scene:
 
