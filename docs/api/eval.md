@@ -1,5 +1,5 @@
 ---
-description: Python API reference for evaluation protocols and results in the reid package, covering retrieval and re-association.
+description: Python API reference for evaluation protocols and results in Re-ID, covering retrieval and re-association.
 ---
 
 # Evaluation API

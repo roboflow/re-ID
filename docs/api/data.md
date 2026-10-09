@@ -1,5 +1,5 @@
 ---
-description: Python API reference for re-identification splits and dataset loaders in the reid package, including Market-1501, MSMT17, and identity folders.
+description: Python API reference for re-identification splits and dataset loaders in Re-ID, including Market-1501, MSMT17, and identity folders.
 ---
 
 # Data API

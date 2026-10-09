@@ -1,5 +1,5 @@
 ---
-description: Python API reference for loading re-identification models and extracting appearance embeddings with the reid package.
+description: Python API reference for loading re-identification models and extracting appearance embeddings with Re-ID.
 ---
 
 # Model API

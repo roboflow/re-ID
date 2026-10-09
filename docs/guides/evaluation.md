@@ -1,5 +1,5 @@
 ---
-title: Evaluate a ReID model
+title: Evaluate a Re-ID model
 ---
 
 # Evaluate a model
@@ -57,7 +57,7 @@ print(result.metrics)
 Evaluate a model the way you will use it: the queries and gallery should look like the comparisons the model makes in your application.
 
 - **Retrieval** asks whether the model finds a person in other cameras. Market-1501 and MSMT17 measure this, and `RetrievalProtocol` does it on your own identity folders.
-- **Re-association** asks whether the model finds a person again a number of frames later in the same video. When re-ID helps a tracker such as [Roboflow Trackers](https://github.com/roboflow/trackers) associate people across frames, this is the comparison it makes. `ReassociationProtocol` takes a person's crop at one frame as the query, ranks the people who have a crop in the same sequence a set number of frames later, and records the rank of that same person. Retrieval on the same crops would overstate this ability, because a query's closest gallery images are usually the same person a few frames apart.
+- **Re-association** asks whether the model finds a person again a number of frames later in the same video. When Re-ID helps a tracker such as [Roboflow Trackers](https://github.com/roboflow/trackers) associate people across frames, this is the comparison it makes. `ReassociationProtocol` takes a person's crop at one frame as the query, ranks the people who have a crop in the same sequence a set number of frames later, and records the rank of that same person. Retrieval on the same crops would overstate this ability, because a query's closest gallery images are usually the same person a few frames apart.
 
 ## Evaluate on a benchmark or your own images
 
@@ -87,7 +87,7 @@ result = model.evaluate(data, protocol=RetrievalProtocol(queries_per_id=2, min_c
 
 Omit `protocol` to use retrieval with one query per identity. The same data and protocol, including its `seed`, always select the same images, so evaluating several models this way compares them on identical inputs. `RetrievalProtocol(...).build_query_gallery(data)` returns the query and gallery images it evaluates, the candidate mask (`None` for retrieval), and the metadata. To compare query and gallery images you chose yourself, build a `ReIDSplit` for each and pass both to `model.evaluate`.
 
-`result.metrics` is a dictionary with metric names as keys and percentages as values. For retrieval, `map` (mean average precision) measures ranking across all correct matches, `rank1`, `rank5`, and `rank10` report the percentage of queries with a correct match among the 1, 5, or 10 gallery images closest to the query, and `minp` (mean inverse negative penalty) reflects the position of the last correct match. Re-association reports `rank1` and `mrr` instead, described [below](#crops-from-video). [ReID metrics](../learn/metrics.md#metrics) gives each metric's formula. `result.num_queries` counts queries included in the metrics; `result.metadata` records the protocol settings and the number of query and gallery images.
+`result.metrics` is a dictionary with metric names as keys and percentages as values. For retrieval, `map` (mean average precision) measures ranking across all correct matches, `rank1`, `rank5`, and `rank10` report the percentage of queries with a correct match among the 1, 5, or 10 gallery images closest to the query, and `minp` (mean inverse negative penalty) reflects the position of the last correct match. Re-association reports `rank1` and `mrr` instead, described [below](#crops-from-video). [Re-ID metrics](../learn/metrics.md#metrics) gives each metric's formula. `result.num_queries` counts queries included in the metrics; `result.metadata` records the protocol settings and the number of query and gallery images.
 
 Retrieval uses cosine distance by default; set `RetrievalProtocol(distance="euclidean")` when the benchmark specifies Euclidean distance. Evaluation keeps the whole query-by-gallery distance matrix in memory, 4 bytes per pair, so check the size before evaluating a large dataset: MSMT17's official split, 11,659 queries by 82,161 gallery images, needs about 3.8 GB.
 
