@@ -92,7 +92,7 @@ plugins:
 
 nav:
   - Home:
-      - Quickstart: index.md
+      - Re-ID: index.md
   - Guides:
       - Load a model: guides/loading.md
       - Evaluate a model: guides/evaluation.md
