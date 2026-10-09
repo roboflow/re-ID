@@ -23,16 +23,16 @@ class EvaluationProtocol(ABC):
     """How to evaluate: which images are compared and which metrics are reported.
 
     A protocol holds settings only, so one instance can evaluate any number of
-    datasets and models. :meth:`build_query_gallery` picks the images to compare, and must be
+    datasets and models. ``build_query_gallery`` picks the images to compare, and must be
     deterministic: the same data and settings select the same images, which is
     what lets several models, or several training epochs, be scored on
     identical inputs.
 
-    Subclasses implement ``_build_query_gallery`` and :meth:`metric_values`.
+    Subclasses implement ``_build_query_gallery`` and ``metric_values``.
 
     Attributes:
         name: Protocol name recorded in result metadata.
-        metric_names: Metrics that :meth:`metric_values` reports.
+        metric_names: Metrics that ``metric_values`` reports.
         distance: ``"cosine"`` or ``"euclidean"``, used to compare embeddings.
         exclude_same_pid_camid: Leave out gallery images with the query's person
             and camera ID, as the Market-1501 protocol does.
@@ -92,7 +92,7 @@ class RetrievalProtocol(EvaluationProtocol):
     Query sampling options apply only when deriving splits from crop folders.
     On crops cut from video, a query's nearest gallery images are often the
     same person a few frames apart, which inflates retrieval scores; use
-    :class:`ReassociationProtocol` to measure matching across a frame gap.
+    ``ReassociationProtocol`` to measure matching across a frame gap.
 
     Args:
         queries_per_id: Query images taken from each identity. Defaults to 1.
