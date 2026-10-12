@@ -16,7 +16,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import tempfile
+import urllib.error
 import warnings
 from typing import Any, cast
 
@@ -237,6 +239,42 @@ class TestLoaders:
     def test_malformed_hf_url_raises(self) -> None:
         with pytest.raises(ValueError, match="hf://"):
             resolve_weights("hf://only_one_part")
+
+    def test_url_weights_download_once_then_load_from_cache(self, tmp_path, monkeypatch) -> None:
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(tmp_path / "hosted"))
+        downloads = []
+
+        def download(url: str, dst: str, *args: object, **kwargs: object) -> None:
+            downloads.append(url)
+            shutil.copyfile(tmp_path / "hosted" / "weights.safetensors", dst)
+
+        monkeypatch.setenv("REID_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setattr(torch.hub, "download_url_to_file", download)
+        url = "https://storage.example.com/reid/osnet_x0_25.safetensors"
+
+        for _ in range(2):
+            ReIDModel.from_pretrained(url, architecture="osnet_x0_25", device="cpu")
+
+        assert downloads == [url]
+        assert (tmp_path / "cache" / "weights" / "osnet_x0_25.safetensors").is_file()
+
+    def test_failed_url_download_names_the_url(self, tmp_path, monkeypatch) -> None:
+        def download(url: str, dst: str, *args: object, **kwargs: object) -> None:
+            raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+
+        monkeypatch.setenv("REID_CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(torch.hub, "download_url_to_file", download)
+
+        with pytest.raises(RuntimeError, match="https://storage.example.com/missing.pth"):
+            resolve_weights("https://storage.example.com/missing.pth")
+
+    def test_url_without_a_file_name_raises(self) -> None:
+        """Downloads are cached under the URL's file name, so a URL ending in ``/`` has none to save under.
+
+        Without the check, the cache folder itself would pass for an already downloaded file.
+        """
+        with pytest.raises(ValueError, match="file name"):
+            resolve_weights("https://storage.example.com/reid/")
 
     def test_load_state_dict_mismatch_warns(self) -> None:
         source = nn.Linear(4, 2)

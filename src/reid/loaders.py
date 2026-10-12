@@ -15,6 +15,7 @@ import tempfile
 import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple
+from urllib.parse import urlparse
 
 import torch
 import torch.nn as nn
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 _HF_PREFIX = "hf://"
 _GD_PREFIX = "gd://"
+_URL_PREFIXES = ("http://", "https://")
 
 _DEFAULT_DROP_PREFIXES = ("classifier",)
 _COMMON_KEY_PREFIXES = ("module.", "model.", "encoder.")
@@ -49,11 +51,13 @@ def _weights_cache_dir() -> str:
 
 
 def resolve_weights(source: str) -> str:
-    """Resolve a local path, ``hf://``, or ``gd://`` URL to a local weights file."""
+    """Resolve a local path, ``hf://``, ``gd://``, or ``http(s)://`` URL to a local weights file."""
     if source.startswith(_HF_PREFIX):
         return _resolve_hf(source)
     if source.startswith(_GD_PREFIX):
         return _resolve_gd(source)
+    if source.startswith(_URL_PREFIXES):
+        return _resolve_url(source)
 
     if not os.path.exists(source):
         raise FileNotFoundError(f"Weights file not found: {source}")
@@ -123,6 +127,26 @@ def _resolve_gd(source: str) -> str:
     return _validate_downloaded_file(path)
 
 
+def _resolve_url(source: str) -> str:
+    """Download an ``http(s)://`` weights file once and cache under the re-ID weights cache."""
+    filename = os.path.basename(urlparse(source).path)
+    if not filename:
+        raise ValueError(f"Malformed weights URL {source!r}. Expected a URL ending in a file name.")
+
+    cache_dir = _weights_cache_dir()
+    os.makedirs(cache_dir, exist_ok=True)
+    path = os.path.join(cache_dir, filename)
+    if os.path.exists(path):
+        return _validate_downloaded_file(path)
+
+    try:
+        torch.hub.download_url_to_file(source, path)
+    except OSError as exc:
+        raise RuntimeError(f"Failed to download weights from {source!r}.") from exc
+
+    return _validate_downloaded_file(path)
+
+
 # ---------------------------------------------------------------------------
 # Load-plan resolution
 # ---------------------------------------------------------------------------
@@ -173,7 +197,7 @@ def resolve_load_plan(
        are retained.
     3. **Architecture-only build** — ``source`` is ``None``; ``architecture`` is
        required. Random init, no weight downloads.
-    4. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://``
+    4. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://`` / ``http(s)://``
        URL that does not resolve to a model card; ``architecture`` is required.
 
     Returns:
