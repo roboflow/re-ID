@@ -33,6 +33,7 @@ from PIL import Image
 from safetensors.torch import load_file, save_file
 from torchvision.transforms import Compose, Normalize, Resize, ToTensor
 
+import reid.catalog
 from reid import ReIDModel
 from reid.architectures import build_architecture, default_preprocessing_for_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
@@ -204,6 +205,24 @@ class TestRegistry:
         assert card.architecture == "osnet_x1_0"
         assert config_preprocessing is not None
         assert config_preprocessing.input_size == (256, 128)
+
+    def test_hf_repo_with_config(self, tmp_path, monkeypatch) -> None:
+        config = {"architecture": "osnet_x1_0", "preprocessing": ReIDPreprocessing(input_size=(128, 64)).to_dict()}
+        (tmp_path / "reid_config.json").write_text(json.dumps(config))
+        requests = []
+
+        def download(repo_id: str, filename: str, revision: str | None = None) -> str:
+            requests.append((repo_id, filename, revision))
+            return str(tmp_path / filename)
+
+        monkeypatch.setattr(reid.catalog, "hf_hub_download", download)
+
+        card, config_preprocessing = resolve_model_card("hf://org/repo@v1")
+
+        assert requests == [("org/repo", "reid_config.json", "v1")]
+        assert card.architecture == "osnet_x1_0"
+        assert card.weights == "hf://org/repo@v1/weights.safetensors"
+        assert config_preprocessing.input_size == (128, 64)
 
     def test_local_dir_without_config_raises(self, tmp_path) -> None:
         with pytest.raises(ValueError, match="reid_config.json"):

@@ -97,49 +97,27 @@ def list_aliases() -> list[str]:
 
 
 def resolve_model_card(source: str) -> tuple[ModelCard, ReIDPreprocessing | None] | None:
-    """Resolve an alias or ``reid_config.json`` directory, repo, or folder URL to a load recipe.
+    """Resolve an alias or a ``save_pretrained`` model to a load recipe.
 
-    Returns ``None`` when ``source`` is a bare weights *file* URL/path without a
-    config. Curated aliases return ``(card, None)``; saved / HF configs return
-    ``(card, preprocessing)`` with the preprocessing dict from
-    ``reid_config.json``.
+    A saved model is a folder holding ``reid_config.json`` and ``weights.safetensors``:
+    a local directory, an ``hf://org/repo`` repository, or an ``http(s)://`` folder URL.
+    Curated aliases return ``(card, None)``; saved models return ``(card, preprocessing)``
+    with the preprocessing from ``reid_config.json``. Returns ``None`` when ``source`` is
+    a bare weights file, which needs an explicit architecture.
 
     Raises:
-        ValueError: If ``source`` is a local directory or an ``http(s)://``
-            folder URL without ``reid_config.json`` (folders are never bare
-            weight files).
+        ValueError: If a local directory or ``http(s)://`` folder URL has no
+            ``reid_config.json`` (folders are never bare weight files).
+        RuntimeError: If a Hugging Face repository's ``reid_config.json`` cannot be
+            downloaded.
     """
     if source in ALIASES:
         return ALIASES[source], None
-
-    # Local directory must be a save_pretrained() tree (reid_config.json).
-    if os.path.isdir(source):
-        config_path = os.path.join(source, "reid_config.json")
-        if not os.path.isfile(config_path):
-            raise ValueError(
-                f"Cannot load {source!r}: directory has no reid_config.json. "
-                "Point to a directory produced by ReIDModel.save_pretrained(), "
-                "or pass a weights *file* path together with architecture=... ."
-            )
-        return _parse_config_file(config_path, weights_source=os.path.join(source, "weights.safetensors"))
-
-    # HF repo URL (no trailing filename) — try to fetch reid_config.json.
-    # hf://org/repo has exactly 2 non-empty parts after "hf://".
-    # hf://org/repo/file.pth has 3+ parts and is a bare weights file.
-    if source.startswith("hf://"):
-        rest = source[len("hf://") :]
-        parts = [p for p in rest.split("/") if p]
-        if len(parts) == 2:
-            try:
-                return _load_hf_repo_config(source)
-            except (HfHubHTTPError, EntryNotFoundError, OSError, ValueError) as exc:
-                raise RuntimeError(f"Failed to resolve Hugging Face repo config for {source!r}.") from exc
-
-    # http(s) URL to a save_pretrained() folder, unless it ends in a weights file name.
-    if source.startswith(("http://", "https://")) and not urlparse(source).path.endswith(_WEIGHTS_FILE_SUFFIXES):
-        return _load_url_folder_config(source)
-
-    return None
+    saved_model = _find_saved_model(source)
+    if saved_model is None:
+        return None
+    config_path, weights_source = saved_model
+    return _parse_config_file(config_path, weights_source=weights_source)
 
 
 def save_model_config(
@@ -170,37 +148,72 @@ def save_model_config(
 # ---------------------------------------------------------------------------
 
 
-def _load_hf_repo_config(hf_repo_url: str) -> tuple[ModelCard, ReIDPreprocessing | None]:
-    """Download and parse ``reid_config.json`` from an HF repo URL."""
-    rest = hf_repo_url[len("hf://") :]
-    parts = [p for p in rest.split("/") if p]
+def _find_saved_model(source: str) -> tuple[str, str] | None:
+    """Locate the two files of the ``save_pretrained`` folder that ``source`` names.
+
+    ``source`` may be a local directory, an ``hf://org/repo`` repository, or an
+    ``http(s)://`` folder URL. The config is read right away to build the model card,
+    so a remote one is downloaded here; the weights are only located, and are
+    downloaded later, when the model loads them.
+
+    Returns:
+        ``(config_path, weights_source)``: the local path of ``reid_config.json``, and
+        the path or URL of ``weights.safetensors``. ``None`` when ``source`` is not a
+        folder, such as a bare weights file.
+
+    Raises:
+        ValueError: If a local directory or ``http(s)://`` folder URL has no
+            ``reid_config.json``.
+        RuntimeError: If a Hugging Face repository's ``reid_config.json`` cannot be
+            downloaded.
+    """
+    if os.path.isdir(source):
+        config_path = os.path.join(source, "reid_config.json")
+        if not os.path.isfile(config_path):
+            raise ValueError(
+                f"Cannot load {source!r}: directory has no reid_config.json. "
+                "Point to a directory produced by ReIDModel.save_pretrained(), "
+                "or pass a weights *file* path together with architecture=... ."
+            )
+        return config_path, os.path.join(source, "weights.safetensors")
+
+    # hf://org/repo has exactly 2 parts after "hf://"; hf://org/repo/file.pth is a bare weights file.
+    if source.startswith("hf://") and len([p for p in source[len("hf://") :].split("/") if p]) == 2:
+        try:
+            config_path = _download_hf_config(source)
+        except (HfHubHTTPError, EntryNotFoundError, OSError, ValueError) as exc:
+            raise RuntimeError(f"Failed to resolve Hugging Face repo config for {source!r}.") from exc
+        return config_path, source.rstrip("/") + "/weights.safetensors"
+
+    # An http(s) URL is a folder unless it ends in a weights file name.
+    if source.startswith(("http://", "https://")) and not urlparse(source).path.endswith(_WEIGHTS_FILE_SUFFIXES):
+        folder_url = source.rstrip("/")
+        return _download_url_config(folder_url), f"{folder_url}/weights.safetensors"
+
+    return None
+
+
+def _download_hf_config(hf_repo_url: str) -> str:
+    """Download ``reid_config.json`` from an HF repo URL and return its local path."""
+    parts = [p for p in hf_repo_url[len("hf://") :].split("/") if p]
     repo_id = "/".join(parts[:2])
     revision = None
     if "@" in repo_id:
         repo_id, revision = repo_id.split("@", 1)
-
-    config_path = hf_hub_download(
-        repo_id=repo_id,
-        filename="reid_config.json",
-        revision=revision,
-    )
-    weights_source = hf_repo_url.rstrip("/") + "/weights.safetensors"
-    return _parse_config_file(config_path, weights_source=weights_source)
+    return hf_hub_download(repo_id=repo_id, filename="reid_config.json", revision=revision)
 
 
-def _load_url_folder_config(folder_url: str) -> tuple[ModelCard, ReIDPreprocessing]:
-    """Download ``reid_config.json`` from a ``save_pretrained`` folder served over http(s) and parse it."""
-    folder_url = folder_url.rstrip("/")
+def _download_url_config(folder_url: str) -> str:
+    """Download ``reid_config.json`` from a folder served over http(s) and return its local path."""
     config_url = f"{folder_url}/reid_config.json"
     try:
-        config_path = resolve_weights(config_url)
+        return resolve_weights(config_url)
     except RuntimeError as exc:
         raise ValueError(
             f"Cannot load {folder_url!r}: no reid_config.json at {config_url}. "
             "Point to a folder produced by ReIDModel.save_pretrained(), "
             "or pass a weights *file* URL together with architecture=... ."
         ) from exc
-    return _parse_config_file(config_path, weights_source=f"{folder_url}/weights.safetensors")
 
 
 def _parse_config_file(
