@@ -92,7 +92,6 @@ def distance_matrix(
     gallery_embeddings = np.asarray(gallery_embeddings)
     _validate_embeddings(query_embeddings, "query_embeddings")
     _validate_embeddings(gallery_embeddings, "gallery_embeddings")
-    # ``extract_embeddings`` returns (0, 0) for a frame with no detections: nothing to compare.
     if len(query_embeddings) == 0 or len(gallery_embeddings) == 0:
         return np.empty((len(query_embeddings), len(gallery_embeddings)), dtype=np.float32)
     if query_embeddings.shape[1] != gallery_embeddings.shape[1]:
@@ -100,12 +99,14 @@ def distance_matrix(
             "query_embeddings and gallery_embeddings must have the same number of dimensions, "
             f"got {query_embeddings.shape[1]} and {gallery_embeddings.shape[1]}."
         )
+    query_embeddings = query_embeddings.astype(np.float32, copy=False)
+    gallery_embeddings = gallery_embeddings.astype(np.float32, copy=False)
     if distance == "cosine":
         distmat = _l2_normalize(query_embeddings) @ _l2_normalize(gallery_embeddings).T
         distmat *= -1.0
         distmat += 1.0
         return distmat
-    distmat = (query_embeddings @ gallery_embeddings.T).astype(np.float32, copy=False)
+    distmat = query_embeddings @ gallery_embeddings.T
     distmat *= -2.0
     distmat += (query_embeddings**2).sum(axis=1, keepdims=True)
     distmat += (gallery_embeddings**2).sum(axis=1, keepdims=True).T
@@ -126,7 +127,7 @@ def _validate_embeddings(embeddings: np.ndarray, name: str) -> None:
 
 
 def _l2_normalize(embeddings: np.ndarray) -> np.ndarray:
-    return (embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-12)).astype(np.float32, copy=False)
+    return embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-12)
 
 
 def _compute_reid_metrics(

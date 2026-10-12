@@ -23,6 +23,17 @@ def test_distance_matrix_values(distance: str, expected: list[list[float]]) -> N
     assert distance_matrix(query, gallery, distance=distance) == pytest.approx(np.array(expected), abs=1e-5)
 
 
+@pytest.mark.parametrize("dtype, vector", [(np.float16, [300.0, 400.0]), (np.int32, [60000, 60000])])
+@pytest.mark.parametrize("distance", ["cosine", "euclidean"])
+def test_distance_matrix_computes_in_float32(dtype: type, vector: list[float], distance: str) -> None:
+    """Squaring these vectors overflows float16 and int32; the distances must still be right."""
+    query = np.array([vector], dtype=dtype)
+    gallery = np.vstack([query, -query])
+    # The gallery holds the query and its opposite: cosine distances 0 and 2, Euclidean 0 and 2 * |vector|.
+    expected = [[0.0, 2.0]] if distance == "cosine" else [[0.0, 2 * float(np.linalg.norm(vector))]]
+    assert distance_matrix(query, gallery, distance=distance) == pytest.approx(np.array(expected), rel=1e-6, abs=1e-3)
+
+
 @pytest.mark.parametrize("query_count, gallery_count", [(0, 3), (2, 0)])
 def test_distance_matrix_with_an_empty_side(query_count: int, gallery_count: int) -> None:
     """A frame with no detections embeds to a (0, 0) array; there is nothing to compare, not an error."""
