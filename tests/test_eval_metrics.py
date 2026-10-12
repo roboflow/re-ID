@@ -11,7 +11,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from reid.eval.metrics import ReIDMetrics, _compute_reid_metrics, _distance_matrix
+from reid import distance_matrix
+from reid.eval.metrics import ReIDMetrics, _compute_reid_metrics
 
 
 @pytest.mark.parametrize("distance, expected", [("cosine", [[0.0, 2.0]]), ("euclidean", [[0.0, 10.0]])])
@@ -19,7 +20,31 @@ def test_distance_matrix_values(distance: str, expected: list[list[float]]) -> N
     # The gallery holds the query and its opposite: cosine distances 0 and 2, Euclidean 0 and 2 * |(3, 4)| = 10.
     query = np.array([[3.0, 4.0]], dtype=np.float32)
     gallery = np.array([[3.0, 4.0], [-3.0, -4.0]], dtype=np.float32)
-    assert _distance_matrix(query, gallery, distance) == pytest.approx(np.array(expected), abs=1e-5)
+    assert distance_matrix(query, gallery, distance=distance) == pytest.approx(np.array(expected), abs=1e-5)
+
+
+@pytest.mark.parametrize("query_count, gallery_count", [(0, 3), (2, 0)])
+def test_distance_matrix_with_an_empty_side(query_count: int, gallery_count: int) -> None:
+    """A frame with no detections embeds to a (0, 0) array; there is nothing to compare, not an error."""
+    query = np.ones((query_count, 4)) if query_count else np.empty((0, 0))
+    gallery = np.ones((gallery_count, 4)) if gallery_count else np.empty((0, 0))
+    assert distance_matrix(query, gallery).shape == (query_count, gallery_count)
+
+
+@pytest.mark.parametrize(
+    "query, gallery, distance, message",
+    [
+        ([[1.0, 0.0]], [[1.0, 0.0]], "manhattan", "distance must be 'cosine' or 'euclidean'"),
+        ([1.0, 0.0], [[1.0, 0.0]], "cosine", "query_embeddings must be 2-D"),
+        ([[1.0, 0.0]], [[1.0, 0.0, 0.0]], "cosine", "same number of dimensions"),
+        ([[1.0, np.nan]], [[1.0, 0.0]], "cosine", "query_embeddings must contain only finite values"),
+        # Squared length 8.6e37 is just above float32 max / 4, so Euclidean distances would overflow.
+        ([[1.0, 0.0]], np.full((1, 512), 4.1e17), "euclidean", "gallery_embeddings are too large to compare"),
+    ],
+)
+def test_distance_matrix_rejects_invalid_input(query: list, gallery: list, distance: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        distance_matrix(np.asarray(query), np.asarray(gallery), distance=distance)
 
 
 def _score_example(mask: np.ndarray | None = None) -> ReIDMetrics:

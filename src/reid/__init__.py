@@ -22,6 +22,7 @@ from reid.eval import (
     ReassociationProtocol,
     ReIDResult,
     RetrievalProtocol,
+    distance_matrix,
 )
 from reid.model import ReIDModel
 from reid.preprocessing import Interpolation, ReIDPreprocessing
@@ -36,6 +37,7 @@ __all__ = [
     "ReIDResult",
     "ReIDSplit",
     "RetrievalProtocol",
+    "distance_matrix",
     "list_aliases",
     "list_architectures",
     "load_identity_folders",

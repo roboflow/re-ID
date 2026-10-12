@@ -52,6 +52,16 @@ result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euc
 print(result.metrics)
 ```
 
+Outside an evaluation, for example to find each person again in a later frame, `distance_matrix` computes the same distances between embeddings you extracted yourself: one row per query, smaller is closer.
+
+```python
+from reid import distance_matrix
+
+query_embeddings = model.extract_embeddings(detections, frame)
+gallery_embeddings = model.extract_embeddings(later_detections, later_frame)
+closest = distance_matrix(query_embeddings, gallery_embeddings).argmin(axis=1)
+```
+
 ### Retrieval or re-association
 
 Evaluate a model the way you will use it: the queries and gallery should look like the comparisons the model makes in your application.
