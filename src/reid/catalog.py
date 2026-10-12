@@ -54,6 +54,11 @@ _FASTREID_MOT17_WARNING = (
     "cross-domain retrieval on Market-1501 / MSMT17 is expected to underperform."
 )
 
+# OSNet x1.0 fine-tuned on each tracking dataset's training data: the Roboflow Trackers ReID encoders.
+_TRACKING_ENCODERS_URL = (
+    "https://storage.googleapis.com/com-roboflow-marketing/trackers/trackers_reid_finetuned_encoders"
+)
+
 FASTREID_MOT17_SBS50 = "fastreid_mot17_sbs50"
 
 
@@ -83,6 +88,22 @@ ALIASES: dict[str, ModelCard] = {
         architecture=FASTREID_SBS_ARCHITECTURE,
         weights=_FASTREID_MOT17_WEIGHTS,
         domain_warning=_FASTREID_MOT17_WARNING,
+    ),
+    "osnet_x1_0_mot17": ModelCard(
+        architecture="osnet_x1_0",
+        weights=f"{_TRACKING_ENCODERS_URL}/reid_mot17_osnet_x1_0/weights.safetensors",
+    ),
+    "osnet_x1_0_sportsmot": ModelCard(
+        architecture="osnet_x1_0",
+        weights=f"{_TRACKING_ENCODERS_URL}/reid_sportsmot_osnet_x1_0/weights.safetensors",
+    ),
+    "osnet_x1_0_dancetrack": ModelCard(
+        architecture="osnet_x1_0",
+        weights=f"{_TRACKING_ENCODERS_URL}/reid_dancetrack_osnet_x1_0/weights.safetensors",
+    ),
+    "osnet_x1_0_soccernet": ModelCard(
+        architecture="osnet_x1_0",
+        weights=f"{_TRACKING_ENCODERS_URL}/reid_soccernet_osnet_x1_0/weights.safetensors",
     ),
 }
 

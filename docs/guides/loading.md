@@ -37,6 +37,10 @@ Prefer this to sharing the weights file alone: `reid_config.json` sets the archi
 | :--------------------------------------- | :----------------------- | :---------------------------------- | :-------------------------------------------------------------------------------------------------------------------- |
 | `osnet_x1_0_msmt17_combineall` (default) | OSNet x1.0               | MSMT17, all splits combined         | [torchreid model zoo](https://kaiyangzhou.github.io/deep-person-reid/MODEL_ZOO), via Hugging Face `kaiyangzhou/osnet` |
 | `fastreid_mot17_sbs50`                   | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | [BoT-SORT](https://github.com/NirAharon/BoT-SORT) release, via Google Drive                                           |
+| `osnet_x1_0_mot17`                       | OSNet x1.0               | MOT17 train-half crops              | Roboflow, fine-tuned for [Trackers](https://github.com/roboflow/trackers)                                             |
+| `osnet_x1_0_sportsmot`                   | OSNet x1.0               | SportsMOT train crops               | Roboflow, fine-tuned for [Trackers](https://github.com/roboflow/trackers)                                             |
+| `osnet_x1_0_dancetrack`                  | OSNet x1.0               | DanceTrack train crops              | Roboflow, fine-tuned for [Trackers](https://github.com/roboflow/trackers)                                             |
+| `osnet_x1_0_soccernet`                   | OSNet x1.0               | SoccerNet train crops               | Roboflow, fine-tuned for [Trackers](https://github.com/roboflow/trackers)                                             |
 
 Weights download the first time a model is loaded and are kept on disk, so later loads skip the download. See [weight cache](#weight-cache) for more details.
 

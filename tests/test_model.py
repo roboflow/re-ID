@@ -164,7 +164,16 @@ class TestRegistry:
 
     def test_list_aliases(self) -> None:
         aliases = list_aliases()
-        assert aliases == sorted([DEFAULT_MODEL, FASTREID_MOT17_SBS50])
+        assert aliases == sorted(
+            [
+                DEFAULT_MODEL,
+                FASTREID_MOT17_SBS50,
+                "osnet_x1_0_mot17",
+                "osnet_x1_0_sportsmot",
+                "osnet_x1_0_dancetrack",
+                "osnet_x1_0_soccernet",
+            ]
+        )
 
     def test_resolve_default_alias(self) -> None:
         resolved = resolve_model_card(DEFAULT_MODEL)

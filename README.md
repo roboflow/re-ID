@@ -82,6 +82,10 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 | :--------------------------------------- | :----------------------- | :---------------------------------- | :---------------------------------------------------------------------------------------------- |
 | `osnet_x1_0_msmt17_combineall` (default) | OSNet x1.0               | MSMT17, all splits combined         | General pedestrian embeddings. Not for evaluating on MSMT17, whose test identities it has seen. |
 | `fastreid_mot17_sbs50`                   | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | MOT17 tracking, as in BoT-SORT                                                                  |
+| `osnet_x1_0_mot17`                       | OSNet x1.0               | MOT17 train-half crops              | Tracking pedestrians, as in MOT17                                                               |
+| `osnet_x1_0_sportsmot`                   | OSNet x1.0               | SportsMOT train crops               | Tracking basketball, football and volleyball players, as in SportsMOT                           |
+| `osnet_x1_0_dancetrack`                  | OSNet x1.0               | DanceTrack train crops              | Tracking dancers in similar outfits, as in DanceTrack                                           |
+| `osnet_x1_0_soccernet`                   | OSNet x1.0               | SoccerNet train crops               | Tracking soccer players, as in SoccerNet                                                        |
 
 `list_aliases()` lists these names. Any `timm:<name>` backbone and other OSNet sizes load from a weights file; see the [loading guide](docs/guides/loading.md).
 
