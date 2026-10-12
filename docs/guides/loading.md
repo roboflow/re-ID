@@ -7,7 +7,7 @@ title: Load a Re-ID model
 `ReIDModel.from_pretrained()` loads a model from whichever source you have:
 
 1. **Pretrained model name.** `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")`. The package supplies the architecture, weights, and preprocessing settings, and downloads the weights the first time a name is used; `list_aliases()` lists the supported names. `ReIDModel.from_pretrained()` with no name loads `osnet_x1_0_msmt17_combineall`.
-2. **Saved model directory or Hugging Face repository.** `ReIDModel.from_pretrained("/path/to/export")` or `ReIDModel.from_pretrained("hf://org/repo")`. The directory must contain the weights and the `reid_config.json` that `save_pretrained` writes.
+2. **Saved model folder.** `ReIDModel.from_pretrained("/path/to/export")`, `ReIDModel.from_pretrained("hf://org/repo")`, or `ReIDModel.from_pretrained("https://example.com/models/my_model/")`. The folder must contain `weights.safetensors` and `reid_config.json`, with these names, as `save_pretrained` writes them.
 3. **Weights file.** `ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")`. Hugging Face (`hf://org/repo/file.pth`), Google Drive (`gd://<file-id>`), and web (`https://.../weights.pth`) sources work the same way. Name the architecture, because the file carries no model configuration; `list_architectures()` lists the options. If most of the architecture's weights are missing from the file, `from_pretrained` raises an error, because the weights come from a different model. A partial load above that, such as a checkpoint with a different head, loads with a warning, and the missing parameters keep random values. So make sure the weights file was trained with the architecture you name.
 4. **Random initialization.** `ReIDModel.from_pretrained(architecture="osnet_x1_0")`. The weights are random, so the embeddings carry no identity information; use this only to test the API without downloading weights.
 
@@ -16,10 +16,20 @@ from reid import ReIDModel
 
 model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
 model = ReIDModel.from_pretrained("/path/to/export")
+model = ReIDModel.from_pretrained("https://example.com/models/my_model/")
 model = ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")
 ```
 
 `model.save_pretrained(directory)` writes the weights to `weights.safetensors` and the architecture and preprocessing settings to `reid_config.json`, so `ReIDModel.from_pretrained(directory)` restores the same model.
+
+To share a model you trained, save it with `save_pretrained`, upload the folder, and load it by its URL. `from_pretrained` looks for these two files in the folder, under these names:
+
+| File                  | Format      | Contents                                                                                       |
+| :-------------------- | :---------- | :--------------------------------------------------------------------------------------------- |
+| `weights.safetensors` | safetensors | the model weights                                                                              |
+| `reid_config.json`    | JSON        | `architecture`, the name `list_architectures()` lists, and `preprocessing`, the input settings |
+
+Prefer this to sharing the weights file alone: `reid_config.json` sets the architecture and preprocessing, so nobody has to name them, and every weight in the file must match that architecture, where a bare weights file only needs half of them to.
 
 ## Pretrained models
 
@@ -47,4 +57,4 @@ Each architecture has default preprocessing: OSNet resizes crops to 256 × 128 a
 
 ## Weight cache
 
-Google Drive (`gd://...`) and web (`https://...`) downloads are cached under `~/.cache/reid/weights/`, by file name. Set `REID_CACHE_DIR` to move the cache; weights then go to `$REID_CACHE_DIR/weights/`. Hugging Face weights use the standard Hugging Face Hub cache.
+Google Drive (`gd://...`) downloads are cached under `~/.cache/reid/weights/` by file name, and web (`https://...`) downloads by their host and path, for example `~/.cache/reid/weights/example.com/models/my_model/weights.safetensors`. Set `REID_CACHE_DIR` to move the cache; weights then go to `$REID_CACHE_DIR/weights/`. Hugging Face weights use the standard Hugging Face Hub cache.

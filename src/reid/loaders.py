@@ -128,17 +128,14 @@ def _resolve_gd(source: str) -> str:
 
 
 def _resolve_url(source: str) -> str:
-    """Download an ``http(s)://`` weights file once and cache under the re-ID weights cache."""
-    filename = os.path.basename(urlparse(source).path)
-    if not filename:
-        raise ValueError(f"Malformed weights URL {source!r}. Expected a URL ending in a file name.")
-
-    cache_dir = _weights_cache_dir()
-    os.makedirs(cache_dir, exist_ok=True)
-    path = os.path.join(cache_dir, filename)
+    """Download an ``http(s)://`` file once and cache it under its host and path in the weights cache."""
+    parsed = urlparse(source)
+    # Keyed by host and path, not file name: every saved model folder holds a weights.safetensors.
+    path = os.path.join(_weights_cache_dir(), parsed.netloc, *parsed.path.strip("/").split("/"))
     if os.path.exists(path):
         return _validate_downloaded_file(path)
 
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
         torch.hub.download_url_to_file(source, path)
     except OSError as exc:
@@ -192,7 +189,7 @@ def resolve_load_plan(
        ``DEFAULT_MODEL`` is used.
     2. **Curated alias or config directory** — ``source`` resolves via
        :func:`reid.catalog.resolve_model_card` (alias, ``save_pretrained``
-       directory, or HF repo). When ``architecture`` is explicitly overridden,
+       directory, HF repo, or ``http(s)://`` folder URL). When ``architecture`` is explicitly overridden,
        the override wins (with a warning); the card's weights and preprocessing
        are retained.
     3. **Architecture-only build** — ``source`` is ``None``; ``architecture`` is
