@@ -181,6 +181,7 @@ class ReIDModel:
                 resolved_device,
                 architecture=arch_name or None,
                 required_match_fraction=plan.required_match_fraction,
+                allow_pickle=not plan.weights.startswith(("http://", "https://")),
             )
 
         backbone.to(resolved_device)

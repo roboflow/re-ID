@@ -13,6 +13,7 @@ Curated weight downloads live in the ``@pytest.mark.slow`` test below.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -348,6 +349,34 @@ class TestLoaders:
 
         with pytest.raises(RuntimeError, match="https://storage.example.com/missing.pth"):
             resolve_weights("https://storage.example.com/missing.pth")
+
+    def test_empty_url_download_is_not_cached(self, tmp_path, monkeypatch) -> None:
+        """A server that answers with an empty file once must not break every later load."""
+        hosted = tmp_path / "hosted" / "storage.example.com" / "reid" / "weights.safetensors"
+        hosted.parent.mkdir(parents=True)
+        hosted.touch()
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+        url = "https://storage.example.com/reid/weights.safetensors"
+
+        with pytest.raises(RuntimeError, match="empty"):
+            resolve_weights(url)
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(hosted.parent))
+        ReIDModel.from_pretrained(url, architecture="osnet_x0_25", device="cpu")
+
+        assert downloads == [url, url]
+
+    def test_url_checkpoint_that_needs_pickle_raises(self, tmp_path, monkeypatch) -> None:
+        """A downloaded ``.pth`` never reaches ``weights_only=False``; the same file loaded locally still does."""
+        checkpoint = tmp_path / "hosted" / "storage.example.com" / "reid" / "osnet.pth"
+        checkpoint.parent.mkdir(parents=True)
+        backbone = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")._backbone
+        torch.save({"state_dict": backbone.state_dict(), "args": argparse.Namespace(lr=0.1)}, checkpoint)
+        _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        with pytest.raises(ValueError, match="safetensors"):
+            ReIDModel.from_pretrained("https://storage.example.com/reid/osnet.pth", architecture="osnet_x0_25")
+        with pytest.warns(UserWarning, match="weights_only=False"):
+            ReIDModel.from_pretrained(str(checkpoint), architecture="osnet_x0_25", device="cpu")
 
     def test_load_state_dict_mismatch_warns(self) -> None:
         source = nn.Linear(4, 2)

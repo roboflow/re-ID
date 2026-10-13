@@ -121,7 +121,7 @@ def _resolve_gd(source: str) -> str:
         os.replace(tmp_path, path)
     except Exception:
         if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+            os.remove(tmp_path)
         raise
 
     return _validate_downloaded_file(path)
@@ -138,10 +138,11 @@ def _resolve_url(source: str) -> str:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
         torch.hub.download_url_to_file(source, path)
+        return _validate_downloaded_file(path)
     except OSError as exc:
-        raise RuntimeError(f"Failed to download weights from {source!r}.") from exc
-
-    return _validate_downloaded_file(path)
+        if os.path.exists(path):
+            os.remove(path)
+        raise RuntimeError(f"Failed to download weights from {source!r}: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +285,7 @@ def _strip_common_prefixes(key: str) -> str:
     return stripped
 
 
-def _read_state_dict(path: str, device: torch.device) -> dict:
+def _read_state_dict(path: str, device: torch.device, *, allow_pickle: bool = True) -> dict:
     """Read a raw state dict from a ``.pth`` or ``.safetensors`` file."""
     if path.endswith(".safetensors"):
         return load_file(path, device=str(device))
@@ -292,6 +293,12 @@ def _read_state_dict(path: str, device: torch.device) -> dict:
     try:
         state_dict = torch.load(path, map_location=device, weights_only=True)
     except (TypeError, pickle.UnpicklingError, RuntimeError) as exc:
+        if not allow_pickle:
+            raise ValueError(
+                f"{path!r} only loads with weights_only=False, which runs arbitrary code, so reid does not use it "
+                "for a file downloaded from a URL. Convert the checkpoint to .safetensors, or download it and "
+                "pass the local path if you trust its source."
+            ) from exc
         # weights_only=True rejects checkpoints with non-tensor globals (and old
         # torch lacks the kwarg entirely, raising TypeError). Fall back to the
         # unsafe path, but warn: it executes arbitrary pickle payloads.
@@ -322,6 +329,7 @@ def load_state_dict(
     warn_threshold: float = _MISMATCH_FRACTION,
     required_match_fraction: float | None = None,
     label: str | None = None,
+    allow_pickle: bool = True,
 ) -> None:
     """Load ``path`` into ``module`` by name and shape (classifier keys skipped).
 
@@ -348,6 +356,9 @@ def load_state_dict(
         label: Optional human-readable name used in the unmet-
             ``required_match_fraction`` error message. Defaults to
             ``architecture`` when omitted.
+        allow_pickle: Whether a ``.pth`` that fails the safe
+            ``weights_only=True`` load may fall back to ``weights_only=False``.
+            ``False`` raises ``ValueError`` instead.
     """
     if remap is None and architecture:
         from reid.architectures import checkpoint_remap_for_architecture
@@ -357,7 +368,7 @@ def load_state_dict(
     if label is None:
         label = architecture or None
 
-    state_dict = _read_state_dict(path, device)
+    state_dict = _read_state_dict(path, device, allow_pickle=allow_pickle)
 
     cleaned: dict
     if remap is not None:
