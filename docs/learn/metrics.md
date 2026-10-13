@@ -52,6 +52,12 @@ Every metric is computed on each query's ranking after junk filtering, averaged 
 | $G_q$               | Number of valid matches for query $q$                               |
 | $P_q(i)$            | Precision at rank $i$: the fraction of the top $i$ that are matches |
 
+The following video illustrates these metrics on a single query. The gallery is sorted by distance to the query, nearest first, and the crops of the same player are outlined in green. Each metric reads a different part of that ranking: Rank-k checks whether a match appears in the first $k$ positions, AP looks at the precision every time a match appears, and INP looks at how far down the list the last match sits. Averaging each one over every query of the dataset gives the Rank-k, mAP and mINP reported for a model.
+
+<video width="100%" style="aspect-ratio: 8/5;" controls muted loop preload="none" poster="../../assets/metrics/rank-metrics-poster.webp" aria-label="One query ranked against a gallery, with Rank-1, Rank-5, AP and INP read off the ranking, then their averages over all queries">
+  <source src="../../assets/metrics/rank-metrics.mp4" type="video/mp4">
+</video>
+
 ### Rank-k (CMC)
 
 **Cumulative Matching Characteristic**, not to be confused with camera motion compensation, which trackers such as BoT-SORT also abbreviate CMC. Rank-k is the fraction of queries with at least one match in the top $k$, as reported in the [Market-1501 benchmark](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html):
@@ -65,6 +71,10 @@ $$
 
 CMC answers "how often is a hit early in the list?" It does not reward finding every gallery instance of that person.
 
+![The first 10 ranks of the example query, with rank 1 and ranks 1 to 5 outlined; Rank-1 and Rank-5 are both 1](../assets/metrics/rank-k.webp)
+
+<p align="center" style="margin-top: -0.4em;"><small>The example query: the closest crop is the same player, so Rank-1 and Rank-5 are both 1.</small></p>
+
 ### mAP
 
 **Mean Average Precision.** Average precision takes the precision at every rank where a match occurs, averaged over the query's matches; mAP averages it over queries. The [Market-1501 paper](https://openaccess.thecvf.com/content_iccv_2015/html/Zheng_Scalable_Person_Re-Identification_ICCV_2015_paper.html) introduced it to re-identification, borrowing the [information-retrieval measure](<https://en.wikipedia.org/wiki/Evaluation_measures_(information_retrieval)#Mean_average_precision>):
@@ -75,6 +85,10 @@ $$
 
 Unlike Rank-1, mAP cares about **all** valid gallery matches for that identity, not only the first hit. It is the usual primary number on Market-1501 and MSMT17 leaderboards.
 
+![Ranks 1 to 80 of the example query, each match labelled with its precision from 1/1 to 7/72, and AP = 0.871](../assets/metrics/ap.webp)
+
+<p align="center" style="margin-top: -0.4em;"><small>Each term is the precision at one match: the six matches at ranks 1 to 6 score 1 each, the seventh at rank 72 scores 7/72, and AP averages the seven to 0.871.</small></p>
+
 ### mINP
 
 **Mean Inverse Negative Penalty**, proposed by [Ye et al. (TPAMI 2021)](https://arxiv.org/abs/2001.04193). With $R_q$ being the rank of the **last** match of query $q$:
@@ -84,6 +98,10 @@ $$
 $$
 
 mINP penalizes models that bury hard positive gallery images deep in the ranking even when Rank-1 and mAP look strong.
+
+![Ranks 1 to 80 of the example query, outlined down to the last match at rank 72; INP = 7 / 72 = 0.097](../assets/metrics/inp.webp)
+
+<p align="center" style="margin-top: -0.4em;"><small>Seven matches in the first 72 crops: INP is 7/72 = 0.097. One match buried at rank 72 keeps INP low while AP is 0.871.</small></p>
 
 ### MRR
 
