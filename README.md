@@ -91,12 +91,21 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 
 ## Tutorials
 
-| Tutorial                                                    | What you will do                                                                                               |
-| :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
-| [Load a model](docs/guides/loading.md)                      | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
-| [Evaluate a model](docs/guides/evaluation.md)               | Score a model on Market-1501, your own identity folders, or crops cut from video                               |
-| [Understand the metrics](docs/learn/metrics.md)             | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association                                     |
-| [Reproduce the OSNet benchmarks](notebooks/eval_reid.ipynb) | Evaluate OSNet x1.0 on Market-1501 and MSMT17 against the torchreid model zoo, on a Colab T4                   |
+<p align="left">
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><img src="docs/assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="300px" align="left" /></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><strong>Reproduce the OSNet benchmarks</strong></a>
+<br/>Evaluate OSNet x1.0 on Market-1501 and MSMT17 and compare against the torchreid model zoo.
+<br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
+</p>
+<br clear="left"/>
+
+## Guides
+
+| Guide                                           | What you will do                                                                                               |
+| :---------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
+| [Load a model](docs/guides/loading.md)          | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
+| [Evaluate a model](docs/guides/evaluation.md)   | Score a model on Market-1501, your own identity folders, or crops cut from video                               |
+| [Understand the metrics](docs/learn/metrics.md) | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association                                     |
 
 ## Citation
 

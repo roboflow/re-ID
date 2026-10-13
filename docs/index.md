@@ -44,3 +44,19 @@ print(embeddings.shape)  # (1, 512)
 - [Load a model](guides/loading.md): use pretrained weights or load a saved model
 - [Evaluate a model](guides/evaluation.md): how a query is ranked against a gallery, and how to measure a model's accuracy
 - [Re-ID metrics](learn/metrics.md): understand Rank-k, mAP, mINP, and MRR
+
+## Tutorials
+
+<div class="grid cards" markdown>
+
+- **Reproduce the OSNet benchmarks**
+
+    ---
+
+    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><img src="assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="1600" height="830" loading="lazy" decoding="async"></a>
+
+    Evaluate OSNet x1.0 on Market-1501 and MSMT17 and compare against the torchreid model zoo.
+
+    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb)
+
+</div>
