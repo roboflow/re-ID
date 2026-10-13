@@ -49,14 +49,24 @@ print(embeddings.shape)  # (1, 512)
 
 <div class="grid cards" markdown>
 
-- **Reproduce the OSNet benchmarks**
+- **How to Use Re-ID**
 
     ---
 
-    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><img src="assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="1600" height="830" loading="lazy" decoding="async"></a>
+    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><img src="assets/tutorials/rank-metrics.jpg" alt="A query player and the first eight crops of the gallery ranked by distance, the same player at ranks 1 to 6" width="1280" height="720" loading="lazy" decoding="async"></a>
+
+    Load a model, match the boxes of a MOT17 frame to a later frame with `distance_matrix`, see identities cluster, and evaluate with retrieval and re-association.
+
+    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb)
+
+- **How to Benchmark Re-ID Models**
+
+    ---
+
+    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><img src="assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="1600" height="830" loading="lazy" decoding="async"></a>
 
     Evaluate OSNet x1.0 on Market-1501 and MSMT17 and compare against the torchreid model zoo.
 
-    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb)
+    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb)
 
 </div>

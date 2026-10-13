@@ -92,10 +92,18 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 ## Tutorials
 
 <p align="left">
-<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><img src="docs/assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="300px" align="left" /></a>
-<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><strong>Reproduce the OSNet benchmarks</strong></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><img src="docs/assets/tutorials/rank-metrics.jpg" alt="A query player and the first eight crops of the gallery ranked by distance, the same player at ranks 1 to 6" width="300px" align="left" /></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><strong>How to Use Re-ID</strong></a>
+<br/>Load a model, match the boxes of a MOT17 frame to a later frame with <code>distance_matrix</code>, see identities cluster, and evaluate with retrieval and re-association.
+<br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
+</p>
+<br clear="left"/>
+
+<p align="left">
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><img src="docs/assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="300px" align="left" /></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><strong>How to Benchmark Re-ID Models</strong></a>
 <br/>Evaluate OSNet x1.0 on Market-1501 and MSMT17 and compare against the torchreid model zoo.
-<br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
+<br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
 </p>
 <br clear="left"/>
 
