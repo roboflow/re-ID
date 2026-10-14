@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError
@@ -208,8 +208,7 @@ def _find_saved_model(source: str) -> tuple[str, str] | None:
 
     # An http(s) URL is a folder unless it ends in a weights file name.
     if source.startswith(("http://", "https://")) and not urlparse(source).path.endswith(_WEIGHTS_FILE_SUFFIXES):
-        folder_url = source.rstrip("/")
-        return _download_url_config(folder_url), f"{folder_url}/weights.safetensors"
+        return _download_url_config(source), _url_in_folder(source, "weights.safetensors")
 
     return None
 
@@ -224,9 +223,15 @@ def _download_hf_config(hf_repo_url: str) -> str:
     return hf_hub_download(repo_id=repo_id, filename="reid_config.json", revision=revision)
 
 
+def _url_in_folder(folder_url: str, filename: str) -> str:
+    """URL of ``filename`` inside ``folder_url``, keeping its query (for example a token) and dropping any fragment."""
+    parsed = urlparse(folder_url)
+    return urlunparse(parsed._replace(path=f"{parsed.path.rstrip('/')}/{filename}", fragment=""))
+
+
 def _download_url_config(folder_url: str) -> str:
     """Download ``reid_config.json`` from a folder served over http(s) and return its local path."""
-    config_url = f"{folder_url}/reid_config.json"
+    config_url = _url_in_folder(folder_url, "reid_config.json")
     try:
         return resolve_weights(config_url)
     except RuntimeError as exc:

@@ -64,7 +64,8 @@ def _save_checkpoint(state_dict: object, suffix: str = ".pth") -> str:
 def _mock_downloads(monkeypatch: pytest.MonkeyPatch, hosted: Path, *, cache: Path) -> list[str]:
     """Mock the download ``reid`` uses, so tests need no network.
 
-    A request for ``https://<host>/<path>`` copies ``hosted/<host>/<path>``, or answers 404
+    A request for ``https://<host>/<path>`` copies ``hosted/<host>/<path>``, and one for
+    ``https://<host>/<path>?<query>`` copies ``hosted/<host>/<query>/<path>``, or answers 404
     when that file is missing. The weights cache moves to ``cache``, so each test starts
     empty. Returns the URLs ``reid`` requests, in order.
     """
@@ -73,7 +74,7 @@ def _mock_downloads(monkeypatch: pytest.MonkeyPatch, hosted: Path, *, cache: Pat
     def download(url: str, dst: str, *args: object, **kwargs: object) -> None:
         requested.append(url)
         parsed = urllib.parse.urlparse(url)
-        served = hosted / parsed.netloc / parsed.path.lstrip("/")
+        served = hosted / parsed.netloc / parsed.query / parsed.path.lstrip("/")
         if not served.is_file():
             raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
         shutil.copyfile(served, dst)
@@ -349,6 +350,50 @@ class TestLoaders:
 
         with pytest.raises(RuntimeError, match="https://storage.example.com/missing.pth"):
             resolve_weights("https://storage.example.com/missing.pth")
+
+    def test_url_query_is_part_of_the_cache_key(self, tmp_path, monkeypatch) -> None:
+        """``?version=1`` and ``?version=2`` are different files and must not share a cache entry."""
+        for version in ("version=1", "version=2"):
+            ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+                str(tmp_path / "hosted" / "storage.example.com" / version / "reid")
+            )
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+        urls = [f"https://storage.example.com/reid/weights.safetensors?{v}" for v in ("version=1", "version=2")]
+
+        first, second = (resolve_weights(url) for url in urls)
+
+        assert downloads == urls
+        assert first.endswith(".safetensors") and second.endswith(".safetensors")
+        assert open(first, "rb").read() != open(second, "rb").read()
+
+    def test_model_folder_url_keeps_its_query_and_drops_its_fragment(self, tmp_path, monkeypatch) -> None:
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+            str(tmp_path / "hosted" / "storage.example.com" / "token=abc" / "models" / "custom")
+        )
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        ReIDModel.from_pretrained("https://storage.example.com/models/custom/?token=abc#readme", device="cpu")
+
+        assert downloads == [
+            "https://storage.example.com/models/custom/reid_config.json?token=abc",
+            "https://storage.example.com/models/custom/weights.safetensors?token=abc",
+        ]
+
+    def test_failed_url_download_keeps_a_file_another_download_finished(self, tmp_path, monkeypatch) -> None:
+        """Two processes can download the same URL; the one that fails must not delete the other's result."""
+        monkeypatch.setenv("REID_CACHE_DIR", str(tmp_path / "cache"))
+        cached = tmp_path / "cache" / "weights" / "storage.example.com" / "reid" / "weights.safetensors"
+
+        def finished_elsewhere_then_fail(url: str, dst: str, *args: object, **kwargs: object) -> None:
+            cached.write_bytes(b"weights from the other download")
+            raise urllib.error.HTTPError(url, 503, "Service Unavailable", None, None)
+
+        monkeypatch.setattr(torch.hub, "download_url_to_file", finished_elsewhere_then_fail)
+
+        with pytest.raises(RuntimeError, match="storage.example.com"):
+            resolve_weights("https://storage.example.com/reid/weights.safetensors")
+        assert cached.read_bytes() == b"weights from the other download"
+        assert [p.name for p in cached.parent.iterdir()] == ["weights.safetensors"]
 
     def test_empty_url_download_is_not_cached(self, tmp_path, monkeypatch) -> None:
         """A server that answers with an empty file once must not break every later load."""

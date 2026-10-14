@@ -29,7 +29,7 @@ To share a model you trained, save it with `save_pretrained`, upload the folder,
 | `weights.safetensors` | safetensors | the model weights                                                                              |
 | `reid_config.json`    | JSON        | `architecture`, the name `list_architectures()` lists, and `preprocessing`, the input settings |
 
-Prefer this to sharing the weights file alone: `reid_config.json` sets the architecture and preprocessing, so nobody has to name them, and every weight in the file must match that architecture, where a bare weights file only needs half of them to.
+We recommend loading the whole folder rather than `weights.safetensors` alone. `reid_config.json` sets the architecture and preprocessing, and loading checks the weights against that architecture. In that case `weights.safetensors` must hold every weight the architecture needs, while loading a bare weights file only requires half of them, and the missing ones keep random values, with a warning. Weights the architecture does not use are ignored, also with a warning.
 
 ## Pretrained models
 

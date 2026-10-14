@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import pickle
@@ -15,7 +16,7 @@ import tempfile
 import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import torch
 import torch.nn as nn
@@ -128,21 +129,27 @@ def _resolve_gd(source: str) -> str:
 
 
 def _resolve_url(source: str) -> str:
-    """Download an ``http(s)://`` file once and cache it under its host and path in the weights cache."""
+    """Download an ``http(s)://`` file once and cache it under its host, path and query in the weights cache."""
     parsed = urlparse(source)
     # Keyed by host and path, not file name: every saved model folder holds a weights.safetensors.
-    path = os.path.join(_weights_cache_dir(), parsed.netloc, *parsed.path.strip("/").split("/"))
+    parts = parsed.path.strip("/").split("/")
+    if parsed.query:
+        # ?version=1 and ?version=2 are different files; the file name keeps its suffix.
+        parts.insert(-1, "query-" + hashlib.sha256(parsed.query.encode()).hexdigest()[:16])
+    path = os.path.join(_weights_cache_dir(), parsed.netloc, *parts)
     if os.path.exists(path):
         return _validate_downloaded_file(path)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    url = urlunparse(parsed._replace(fragment=""))
     try:
-        torch.hub.download_url_to_file(source, path)
-        return _validate_downloaded_file(path)
+        torch.hub.download_url_to_file(url, path)
     except OSError as exc:
-        if os.path.exists(path):
-            os.remove(path)
-        raise RuntimeError(f"Failed to download weights from {source!r}: {exc}") from exc
+        raise RuntimeError(f"Failed to download weights from {source!r}.") from exc
+    if os.path.getsize(path) == 0:
+        os.remove(path)
+        raise RuntimeError(f"The weights downloaded from {source!r} are empty.")
+    return path
 
 
 # ---------------------------------------------------------------------------
