@@ -34,6 +34,13 @@ def test_distance_matrix_computes_in_float32(dtype: type, vector: list[float], d
     assert distance_matrix(query, gallery, distance=distance) == pytest.approx(np.array(expected), rel=1e-6, abs=1e-3)
 
 
+def test_cosine_distance_ignores_embedding_length() -> None:
+    """A tiny embedding points somewhere too; an all-zero one points nowhere and sits at distance 1."""
+    query = np.array([[1e-13, 0.0], [0.0, 0.0]], dtype=np.float32)
+    gallery = np.array([[1.0, 0.0], [-1.0, 0.0]], dtype=np.float32)
+    assert distance_matrix(query, gallery) == pytest.approx(np.array([[0.0, 2.0], [1.0, 1.0]]), abs=1e-6)
+
+
 @pytest.mark.parametrize("query_count, gallery_count", [(0, 3), (2, 0)])
 def test_distance_matrix_with_an_empty_side(query_count: int, gallery_count: int) -> None:
     """A frame with no detections embeds to a (0, 0) array; there is nothing to compare, not an error."""

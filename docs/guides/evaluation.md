@@ -59,7 +59,7 @@ from reid import distance_matrix
 
 query_embeddings = model.extract_embeddings(detections, frame)
 gallery_embeddings = model.extract_embeddings(later_detections, later_frame)
-closest = distance_matrix(query_embeddings, gallery_embeddings).argmin(axis=1)
+closest = distance_matrix(query_embeddings, gallery_embeddings).argmin(axis=1)  # later_detections must not be empty
 ```
 
 ### Retrieval or re-association

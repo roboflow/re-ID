@@ -67,15 +67,16 @@ def distance_matrix(
 
     These are the distances ``ReIDModel.evaluate`` ranks with. Smaller is closer, so
     ``distance_matrix(query, gallery).argmin(axis=1)`` gives the closest gallery
-    embedding to each query.
+    embedding to each query, as long as the gallery is not empty.
 
     Args:
         query_embeddings: Query embeddings of shape ``(Q, D)``, for example from
             ``ReIDModel.extract_embeddings``.
         gallery_embeddings: Gallery embeddings of shape ``(G, D)``.
         distance: ``"cosine"`` compares directions after L2-normalizing each
-            embedding, from 0 (same direction) to 2 (opposite); ``"euclidean"``
-            compares the raw vectors.
+            embedding, from 0 (same direction) to 2 (opposite); an all-zero
+            embedding has no direction and is at distance 1 from everything.
+            ``"euclidean"`` compares the raw vectors.
 
     Returns:
         Float32 array of shape ``(Q, G)``: row ``i`` holds query ``i``'s distance to
@@ -127,7 +128,8 @@ def _validate_embeddings(embeddings: np.ndarray, name: str) -> None:
 
 
 def _l2_normalize(embeddings: np.ndarray) -> np.ndarray:
-    return embeddings / (np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-12)
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    return np.divide(embeddings, norms, out=np.zeros_like(embeddings), where=norms > 0)
 
 
 def _compute_reid_metrics(
