@@ -71,9 +71,9 @@ $$
 
 CMC answers "how often is a hit early in the list?" It does not reward finding every gallery instance of that person.
 
-![The first 10 ranks of the example query, with rank 1 and ranks 1 to 5 outlined; Rank-1 and Rank-5 are both 1](../assets/metrics/rank-k.webp)
+![The first 10 ranks of the example query, with rank 1 and ranks 1 to 5 outlined; Rank-1 and Rank-5 are both 100%](../assets/metrics/rank-k.webp)
 
-<p align="center" style="margin-top: -0.4em;"><small>The example query: the closest crop is the same player, so Rank-1 and Rank-5 are both 1.</small></p>
+<p align="center" style="margin-top: -0.4em;"><small>The example query: the closest crop is the same player, so Rank-1 and Rank-5 are both 100%.</small></p>
 
 ### mAP
 
@@ -85,9 +85,9 @@ $$
 
 Unlike Rank-1, mAP cares about **all** valid gallery matches for that identity, not only the first hit. It is the usual primary number on Market-1501 and MSMT17 leaderboards.
 
-![Ranks 1 to 80 of the example query, each match labelled with its precision from 1/1 to 7/72, and AP = 0.871](../assets/metrics/ap.webp)
+![Ranks 1 to 80 of the example query, each match labelled with its precision from 1/1 to 7/72, and AP = 87.1%](../assets/metrics/ap.webp)
 
-<p align="center" style="margin-top: -0.4em;"><small>Each term is the precision at one match: the six matches at ranks 1 to 6 score 1 each, the seventh at rank 72 scores 7/72, and AP averages the seven to 0.871.</small></p>
+<p align="center" style="margin-top: -0.4em;"><small>Each term is the precision at one match: the six matches at ranks 1 to 6 score 1 each, the seventh at rank 72 scores 7/72, and AP averages the seven to 87.1%.</small></p>
 
 ### mINP
 
@@ -99,9 +99,9 @@ $$
 
 mINP penalizes models that bury hard positive gallery images deep in the ranking even when Rank-1 and mAP look strong.
 
-![Ranks 1 to 80 of the example query, outlined down to the last match at rank 72; INP = 7 / 72 = 0.097](../assets/metrics/inp.webp)
+![Ranks 1 to 80 of the example query, outlined down to the last match at rank 72; INP = 7 / 72 = 9.7%](../assets/metrics/inp.webp)
 
-<p align="center" style="margin-top: -0.4em;"><small>Seven matches in the first 72 crops: INP is 7/72 = 0.097. One match buried at rank 72 keeps INP low while AP is 0.871.</small></p>
+<p align="center" style="margin-top: -0.4em;"><small>Seven matches in the first 72 crops: INP is 7/72 = 9.7%. One match buried at rank 72 keeps INP low while AP is 87.1%.</small></p>
 
 ### MRR
 
