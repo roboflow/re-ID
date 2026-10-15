@@ -1,11 +1,11 @@
 ---
-title: 'ReID Metrics: mAP, Rank-k, mINP | reid'
-description: Understand Rank-k, mAP, mINP, and MRR and use them to evaluate ReID model performance.
+title: 'Re-ID Metrics: mAP, Rank-k, mINP'
+description: Understand Rank-k, mAP, mINP, and MRR and use them to evaluate Re-ID model performance.
 ---
 
-# ReID Metrics
+# Re-ID Metrics
 
-ReID metrics measure how well a model finds images of the same person among candidate images. Standard retrieval benchmarks such as Market-1501 and MSMT17 test matching across cameras. Re-association evaluation tests matching within a sequence across a specified frame gap. [How evaluation works](../guides/evaluation.md#how-evaluation-works) explains how re-ID test data is split into query and gallery images, and which gallery images count as matches.
+Re-ID metrics measure how well a model finds images of the same person among candidate images. Standard retrieval benchmarks such as Market-1501 and MSMT17 test matching across cameras. Re-association evaluation tests matching within a sequence across a specified frame gap. [How evaluation works](../guides/evaluation.md#how-evaluation-works) explains how Re-ID test data is split into query and gallery images, and which gallery images count as matches.
 
 **What you'll learn:**
 

@@ -249,13 +249,13 @@ class ReIDModel:
                 both splits are used as given; re-association builds its own
                 gallery and rejects one.
             protocol: Evaluation protocol. Defaults to
-                :class:`~reid.eval.RetrievalProtocol`.
+                ``RetrievalProtocol``.
             batch_size: Images per embedding batch.
             return_distmat: Keep the query-by-gallery distance matrix in the result.
             verbose: Log progress.
 
         Returns:
-            :class:`~reid.eval.ReIDResult` with protocol metrics as percentages,
+            ``ReIDResult`` with protocol metrics as percentages,
             the number of scored queries, and protocol metadata.
 
         Raises:

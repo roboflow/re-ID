@@ -37,7 +37,7 @@ class ReIDMetrics:
 
 @dataclass
 class ReIDResult:
-    """What :meth:`reid.ReIDModel.evaluate` returns.
+    """What ``reid.ReIDModel.evaluate`` returns.
 
     ``metrics`` maps the protocol's metric names to percentages. ``distmat`` is
     empty unless ``return_distmat=True``.

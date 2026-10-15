@@ -46,21 +46,21 @@ def _iter_identity_crops(root: Path) -> Iterator[list[Path]]:
 
 
 def load_identity_folders(root: str | Path) -> ReIDSplit:
-    """Load identity folders into one :class:`ReIDSplit`, scanning the disk once.
+    """Load identity folders into one ``ReIDSplit``, scanning the disk once.
 
     Expects ``<root>/<identity>/<image>.(jpg|jpeg|png|bmp)``: tracking crops or
     any identity-labelled pictures. Identity folders are sorted by name and
     assigned contiguous person IDs (``0..N-1``). Camera IDs are set to ``-1``
     because the folders carry no camera information; protocols assign synthetic
     camera IDs where retrieval needs them. Pass the split to
-    :meth:`reid.ReIDModel.evaluate`, whose protocol picks the query and gallery
+    ``reid.ReIDModel.evaluate``, whose protocol picks the query and gallery
     images from it.
 
     Args:
         root: Dataset root with one subdirectory per identity.
 
     Returns:
-        A :class:`ReIDSplit` over every crop found, with contiguous ``pids`` and
+        A ``ReIDSplit`` over every crop found, with contiguous ``pids`` and
         ``camids`` all equal to ``-1``.
 
     Raises:

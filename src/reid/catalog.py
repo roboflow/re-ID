@@ -88,7 +88,7 @@ ALIASES: dict[str, ModelCard] = {
 
 
 def list_aliases() -> list[str]:
-    """Return curated alias names (sorted keys of :data:`ALIASES`)."""
+    """Return curated alias names (sorted keys of ``ALIASES``)."""
     return sorted(ALIASES)
 
 
