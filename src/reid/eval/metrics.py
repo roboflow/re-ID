@@ -50,6 +50,8 @@ class ReIDResult:
 
 
 _DISTANCES = ("cosine", "euclidean")
+# Distances reach up to 4x the largest squared embedding length, which must stay within float32.
+_MAX_SQUARED_LENGTH = float(np.finfo(np.float32).max) / 4
 _MAX_RANK = 10
 
 
@@ -58,26 +60,76 @@ def _validate_distance(distance: object) -> None:
         raise ValueError(f"distance must be 'cosine' or 'euclidean', got {distance!r}.")
 
 
-def _distance_matrix(query_embeddings: np.ndarray, gallery_embeddings: np.ndarray, metric: str) -> np.ndarray:
-    """Build a query x gallery distance matrix (``cosine`` or ``euclidean``)."""
-    if metric == "cosine":
-        normalized_query = (
-            query_embeddings / (np.linalg.norm(query_embeddings, axis=1, keepdims=True) + 1e-12)
-        ).astype(np.float32, copy=False)
-        normalized_gallery = (
-            gallery_embeddings / (np.linalg.norm(gallery_embeddings, axis=1, keepdims=True) + 1e-12)
-        ).astype(np.float32, copy=False)
-        distmat = normalized_query @ normalized_gallery.T
+def distance_matrix(
+    query_embeddings: np.ndarray, gallery_embeddings: np.ndarray, *, distance: str = "cosine"
+) -> np.ndarray:
+    """Distance from every query embedding to every gallery embedding.
+
+    These are the distances ``ReIDModel.evaluate`` ranks with. Smaller is closer, so
+    ``distance_matrix(query, gallery).argmin(axis=1)`` gives the closest gallery
+    embedding to each query, as long as the gallery is not empty.
+
+    Args:
+        query_embeddings: Query embeddings of shape ``(Q, D)``, for example from
+            ``ReIDModel.extract_embeddings``.
+        gallery_embeddings: Gallery embeddings of shape ``(G, D)``.
+        distance: ``"cosine"`` compares directions after L2-normalizing each
+            embedding, from 0 (same direction) to 2 (opposite); an all-zero
+            embedding has no direction and is at distance 1 from everything.
+            ``"euclidean"`` compares the raw vectors.
+
+    Returns:
+        Float32 array of shape ``(Q, G)``: row ``i`` holds query ``i``'s distance to
+        each gallery embedding. Empty when either side has no embeddings, as for a
+        frame with no detections.
+
+    Raises:
+        ValueError: If ``distance`` is unknown, an input is not a 2-D array of finite
+            values, the inputs have a different number of dimensions, or an embedding
+            is too large to compare in float32.
+    """
+    _validate_distance(distance)
+    query_embeddings = np.asarray(query_embeddings)
+    gallery_embeddings = np.asarray(gallery_embeddings)
+    _validate_embeddings(query_embeddings, "query_embeddings")
+    _validate_embeddings(gallery_embeddings, "gallery_embeddings")
+    if len(query_embeddings) == 0 or len(gallery_embeddings) == 0:
+        return np.empty((len(query_embeddings), len(gallery_embeddings)), dtype=np.float32)
+    if query_embeddings.shape[1] != gallery_embeddings.shape[1]:
+        raise ValueError(
+            "query_embeddings and gallery_embeddings must have the same number of dimensions, "
+            f"got {query_embeddings.shape[1]} and {gallery_embeddings.shape[1]}."
+        )
+    query_embeddings = query_embeddings.astype(np.float32, copy=False)
+    gallery_embeddings = gallery_embeddings.astype(np.float32, copy=False)
+    if distance == "cosine":
+        distmat = _l2_normalize(query_embeddings) @ _l2_normalize(gallery_embeddings).T
         distmat *= -1.0
         distmat += 1.0
         return distmat
-    distmat = (query_embeddings @ gallery_embeddings.T).astype(np.float32, copy=False)
+    distmat = query_embeddings @ gallery_embeddings.T
     distmat *= -2.0
     distmat += (query_embeddings**2).sum(axis=1, keepdims=True)
     distmat += (gallery_embeddings**2).sum(axis=1, keepdims=True).T
     np.maximum(distmat, 0.0, out=distmat)
     np.sqrt(distmat, out=distmat)
     return distmat
+
+
+def _validate_embeddings(embeddings: np.ndarray, name: str) -> None:
+    if embeddings.ndim != 2:
+        raise ValueError(f"{name} must be 2-D, got shape {embeddings.shape}")
+    if embeddings.size > 0 and not np.all(np.isfinite(embeddings)):
+        raise ValueError(f"{name} must contain only finite values")
+    if embeddings.size > 0 and np.square(embeddings, dtype=np.float64).sum(axis=1).max() >= _MAX_SQUARED_LENGTH:
+        raise ValueError(
+            f"{name} are too large to compare in float32: each squared length must stay below {_MAX_SQUARED_LENGTH:.3g}"
+        )
+
+
+def _l2_normalize(embeddings: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    return np.divide(embeddings, norms, out=np.zeros_like(embeddings), where=norms > 0)
 
 
 def _compute_reid_metrics(

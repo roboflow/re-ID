@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from reid.eval.metrics import ReIDMetrics, ReIDResult
+from reid.eval.metrics import ReIDMetrics, ReIDResult, distance_matrix
 from reid.eval.protocols import EvaluationProtocol, ReassociationProtocol, RetrievalProtocol
 
 __all__ = [
@@ -17,4 +17,5 @@ __all__ = [
     "ReIDResult",
     "ReassociationProtocol",
     "RetrievalProtocol",
+    "distance_matrix",
 ]

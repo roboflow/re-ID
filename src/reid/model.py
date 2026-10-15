@@ -33,14 +33,11 @@ from reid.checks import validate_positive_int
 from reid.crop_dataset import CropDataset
 from reid.data import ReIDSplit
 from reid.eval import EvaluationProtocol, ReIDResult, RetrievalProtocol
-from reid.eval.metrics import _compute_reid_metrics, _distance_matrix
+from reid.eval.metrics import _compute_reid_metrics, distance_matrix
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
 logger = logging.getLogger(__name__)
-
-# Distances reach up to 4x the largest squared embedding length, which must stay within float32.
-_MAX_SQUARED_LENGTH = float(np.finfo(np.float32).max) / 4
 
 
 def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -276,13 +273,11 @@ class ReIDModel:
         if verbose:
             logger.info("Extracting embeddings (%s images)…", len(paths))
         embeddings = self.extract_embeddings_from_paths(paths, batch_size=batch_size)
-        if not np.all(np.isfinite(embeddings)):
-            raise ValueError("The model returned non-finite embeddings.")
         row = {path: index for index, path in enumerate(paths)}
         query_embeddings = embeddings[[row[path] for path in query.image_paths]]
         gallery_embeddings = embeddings[[row[path] for path in gallery_split.image_paths]]
 
-        distmat = _distance_matrix(query_embeddings, gallery_embeddings, protocol.distance)
+        distmat = distance_matrix(query_embeddings, gallery_embeddings, distance=protocol.distance)
         metrics = _compute_reid_metrics(
             distmat=distmat,
             q_pids=query.pids,
@@ -317,17 +312,7 @@ class ReIDModel:
         batch = batch.to(self._device)
         with torch.inference_mode():
             embeddings = self._backbone(batch)
-        out = embeddings.cpu().numpy().astype(np.float32)
-        if out.ndim != 2:
-            raise ValueError(f"embeddings must be 2-D, got shape {out.shape}")
-        if out.size > 0 and not np.all(np.isfinite(out)):
-            raise ValueError("embeddings must contain only finite values")
-        if out.size > 0 and np.square(out, dtype=np.float64).sum(axis=1).max() >= _MAX_SQUARED_LENGTH:
-            raise ValueError(
-                f"embeddings are too large to compare in float32: each squared length must stay below "
-                f"{_MAX_SQUARED_LENGTH:.3g}"
-            )
-        return out
+        return embeddings.cpu().numpy().astype(np.float32)
 
     def extract_embeddings_from_paths(
         self,
@@ -352,9 +337,7 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``.
 
         Raises:
-            ValueError: If ``batch_size`` is not a positive integer, or the
-                model returns non-finite embeddings or embeddings too large to
-                compare.
+            ValueError: If ``batch_size`` is not a positive integer.
         """
         if not image_paths:
             return np.empty((0, 0), dtype=np.float32)
@@ -395,9 +378,7 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
 
         Raises:
-            ValueError: If ``batch_size`` is not a positive integer, or the
-                model returns non-finite embeddings or embeddings too large to
-                compare.
+            ValueError: If ``batch_size`` is not a positive integer.
         """
         if len(detections) == 0:
             return np.empty((0, 0), dtype=np.float32)

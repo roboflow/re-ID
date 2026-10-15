@@ -135,5 +135,5 @@ def test_non_finite_embeddings_raise() -> None:
     """A diverged model would otherwise produce plausible-looking metrics from NaN distances."""
     query = ReIDSplit(image_paths=["q"], pids=np.array([1]), camids=np.array([0]))
     gallery = ReIDSplit(image_paths=["g"], pids=np.array([1]), camids=np.array([1]))
-    with pytest.raises(ValueError, match="non-finite"):
+    with pytest.raises(ValueError, match="must contain only finite values"):
         _model_with({"q": [np.nan, 0.0], "g": [1.0, 0.0]}).evaluate(query, gallery, verbose=False)
