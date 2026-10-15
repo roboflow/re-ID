@@ -125,13 +125,15 @@ def remap_fastreid_sbs_state_dict(state_dict: dict) -> dict:
     """Map BoT-SORT / FastReID SBS checkpoint keys onto :class:`FastReIDSBSResNeSt50`.
 
     Renames FastReID ``heads.*`` keys to ``pool.*`` / ``bottleneck.*`` and passes
-    ``backbone.*`` through unchanged. Skips ``heads.weight`` (classifier). GeM
-    ``heads.pool_layer.p`` becomes ``pool.p`` and replaces the 3.0 init default.
+    ``backbone.*`` through unchanged, as well as ``pool.*`` / ``bottleneck.*`` keys
+    already in this layout (a model written by ``save_pretrained``). Skips
+    ``heads.weight`` (classifier). GeM ``heads.pool_layer.p`` becomes ``pool.p``
+    and replaces the 3.0 init default.
     """
     mapped: dict = {}
     for key, value in state_dict.items():
         key = key[7:] if key.startswith("module.") else key
-        if key.startswith("backbone."):
+        if key.startswith(("backbone.", "pool.", "bottleneck.")):
             mapped[key] = value
         elif key == "heads.pool_layer.p":
             mapped["pool.p"] = value

@@ -9,19 +9,12 @@
 from __future__ import annotations
 
 from reid.data.benchmarks import load_market1501, load_msmt17
-from reid.data.identity_crops import (
-    build_identity_crop_holdout_split,
-    build_identity_crop_retrieval_split,
-    load_identity_crops,
-)
-from reid.data.splits import MARKET1501_GALLERY_JUNK_PIDS, ReIDSplit
+from reid.data.identity_crops import load_identity_folders
+from reid.data.splits import ReIDSplit
 
 __all__ = [
-    "MARKET1501_GALLERY_JUNK_PIDS",
     "ReIDSplit",
-    "build_identity_crop_holdout_split",
-    "build_identity_crop_retrieval_split",
-    "load_identity_crops",
+    "load_identity_folders",
     "load_market1501",
     "load_msmt17",
 ]

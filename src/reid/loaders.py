@@ -32,6 +32,7 @@ _GD_PREFIX = "gd://"
 
 _DEFAULT_DROP_PREFIXES = ("classifier",)
 _COMMON_KEY_PREFIXES = ("module.", "model.", "encoder.")
+_MISMATCH_FRACTION = 0.5
 
 
 def _cache_root() -> str:
@@ -177,7 +178,7 @@ def resolve_load_plan(
 
     Returns:
         A ``LoadPlan`` with architecture, weights, preprocessing, an optional
-        domain warning, and an optional strict-load fraction for curated aliases.
+        domain warning, and the share of weight tensors the file must match.
         Callers build the architecture, load ``weights`` when present, and enforce
         ``required_match_fraction`` when set.
 
@@ -186,7 +187,7 @@ def resolve_load_plan(
             a bare weights file without ``architecture``, or a local directory
             that is missing ``reid_config.json``.
     """
-    from reid.catalog import DEFAULT_MODEL, FASTREID_MOT17_SBS50, resolve_model_card
+    from reid.catalog import DEFAULT_MODEL, resolve_model_card
 
     if source is None and architecture is None:
         source = DEFAULT_MODEL
@@ -208,9 +209,7 @@ def resolve_load_plan(
             resolved_arch: str | nn.Module = architecture
         else:
             resolved_arch = card.architecture
-        required_fraction = None
-        if not arch_overridden and source in (DEFAULT_MODEL, FASTREID_MOT17_SBS50):
-            required_fraction = 1.0
+        required_fraction = _MISMATCH_FRACTION if arch_overridden else 1.0
         return LoadPlan(
             resolved_arch,
             card.weights,
@@ -243,7 +242,7 @@ def resolve_load_plan(
         source,
         _resolve_preprocessing(preprocessing, None, architecture),
         None,
-        None,
+        _MISMATCH_FRACTION,
     )
 
 
@@ -299,7 +298,7 @@ def load_state_dict(
     architecture: str | None = None,
     drop_prefixes: tuple[str, ...] = _DEFAULT_DROP_PREFIXES,
     remap: Callable[[dict], dict] | None = None,
-    warn_threshold: float = 0.5,
+    warn_threshold: float = _MISMATCH_FRACTION,
     required_match_fraction: float | None = None,
     label: str | None = None,
 ) -> None:
@@ -398,7 +397,7 @@ def load_state_dict(
     if required_match_fraction is not None and matched_fraction < required_match_fraction:
         target_name = f"{label!r} " if label else ""
         raise ValueError(
-            f"Checkpoint {path!r} matched only {matched_fraction:.0%} of "
-            f"{target_name}parameters (required >= {required_match_fraction:.0%}). "
+            f"Checkpoint {path!r} matched only {len(matched)} of {total} "
+            f"{target_name}weight tensors (required >= {required_match_fraction:.0%}). "
             f"{summary}"
         )

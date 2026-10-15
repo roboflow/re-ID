@@ -7,11 +7,10 @@
 """Load and partition per-identity crop folders into ``ReIDSplit`` objects.
 
 The canonical flow is ``source format -> loader -> ReIDSplit -> optional
-partitioning -> Dataset/evaluator``. :func:`load_identity_crops` turns an
+partitioning -> Dataset/evaluator``. :func:`load_identity_folders` turns an
 identity-folder layout (``<root>/<identity>/<crop>.jpg``) into a single
-``ReIDSplit``. The ``build_identity_crop_*`` partitioners then consume that split to
-produce query/gallery (and optional train) splits; they never touch the
-filesystem.
+``ReIDSplit``. The split builders below then cut a split into query/gallery
+(and optional train) splits; they never touch the filesystem.
 
 Query and gallery crops receive synthetic ``camid`` 0/1 so single-camera MOT
 crops still form valid cross-camera retrieval pairs under the gallery-eval junk
@@ -21,37 +20,44 @@ rule.
 from __future__ import annotations
 
 import random
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import numpy as np
 
+from reid.checks import validate_positive_int
 from reid.data.splits import ReIDSplit
 
-# Image suffixes scanned inside each identity folder. Kept private to this
-# module; there is no shared ``constants`` module by design.
+# Image suffixes supported by the identity-folder loaders.
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp")
 
 _QUERY_CAMID = 0
 _GALLERY_CAMID = 1
 
 
-def load_identity_crops(
-    root: str | Path,
-    *,
-    identities: list[str] | None = None,
-) -> ReIDSplit:
-    """Scan an identity-folder crop dataset into a single :class:`ReIDSplit`.
+def _iter_identity_crops(root: Path) -> Iterator[list[Path]]:
+    """Yield sorted image files per identity folder, skipping empty folders."""
+    for folder in sorted(path for path in root.iterdir() if path.is_dir()):
+        images = sorted(
+            path for path in folder.iterdir() if path.is_file() and path.suffix.lower() in _IMAGE_EXTENSIONS
+        )
+        if images:
+            yield images
 
-    Expects ``<root>/<identity>/<crop>.(jpg|jpeg|png|bmp)``. Identity folders are
-    sorted by name and assigned contiguous person IDs (``0..N-1``). Camera IDs
-    are set to ``-1`` because on-disk crops carry no camera information; the
-    ``build_identity_crop_*`` partitioners assign synthetic camera IDs where retrieval
-    needs them.
+
+def load_identity_folders(root: str | Path) -> ReIDSplit:
+    """Load identity folders into one :class:`ReIDSplit`, scanning the disk once.
+
+    Expects ``<root>/<identity>/<image>.(jpg|jpeg|png|bmp)``: tracking crops or
+    any identity-labelled pictures. Identity folders are sorted by name and
+    assigned contiguous person IDs (``0..N-1``). Camera IDs are set to ``-1``
+    because the folders carry no camera information; protocols assign synthetic
+    camera IDs where retrieval needs them. Pass the split to
+    :meth:`reid.ReIDModel.evaluate`, whose protocol picks the query and gallery
+    images from it.
 
     Args:
         root: Dataset root with one subdirectory per identity.
-        identities: Optional whitelist of identity folder names. Folders outside
-            the whitelist are skipped before person IDs are assigned.
 
     Returns:
         A :class:`ReIDSplit` over every crop found, with contiguous ``pids`` and
@@ -59,27 +65,17 @@ def load_identity_crops(
 
     Raises:
         FileNotFoundError: If ``root`` is not a directory, or if no crops are
-            found (after applying ``identities``).
+            found.
     """
     root = Path(root)
     if not root.is_dir():
         raise FileNotFoundError(f"Crop dataset root not found: {root}")
 
-    allowed = set(identities) if identities is not None else None
-
     image_paths: list[str] = []
     pids: list[int] = []
-    next_pid = 0
-    for identity_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        if allowed is not None and identity_dir.name not in allowed:
-            continue
-        images = sorted(p for p in identity_dir.iterdir() if p.suffix.lower() in _IMAGE_EXTENSIONS)
-        if not images:
-            continue
-        for image_path in images:
-            image_paths.append(str(image_path))
-            pids.append(next_pid)
-        next_pid += 1
+    for pid, images in enumerate(_iter_identity_crops(root)):
+        image_paths.extend(str(path) for path in images)
+        pids.extend([pid] * len(images))
 
     if not image_paths:
         raise FileNotFoundError(f"No identity crops found under {root}. Expected <root>/<identity>/<crop>.jpg.")
@@ -91,12 +87,12 @@ def load_identity_crops(
     )
 
 
-def build_identity_crop_retrieval_split(
+def _retrieval_split(
     split: ReIDSplit,
     *,
-    queries_per_id: int = 1,
-    min_crops: int = 2,
-    seed: int = 0,
+    queries_per_id: int,
+    min_crops: int,
+    seed: int,
 ) -> tuple[ReIDSplit, ReIDSplit]:
     """Partition a crop split into query and gallery splits for retrieval eval.
 
@@ -107,7 +103,7 @@ def build_identity_crop_retrieval_split(
     not tied to filename order.
 
     Args:
-        split: A crop split, typically from :func:`load_identity_crops`.
+        split: A crop split, typically from :func:`load_identity_folders`.
         queries_per_id: Query crops taken from each eligible identity.
         min_crops: Minimum crops required for an identity to be eligible.
         seed: Shuffle seed for per-identity query selection.
@@ -115,13 +111,13 @@ def build_identity_crop_retrieval_split(
     Returns:
         ``(query, gallery)`` splits.
 
-    Raises:
-        ValueError: If ``min_crops``/``queries_per_id`` are incompatible (see
-            :func:`_check_query_params`), or if no identity is eligible.
-    """
-    _check_query_params(queries_per_id=queries_per_id, min_crops=min_crops)
+    ``RetrievalProtocol`` validates ``queries_per_id`` and ``min_crops`` when it
+    is built, so they are not checked again here.
 
-    indices_by_pid = _indices_by_pid(split)
+    Raises:
+        ValueError: If no identity has ``min_crops`` crops.
+    """
+    indices_by_pid = _indices_by_label(split.pids.tolist())
     eligible_pids = sorted(pid for pid, indices in indices_by_pid.items() if len(indices) >= min_crops)
     if not eligible_pids:
         raise ValueError(f"No identity has >= {min_crops} crops; cannot build a retrieval split.")
@@ -135,66 +131,6 @@ def build_identity_crop_retrieval_split(
     )
 
 
-def build_identity_crop_holdout_split(
-    split: ReIDSplit,
-    *,
-    holdout_fraction: float = 0.2,
-    queries_per_id: int = 1,
-    min_crops: int = 2,
-    seed: int = 0,
-) -> tuple[ReIDSplit, ReIDSplit, ReIDSplit]:
-    """Hold out whole identities for retrieval; return train, query, gallery.
-
-    A fraction of the identities that have at least ``min_crops`` crops is drawn
-    (deterministically via ``seed``) and turned into query/gallery splits exactly
-    as in :func:`build_identity_crop_retrieval_split`. Every remaining crop, including
-    crops of identities too small to be eligible for holdout, forms the train
-    split with its original camera IDs preserved. The train and evaluation splits
-    are identity-disjoint, so retrieval never scores an identity the model saw
-    during training.
-
-    Args:
-        split: A crop split, typically from :func:`load_identity_crops`.
-        holdout_fraction: Fraction of eligible identities reserved for retrieval.
-        queries_per_id: Query crops per held-out identity.
-        min_crops: Minimum crops required for an identity to be eligible for
-            holdout.
-        seed: Shuffle seed for the holdout draw and per-identity query selection.
-
-    Returns:
-        ``(train, query, gallery)`` splits.
-
-    Raises:
-        ValueError: If ``holdout_fraction`` is outside ``(0, 1]``, if
-            ``min_crops``/``queries_per_id`` are incompatible, or if no identity
-            is eligible for holdout.
-    """
-    _check_query_params(queries_per_id=queries_per_id, min_crops=min_crops)
-    if not 0.0 < holdout_fraction <= 1.0:
-        raise ValueError(f"holdout_fraction must be in (0, 1], got {holdout_fraction}.")
-
-    indices_by_pid = _indices_by_pid(split)
-    eligible_pids = sorted(pid for pid, indices in indices_by_pid.items() if len(indices) >= min_crops)
-    if not eligible_pids:
-        raise ValueError(f"No identity has >= {min_crops} crops; cannot build a retrieval holdout.")
-
-    shuffled = eligible_pids.copy()
-    random.Random(seed).shuffle(shuffled)
-    num_holdout = max(1, round(len(shuffled) * holdout_fraction))
-    holdout_pids = set(shuffled[:num_holdout])
-
-    train_indices = [index for index, pid in enumerate(split.pids.tolist()) if pid not in holdout_pids]
-    train = _subset_split(split, train_indices)
-    query, gallery = _query_gallery_from_pids(
-        split,
-        indices_by_pid,
-        sorted(holdout_pids),
-        queries_per_id=queries_per_id,
-        seed=seed,
-    )
-    return train, query, gallery
-
-
 def _check_query_params(*, queries_per_id: int, min_crops: int) -> None:
     """Reject incompatible ``queries_per_id`` / ``min_crops`` combinations.
 
@@ -202,8 +138,7 @@ def _check_query_params(*, queries_per_id: int, min_crops: int) -> None:
     ``min_crops`` has to exceed ``queries_per_id``. The combination is rejected
     explicitly rather than silently widened.
     """
-    if queries_per_id < 1:
-        raise ValueError(f"queries_per_id must be >= 1, got {queries_per_id}.")
+    validate_positive_int(queries_per_id, "queries_per_id")
     if min_crops <= queries_per_id:
         raise ValueError(
             f"min_crops must be > queries_per_id to leave gallery crops, "
@@ -211,11 +146,20 @@ def _check_query_params(*, queries_per_id: int, min_crops: int) -> None:
         )
 
 
-def _indices_by_pid(split: ReIDSplit) -> dict[int, list[int]]:
-    """Group crop indices by person ID, preserving the split's order."""
+def _indices_by_label(labels: Sequence[int]) -> dict[int, list[int]]:
+    """Map each identity label to the positions of its crops, in input order.
+
+    Used by the retrieval split builder, which groups raw person IDs.
+
+    Args:
+        labels: Identity label per crop, in crop order.
+
+    Returns:
+        Label → list of crop positions, preserving input order within each label.
+    """
     grouped: dict[int, list[int]] = {}
-    for index, pid in enumerate(split.pids.tolist()):
-        grouped.setdefault(pid, []).append(index)
+    for index, label in enumerate(labels):
+        grouped.setdefault(int(label), []).append(index)
     return grouped
 
 

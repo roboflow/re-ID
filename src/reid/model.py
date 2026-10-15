@@ -4,14 +4,20 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""ReID appearance encoder: loading, inference, and checkpoint I/O."""
+"""ReID appearance encoder: loading, inference, and checkpoint I/O.
+
+Array-type boundary: torch tensors stay inside the model; embeddings cross to
+``numpy`` once, on the way out of :meth:`ReIDModel._embed_batch`, because
+``supervision`` and ``trackers`` consume numpy. Everything downstream
+(``reid.eval``) is numpy throughout.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import supervision as sv
@@ -19,41 +25,22 @@ import torch
 import torch.nn as nn
 from PIL import Image as PILImage
 from safetensors.torch import save_file
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 from reid.architectures import build_architecture
 from reid.catalog import ModelCard, save_model_config
+from reid.checks import validate_positive_int
+from reid.crop_dataset import CropDataset
+from reid.data import ReIDSplit
+from reid.eval import EvaluationProtocol, ReIDResult, RetrievalProtocol
+from reid.eval.metrics import _compute_reid_metrics, _distance_matrix
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 
 logger = logging.getLogger(__name__)
 
-
-class _CropPathDataset(Dataset):
-    """Reads crop images from disk and applies preprocessing on worker processes.
-
-    Images on disk are assumed RGB (PIL ``convert("RGB")``); see
-    :meth:`ReIDPreprocessing.prepare_crop_array`.
-    """
-
-    def __init__(
-        self,
-        image_paths: Sequence[str],
-        preprocessing: ReIDPreprocessing,
-        transforms: Callable[[np.ndarray], torch.Tensor],
-    ) -> None:
-        self._image_paths = list(image_paths)
-        self._preprocessing = preprocessing
-        self._transforms = transforms
-
-    def __len__(self) -> int:
-        return len(self._image_paths)
-
-    def __getitem__(self, index: int) -> torch.Tensor:
-        img = PILImage.open(self._image_paths[index]).convert("RGB")
-        arr = self._preprocessing.prepare_crop_array(np.asarray(img), from_bgr_frame=False)
-        resized = self._preprocessing.resize_crop(arr)
-        return self._transforms(resized)
+# Distances reach up to 4x the largest squared embedding length, which must stay within float32.
+_MAX_SQUARED_LENGTH = float(np.finfo(np.float32).max) / 4
 
 
 def _clamp_xyxy_to_frame(box: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -87,15 +74,17 @@ def _select_device(device: str) -> torch.device:
 class ReIDModel:
     """Appearance encoder with loading, preprocessing, and checkpoint I/O.
 
-    Provides ``extract_features`` (for video-frame crops) and
-    ``extract_features_from_paths`` (for on-disk crops), plus
+    Provides ``extract_embeddings`` (for video-frame crops) and
+    ``extract_embeddings_from_paths`` (for on-disk crops), plus
     ``from_pretrained`` and ``save_pretrained``. The default checkpoint is
     pedestrian-trained; pass ``source`` / ``architecture`` for other domains.
 
     Args:
-        backbone: Feature-extractor module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
+        backbone: Encoder module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
         device: Device the backbone runs on.
         preprocessing: Crop and embedding preprocessing.
+        architecture: Registered architecture name, required by
+            ``save_pretrained``. ``None`` for a raw ``nn.Module`` backbone.
     """
 
     def __init__(
@@ -103,6 +92,7 @@ class ReIDModel:
         backbone: nn.Module,
         device: torch.device,
         preprocessing: ReIDPreprocessing,
+        architecture: str | None = None,
     ) -> None:
         self._backbone = backbone
         # Encoders are inference-only; force eval() so callers that pass a raw
@@ -110,11 +100,21 @@ class ReIDModel:
         self._backbone.eval()
         self._device = device
         self._preprocessing = preprocessing
-        self._transforms = preprocessing.build_transform()
-        # Set by from_pretrained() to enable save_pretrained(); None if the
-        # model was constructed directly with a raw nn.Module architecture.
-        self._architecture: str | None = None
+        self._crop_transform = preprocessing.build_crop_transform()
+        self._architecture = architecture
         logger.info("ReIDModel preprocessing: %s", preprocessing.describe())
+
+    @property
+    def device(self) -> torch.device:
+        """Device the backbone runs on."""
+        return self._device
+
+    def to(self, device: str | torch.device) -> ReIDModel:
+        """Move the encoder to ``device`` and return self, for chaining."""
+        target = _select_device(device) if isinstance(device, str) else device
+        self._backbone.to(target)
+        self._device = target
+        return self
 
     @property
     def preprocessing(self) -> ReIDPreprocessing:
@@ -142,7 +142,8 @@ class ReIDModel:
 
         Args:
             source: Model source (alias, Hub URL, local path, or ``None``).
-            architecture: Backbone override; required for bare weight files.
+            architecture: Backbone override; required for bare weight files, and
+                must be the architecture the weights were trained with.
             preprocessing: Preprocessing override.
             device: Compute device (``"auto"`` picks the best available).
 
@@ -150,7 +151,10 @@ class ReIDModel:
             Loaded model with the backbone on ``device``.
 
         Raises:
-            ValueError: If a bare weights file is given without ``architecture``.
+            ValueError: If a bare weights file is given without ``architecture``,
+                or the weights cover less of the architecture than required:
+                all of it for a pretrained name or saved model, half for a bare
+                weights file.
         """
         resolved_device = _select_device(device)
 
@@ -180,10 +184,12 @@ class ReIDModel:
 
         backbone.to(resolved_device)
 
-        instance = cls(backbone, resolved_device, plan.preprocessing)
-        # Store the architecture name (string only) to enable save_pretrained.
-        instance._architecture = plan.architecture if isinstance(plan.architecture, str) else None
-        return instance
+        return cls(
+            backbone,
+            resolved_device,
+            plan.preprocessing,
+            architecture=plan.architecture if isinstance(plan.architecture, str) else None,
+        )
 
     def save_pretrained(self, directory: str) -> None:
         """Persist ``weights.safetensors`` and ``reid_config.json`` for later loads.
@@ -205,7 +211,8 @@ class ReIDModel:
         os.makedirs(directory, exist_ok=True)
 
         weights_path = os.path.join(directory, "weights.safetensors")
-        save_file(self._backbone.state_dict(), weights_path)
+        state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
+        save_file(state_dict, weights_path)
 
         card = ModelCard(
             architecture=self._architecture,
@@ -215,13 +222,95 @@ class ReIDModel:
         logger.info("ReIDModel saved to %s", directory)
 
     # ------------------------------------------------------------------ #
-    # Inference
+    # Evaluation
     # ------------------------------------------------------------------ #
 
-    def _crop_to_tensor(self, rgb_crop: np.ndarray) -> torch.Tensor:
-        """Resize an RGB crop to the model input and apply tensor normalisation."""
-        resized = self._preprocessing.resize_crop(rgb_crop)
-        return self._transforms(resized)
+    def evaluate(
+        self,
+        data: ReIDSplit,
+        gallery: ReIDSplit | None = None,
+        *,
+        protocol: EvaluationProtocol | None = None,
+        batch_size: int = 64,
+        return_distmat: bool = False,
+        verbose: bool = True,
+    ) -> ReIDResult:
+        """Evaluate this model under an evaluation protocol.
+
+        The protocol selects which images are compared and which metrics are
+        reported; this model embeds them. Selection is deterministic, so the
+        same data and protocol score identical inputs for every model.
+
+        Args:
+            data: Images to evaluate. The protocol splits them into query and
+                gallery images; when ``gallery`` is provided, they are the query
+                images.
+            gallery: Gallery images for the queries in ``data``. When provided,
+                both splits are used as given; re-association builds its own
+                gallery and rejects one.
+            protocol: Evaluation protocol. Defaults to
+                :class:`~reid.eval.RetrievalProtocol`.
+            batch_size: Images per embedding batch.
+            return_distmat: Keep the query-by-gallery distance matrix in the result.
+            verbose: Log progress.
+
+        Returns:
+            :class:`~reid.eval.ReIDResult` with protocol metrics as percentages,
+            the number of scored queries, and protocol metadata.
+
+        Raises:
+            TypeError: If ``protocol`` is not an ``EvaluationProtocol``.
+            ValueError: If an input is invalid, the model returns non-finite
+                embeddings or embeddings too large to compare, or no query can
+                be scored.
+        """
+        validate_positive_int(batch_size, "batch_size")
+        if protocol is None:
+            protocol = RetrievalProtocol()
+        elif not isinstance(protocol, EvaluationProtocol):
+            raise TypeError("protocol must be an EvaluationProtocol instance.")
+        query, gallery_split, candidate_mask, metadata = protocol.build_query_gallery(data, gallery)
+
+        # A crop may be both a query and a gallery image. Embed it once.
+        paths = list(dict.fromkeys([*query.image_paths, *gallery_split.image_paths]))
+        if verbose:
+            logger.info("Extracting embeddings (%s images)…", len(paths))
+        embeddings = self.extract_embeddings_from_paths(paths, batch_size=batch_size)
+        if not np.all(np.isfinite(embeddings)):
+            raise ValueError("The model returned non-finite embeddings.")
+        row = {path: index for index, path in enumerate(paths)}
+        query_embeddings = embeddings[[row[path] for path in query.image_paths]]
+        gallery_embeddings = embeddings[[row[path] for path in gallery_split.image_paths]]
+
+        distmat = _distance_matrix(query_embeddings, gallery_embeddings, protocol.distance)
+        metrics = _compute_reid_metrics(
+            distmat=distmat,
+            q_pids=query.pids,
+            g_pids=gallery_split.pids,
+            q_camids=query.camids,
+            g_camids=gallery_split.camids,
+            gallery_junk_pids=gallery_split.gallery_junk_pids,
+            candidate_mask=candidate_mask,
+            exclude_same_pid_camid=protocol.exclude_same_pid_camid,
+        )
+        if metrics.num_queries == 0:
+            raise ValueError(
+                "No query has a correct match among its candidates, so nothing can be scored. "
+                "Check that the query identities appear in the gallery."
+            )
+        if verbose:
+            logger.info("Results (%s)\n%s", protocol.distance, metrics)
+        skipped = metadata.get("num_skipped_queries", 0) + len(query) - metrics.num_queries
+        return ReIDResult(
+            metrics=protocol.metric_values(metrics),
+            num_queries=metrics.num_queries,
+            distmat=distmat if return_distmat else np.empty((0, 0), dtype=np.float32),
+            metadata={
+                **metadata,
+                "exclude_same_pid_camid": protocol.exclude_same_pid_camid,
+                "num_skipped_queries": skipped,
+            },
+        )
 
     def _embed_batch(self, batch: torch.Tensor) -> np.ndarray:
         """Run one pre-collated crop batch through the backbone → ``(B, D)`` float32."""
@@ -233,9 +322,14 @@ class ReIDModel:
             raise ValueError(f"embeddings must be 2-D, got shape {out.shape}")
         if out.size > 0 and not np.all(np.isfinite(out)):
             raise ValueError("embeddings must contain only finite values")
+        if out.size > 0 and np.square(out, dtype=np.float64).sum(axis=1).max() >= _MAX_SQUARED_LENGTH:
+            raise ValueError(
+                f"embeddings are too large to compare in float32: each squared length must stay below "
+                f"{_MAX_SQUARED_LENGTH:.3g}"
+            )
         return out
 
-    def extract_features_from_paths(
+    def extract_embeddings_from_paths(
         self,
         image_paths: Sequence[str],
         *,
@@ -244,7 +338,7 @@ class ReIDModel:
     ) -> np.ndarray:
         """Extract embeddings from pre-cropped image paths.
 
-        For bbox crops from a video frame, use ``extract_features``. Images are
+        For bbox crops from a video frame, use ``extract_embeddings``. Images are
         decoded and preprocessed via a ``DataLoader`` so ``num_workers > 0``
         parallelises disk I/O on platforms that support it. Raw (un-normalised)
         embeddings are returned; cosine callers normalise at distance time.
@@ -258,14 +352,15 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``.
 
         Raises:
-            ValueError: If ``batch_size`` is less than 1.
+            ValueError: If ``batch_size`` is not a positive integer, or the
+                model returns non-finite embeddings or embeddings too large to
+                compare.
         """
         if not image_paths:
             return np.empty((0, 0), dtype=np.float32)
-        if batch_size < 1:
-            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+        validate_positive_int(batch_size, "batch_size")
 
-        dataset = _CropPathDataset(image_paths, self._preprocessing, self._transforms)
+        dataset = CropDataset(image_paths, self._preprocessing.build_crop_transform())
         loader = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -277,7 +372,7 @@ class ReIDModel:
         all_embeddings: list[np.ndarray] = [self._embed_batch(batch) for batch in loader]
         return np.concatenate(all_embeddings, axis=0)
 
-    def extract_features(
+    def extract_embeddings(
         self,
         detections: sv.Detections,
         frame: np.ndarray,
@@ -288,7 +383,7 @@ class ReIDModel:
 
         Crops are sub-batched so crowded frames do not build one oversized
         forward pass. Shares crop→tensor→forward with
-        ``extract_features_from_paths``. Raw (un-normalised) embeddings are
+        ``extract_embeddings_from_paths``. Raw (un-normalised) embeddings are
         returned; cosine callers normalise at distance time.
 
         Args:
@@ -300,12 +395,13 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
 
         Raises:
-            ValueError: If ``batch_size`` is less than 1.
+            ValueError: If ``batch_size`` is not a positive integer, or the
+                model returns non-finite embeddings or embeddings too large to
+                compare.
         """
         if len(detections) == 0:
             return np.empty((0, 0), dtype=np.float32)
-        if batch_size < 1:
-            raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+        validate_positive_int(batch_size, "batch_size")
 
         frame_h, frame_w = frame.shape[:2]
         tensors: list[torch.Tensor] = []
@@ -313,7 +409,7 @@ class ReIDModel:
             safe_box = _clamp_xyxy_to_frame(box, frame_h, frame_w)
             crop = sv.crop_image(image=frame, xyxy=safe_box.astype(int))
             crop = self._preprocessing.prepare_crop_array(crop, from_bgr_frame=True)
-            tensors.append(self._crop_to_tensor(crop))
+            tensors.append(self._crop_transform(PILImage.fromarray(crop)))
 
         all_embeddings: list[np.ndarray] = []
         for start in range(0, len(tensors), batch_size):

@@ -116,7 +116,7 @@ def resolve_model_card(source: str) -> tuple[ModelCard, ReIDPreprocessing | None
                 "Point to a directory produced by ReIDModel.save_pretrained(), "
                 "or pass a weights *file* path together with architecture=... ."
             )
-        return load_model_config(source)
+        return _parse_config_file(config_path, weights_source=os.path.join(source, "weights.safetensors"))
 
     # HF repo URL (no trailing filename) — try to fetch reid_config.json.
     # hf://org/repo has exactly 2 non-empty parts after "hf://".
@@ -131,29 +131,6 @@ def resolve_model_card(source: str) -> tuple[ModelCard, ReIDPreprocessing | None
                 raise RuntimeError(f"Failed to resolve Hugging Face repo config for {source!r}.") from exc
 
     return None
-
-
-def load_model_config(directory_or_repo: str) -> tuple[ModelCard, ReIDPreprocessing]:
-    """Load a ``ModelCard`` and preprocessing from ``reid_config.json``.
-
-    Local directories may also include ``weights.safetensors``.
-    """
-    if directory_or_repo.startswith("hf://"):
-        card, preprocessing = _load_hf_repo_config(directory_or_repo)
-        if preprocessing is None:
-            raise ValueError(f"No preprocessing found in config for {directory_or_repo!r}.")
-        return card, preprocessing
-
-    config_path = os.path.join(directory_or_repo, "reid_config.json")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(
-            f"No reid_config.json found in {directory_or_repo!r}. "
-            "Use ReIDModel.save_pretrained() to create a self-describing "
-            "model directory."
-        )
-    weights_path = os.path.join(directory_or_repo, "weights.safetensors")
-    weights_source = weights_path if os.path.exists(weights_path) else None
-    return _parse_config_file(config_path, weights_source=weights_source)
 
 
 def save_model_config(
@@ -205,7 +182,7 @@ def _load_hf_repo_config(hf_repo_url: str) -> tuple[ModelCard, ReIDPreprocessing
 def _parse_config_file(
     config_path: str,
     *,
-    weights_source: str | None,
+    weights_source: str,
 ) -> tuple[ModelCard, ReIDPreprocessing]:
     """Parse a ``reid_config.json`` file into a ``ModelCard`` and preprocessing."""
     with open(config_path) as f:
