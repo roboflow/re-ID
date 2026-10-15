@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+{{ super() }}
+
+{# Search and link-preview metadata, adapted from roboflow/trackers docs/overrides/main.html.
+   reid-specific values come from mkdocs.yml (site_name, site_description, site_url, repo_url). #}
+{% if page %}
+{% set site_root = (config.site_url or "").rstrip("/") %}
+
+{# ── Organization + SoftwareApplication JSON-LD (site-wide) ── #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://roboflow.com/#organization",
+      "name": "Roboflow",
+      "url": "https://roboflow.com",
+      "description": "Roboflow builds computer vision infrastructure and tools for training and deploying vision AI models.",
+      "foundingDate": "2019",
+      "logo": {{ (site_root ~ "/assets/roboflow-symbol-ink.svg") | tojson }},
+      "sameAs": [
+        "https://github.com/roboflow",
+        "https://twitter.com/roboflow",
+        "https://www.linkedin.com/company/roboflow-ai/",
+        "https://www.youtube.com/roboflow",
+        "https://en.wikipedia.org/wiki/Roboflow",
+        "https://www.wikidata.org/wiki/Q117062679",
+        "https://www.crunchbase.com/organization/roboflow"
+      ]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": {{ (site_root ~ "/#software") | tojson }},
+      "name": {{ ("Roboflow " ~ config.site_name) | tojson }},
+      "alternateName": "reid",
+      "description": {{ config.site_description | tojson }},
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS, Windows",
+      "url": {{ (site_root ~ "/") | tojson }},
+      "downloadUrl": "https://pypi.org/project/reid/",
+      "codeRepository": {{ config.repo_url | tojson }},
+      "programmingLanguage": "Python",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "author": {"@id": "https://roboflow.com/#organization"},
+      "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+    }
+  ]
+}
+</script>
+
+{# ── WebSite + SearchAction JSON-LD (homepage only) ── #}
+{% if page.is_homepage %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": {{ ("Roboflow " ~ config.site_name) | tojson }},
+  "url": {{ (site_root ~ "/") | tojson }},
+  "description": {{ config.site_description | tojson }},
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": {"@type": "EntryPoint", "urlTemplate": {{ (site_root ~ "/?q={search_term_string}") | tojson }}},
+    "query-input": "required name=search_term_string"
+  }
+}
+</script>
+{% endif %}
+
+{# ── Per-page TechArticle and BreadcrumbList JSON-LD (set by docs/hooks/schema_inject.py) ── #}
+{% if page.meta and page.meta.json_ld_article %}
+<script type="application/ld+json">
+{{ page.meta.json_ld_article | safe }}
+</script>
+{% endif %}
+{% if page.meta and page.meta.json_ld_breadcrumbs %}
+<script type="application/ld+json">
+{{ page.meta.json_ld_breadcrumbs | safe }}
+</script>
+{% endif %}
+
+{# ── Open Graph and Twitter / X card meta tags ── #}
+{% set page_title = page.meta.title if page.meta and page.meta.title else (page.title ~ " - Roboflow " ~ config.site_name) %}
+{% set page_description = page.meta.description if page.meta and page.meta.description else config.site_description %}
+<meta property="og:type" content="{% if page.is_homepage %}website{% else %}article{% endif %}" />
+<meta property="og:site_name" content="Roboflow {{ config.site_name }}" />
+<meta property="og:url" content="{{ page.canonical_url }}" />
+<meta property="og:title" content="{{ page_title }}" />
+<meta property="og:description" content="{{ page_description }}" />
+<meta property="og:image" content="{{ site_root }}/assets/roboflow-app-icon.png" />
+<meta property="og:image:alt" content="Roboflow logo" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@roboflow" />
+<meta name="twitter:title" content="{{ page_title }}" />
+<meta name="twitter:description" content="{{ page_description }}" />
+<meta name="twitter:image" content="{{ site_root }}/assets/roboflow-app-icon.png" />
+{% endif %}
+{% endblock %}

@@ -5,17 +5,56 @@ site_description: Tools for re-identification visual feature extraction and eval
 repo_name: roboflow/re-ID
 repo_url: https://github.com/roboflow/re-ID
 edit_uri: edit/main/docs/
+exclude_docs: |
+  overrides/
+  hooks/
+
+copyright: >
+  Roboflow 2026. All rights reserved. |
+  <a href="https://roboflow.com/privacy">Privacy Policy</a> |
+  <a href="https://roboflow.com/terms">Terms of Service</a>
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/roboflow
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/reid
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/u/roboflow
+    - icon: fontawesome/brands/youtube
+      link: https://www.youtube.com/roboflow
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/roboflow-ai/
+    - icon: fontawesome/brands/x-twitter
+      link: https://twitter.com/roboflow
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/GbfgXGJ8Bk
+
+hooks:
+  - docs/hooks/schema_inject.py
 
 theme:
   name: material
+  custom_dir: docs/overrides/
+  icon:
+    edit: material/pencil
+  logo: assets/roboflow-symbol-ink.svg
+  favicon: assets/roboflow-symbol-ink.svg
   features:
     - content.code.annotate
     - content.code.copy
+    - content.code.select
     - content.tabs.link
+    - content.tooltips
     - navigation.footer
     - navigation.tracking
     - navigation.expand
     - navigation.tabs
+
+extra_css:
+  - stylesheets/style.css
+  - stylesheets/rf.css
 
 markdown_extensions:
   - attr_list
