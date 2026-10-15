@@ -129,7 +129,7 @@ With exactly one correct match, average precision equals the reciprocal rank, so
 
 ## Benchmarks
 
-Use a checkpoint trained on the training split of the dataset you evaluate. The default `osnet_x1_0_msmt17_combineall` was trained on all of MSMT17, test identities included: on MSMT17 it leaks the test split, and on Market-1501 it measures **cross-domain** transfer: Rank-1 66.3 and mAP 37.4 with euclidean distance. The examples below load the same-domain OSNet x1.0 checkpoints from torchreid. Their published results use **euclidean** distance, so the examples do too; [`notebooks/eval_reid.ipynb`](https://github.com/roboflow/re-ID/blob/main/notebooks/eval_reid.ipynb) runs both end to end.
+Use a checkpoint trained on the training split of the dataset you evaluate. The default `osnet_x1_0_msmt17_combineall` was trained on all of MSMT17, test identities included: on MSMT17 it leaks the test split, and on Market-1501 it measures **cross-domain** transfer: Rank-1 66.3 and mAP 37.4 with euclidean distance. The examples below load the same-domain OSNet x1.0 checkpoints from torchreid. Their published results use **euclidean** distance, so the examples do too; [`docs/cookbooks/how-to-benchmark-reid-models.ipynb`](https://github.com/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb) runs both end to end.
 
 ### Market-1501
 
