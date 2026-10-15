@@ -133,12 +133,13 @@ class ReIDModel:
     ) -> ReIDModel:
         """Load a ``ReIDModel`` from an alias, Hub/local checkpoint, or architecture-only init.
 
-        ``source`` may be a curated alias, ``hf://`` repo or file, a local path
-        or directory with ``reid_config.json``, or ``None`` for the default
-        model. A bare ``.pth`` / ``.safetensors`` file requires ``architecture``.
+        ``source`` may be a curated alias, ``hf://`` repo or file, an
+        ``http(s)://`` file or folder URL, a local path or directory with
+        ``reid_config.json``, or ``None`` for the default model. A bare
+        ``.pth`` / ``.safetensors`` file requires ``architecture``.
 
         Args:
-            source: Model source (alias, Hub URL, local path, or ``None``).
+            source: Model source (alias, Hub URL, file or folder URL, local path, or ``None``).
             architecture: Backbone override; required for bare weight files, and
                 must be the architecture the weights were trained with.
             preprocessing: Preprocessing override.
@@ -177,6 +178,7 @@ class ReIDModel:
                 resolved_device,
                 architecture=arch_name or None,
                 required_match_fraction=plan.required_match_fraction,
+                allow_pickle=not plan.weights.startswith(("http://", "https://")),
             )
 
         backbone.to(resolved_device)

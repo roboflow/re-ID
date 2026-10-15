@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import pickle
@@ -15,6 +16,7 @@ import tempfile
 import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, NamedTuple
+from urllib.parse import urlparse, urlunparse
 
 import torch
 import torch.nn as nn
@@ -29,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _HF_PREFIX = "hf://"
 _GD_PREFIX = "gd://"
+_URL_PREFIXES = ("http://", "https://")
 
 _DEFAULT_DROP_PREFIXES = ("classifier",)
 _COMMON_KEY_PREFIXES = ("module.", "model.", "encoder.")
@@ -49,11 +52,13 @@ def _weights_cache_dir() -> str:
 
 
 def resolve_weights(source: str) -> str:
-    """Resolve a local path, ``hf://``, or ``gd://`` URL to a local weights file."""
+    """Resolve a local path, ``hf://``, ``gd://``, or ``http(s)://`` URL to a local weights file."""
     if source.startswith(_HF_PREFIX):
         return _resolve_hf(source)
     if source.startswith(_GD_PREFIX):
         return _resolve_gd(source)
+    if source.startswith(_URL_PREFIXES):
+        return _resolve_url(source)
 
     if not os.path.exists(source):
         raise FileNotFoundError(f"Weights file not found: {source}")
@@ -117,10 +122,34 @@ def _resolve_gd(source: str) -> str:
         os.replace(tmp_path, path)
     except Exception:
         if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+            os.remove(tmp_path)
         raise
 
     return _validate_downloaded_file(path)
+
+
+def _resolve_url(source: str) -> str:
+    """Download an ``http(s)://`` file once and cache it under its host, path and query in the weights cache."""
+    parsed = urlparse(source)
+    # Keyed by host and path, not file name: every saved model folder holds a weights.safetensors.
+    parts = parsed.path.strip("/").split("/")
+    if parsed.query:
+        # ?version=1 and ?version=2 are different files; the file name keeps its suffix.
+        parts.insert(-1, "query-" + hashlib.sha256(parsed.query.encode()).hexdigest()[:16])
+    path = os.path.join(_weights_cache_dir(), parsed.netloc, *parts)
+    if os.path.exists(path):
+        return _validate_downloaded_file(path)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    url = urlunparse(parsed._replace(fragment=""))
+    try:
+        torch.hub.download_url_to_file(url, path)
+    except OSError as exc:
+        raise RuntimeError(f"Failed to download weights from {source!r}.") from exc
+    if os.path.getsize(path) == 0:
+        os.remove(path)
+        raise RuntimeError(f"The weights downloaded from {source!r} are empty.")
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -168,12 +197,12 @@ def resolve_load_plan(
        ``DEFAULT_MODEL`` is used.
     2. **Curated alias or config directory** — ``source`` resolves via
        :func:`reid.catalog.resolve_model_card` (alias, ``save_pretrained``
-       directory, or HF repo). When ``architecture`` is explicitly overridden,
+       directory, HF repo, or ``http(s)://`` folder URL). When ``architecture`` is explicitly overridden,
        the override wins (with a warning); the card's weights and preprocessing
        are retained.
     3. **Architecture-only build** — ``source`` is ``None``; ``architecture`` is
        required. Random init, no weight downloads.
-    4. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://``
+    4. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://`` / ``http(s)://``
        URL that does not resolve to a model card; ``architecture`` is required.
 
     Returns:
@@ -263,7 +292,7 @@ def _strip_common_prefixes(key: str) -> str:
     return stripped
 
 
-def _read_state_dict(path: str, device: torch.device) -> dict:
+def _read_state_dict(path: str, device: torch.device, *, allow_pickle: bool = True) -> dict:
     """Read a raw state dict from a ``.pth`` or ``.safetensors`` file."""
     if path.endswith(".safetensors"):
         return load_file(path, device=str(device))
@@ -271,6 +300,12 @@ def _read_state_dict(path: str, device: torch.device) -> dict:
     try:
         state_dict = torch.load(path, map_location=device, weights_only=True)
     except (TypeError, pickle.UnpicklingError, RuntimeError) as exc:
+        if not allow_pickle:
+            raise ValueError(
+                f"{path!r} only loads with weights_only=False, which runs arbitrary code, so reid does not use it "
+                "for a file downloaded from a URL. Convert the checkpoint to .safetensors, or download it and "
+                "pass the local path if you trust its source."
+            ) from exc
         # weights_only=True rejects checkpoints with non-tensor globals (and old
         # torch lacks the kwarg entirely, raising TypeError). Fall back to the
         # unsafe path, but warn: it executes arbitrary pickle payloads.
@@ -301,6 +336,7 @@ def load_state_dict(
     warn_threshold: float = _MISMATCH_FRACTION,
     required_match_fraction: float | None = None,
     label: str | None = None,
+    allow_pickle: bool = True,
 ) -> None:
     """Load ``path`` into ``module`` by name and shape (classifier keys skipped).
 
@@ -327,6 +363,9 @@ def load_state_dict(
         label: Optional human-readable name used in the unmet-
             ``required_match_fraction`` error message. Defaults to
             ``architecture`` when omitted.
+        allow_pickle: Whether a ``.pth`` that fails the safe
+            ``weights_only=True`` load may fall back to ``weights_only=False``.
+            ``False`` raises ``ValueError`` instead.
     """
     if remap is None and architecture:
         from reid.architectures import checkpoint_remap_for_architecture
@@ -336,7 +375,7 @@ def load_state_dict(
     if label is None:
         label = architecture or None
 
-    state_dict = _read_state_dict(path, device)
+    state_dict = _read_state_dict(path, device, allow_pickle=allow_pickle)
 
     cleaned: dict
     if remap is not None:

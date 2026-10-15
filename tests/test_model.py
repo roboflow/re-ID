@@ -13,11 +13,16 @@ Curated weight downloads live in the ``@pytest.mark.slow`` test below.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
+import shutil
 import tempfile
+import urllib.error
+import urllib.parse
 import warnings
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -29,6 +34,7 @@ from PIL import Image
 from safetensors.torch import load_file, save_file
 from torchvision.transforms import Compose, Normalize, Resize, ToTensor
 
+import reid.catalog
 from reid import ReIDModel
 from reid.architectures import build_architecture, default_preprocessing_for_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
@@ -53,6 +59,29 @@ def _save_checkpoint(state_dict: object, suffix: str = ".pth") -> str:
         tmp_path = f.name
     torch.save(state_dict, tmp_path)
     return tmp_path
+
+
+def _mock_downloads(monkeypatch: pytest.MonkeyPatch, hosted: Path, *, cache: Path) -> list[str]:
+    """Mock the download ``reid`` uses, so tests need no network.
+
+    A request for ``https://<host>/<path>`` copies ``hosted/<host>/<path>``, and one for
+    ``https://<host>/<path>?<query>`` copies ``hosted/<host>/<query>/<path>``, or answers 404
+    when that file is missing. The weights cache moves to ``cache``, so each test starts
+    empty. Returns the URLs ``reid`` requests, in order.
+    """
+    requested: list[str] = []
+
+    def download(url: str, dst: str, *args: object, **kwargs: object) -> None:
+        requested.append(url)
+        parsed = urllib.parse.urlparse(url)
+        served = hosted / parsed.netloc / parsed.query / parsed.path.lstrip("/")
+        if not served.is_file():
+            raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+        shutil.copyfile(served, dst)
+
+    monkeypatch.setenv("REID_CACHE_DIR", str(cache))
+    monkeypatch.setattr(torch.hub, "download_url_to_file", download)
+    return requested
 
 
 def _tiny_encoder():
@@ -137,7 +166,16 @@ class TestRegistry:
 
     def test_list_aliases(self) -> None:
         aliases = list_aliases()
-        assert aliases == sorted([DEFAULT_MODEL, FASTREID_MOT17_SBS50])
+        assert aliases == sorted(
+            [
+                DEFAULT_MODEL,
+                FASTREID_MOT17_SBS50,
+                "osnet_x1_0_mot17",
+                "osnet_x1_0_sportsmot",
+                "osnet_x1_0_dancetrack",
+                "osnet_x1_0_soccernet",
+            ]
+        )
 
     def test_resolve_default_alias(self) -> None:
         resolved = resolve_model_card(DEFAULT_MODEL)
@@ -178,6 +216,24 @@ class TestRegistry:
         assert card.architecture == "osnet_x1_0"
         assert config_preprocessing is not None
         assert config_preprocessing.input_size == (256, 128)
+
+    def test_hf_repo_with_config(self, tmp_path, monkeypatch) -> None:
+        config = {"architecture": "osnet_x1_0", "preprocessing": ReIDPreprocessing(input_size=(128, 64)).to_dict()}
+        (tmp_path / "reid_config.json").write_text(json.dumps(config))
+        requests = []
+
+        def download(repo_id: str, filename: str, revision: str | None = None) -> str:
+            requests.append((repo_id, filename, revision))
+            return str(tmp_path / filename)
+
+        monkeypatch.setattr(reid.catalog, "hf_hub_download", download)
+
+        card, config_preprocessing = resolve_model_card("hf://org/repo@v1")
+
+        assert requests == [("org/repo", "reid_config.json", "v1")]
+        assert card.architecture == "osnet_x1_0"
+        assert card.weights == "hf://org/repo@v1/weights.safetensors"
+        assert config_preprocessing.input_size == (128, 64)
 
     def test_local_dir_without_config_raises(self, tmp_path) -> None:
         with pytest.raises(ValueError, match="reid_config.json"):
@@ -237,6 +293,135 @@ class TestLoaders:
     def test_malformed_hf_url_raises(self) -> None:
         with pytest.raises(ValueError, match="hf://"):
             resolve_weights("hf://only_one_part")
+
+    def test_url_weights_download_once_then_load_from_cache(self, tmp_path, monkeypatch) -> None:
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+            str(tmp_path / "hosted" / "storage.example.com" / "reid")
+        )
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+        url = "https://storage.example.com/reid/weights.safetensors"
+
+        for _ in range(2):
+            ReIDModel.from_pretrained(url, architecture="osnet_x0_25", device="cpu")
+
+        assert downloads == [url]
+        assert (tmp_path / "cache" / "weights" / "storage.example.com" / "reid" / "weights.safetensors").is_file()
+
+    def test_urls_ending_in_the_same_file_name_are_cached_apart(self, tmp_path, monkeypatch) -> None:
+        """Model folders all hold a ``weights.safetensors``; a cache keyed by file name would mix them up."""
+        for name in ("mot17", "soccernet"):
+            ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+                str(tmp_path / "hosted" / "storage.example.com" / name)
+            )
+        _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        mot17 = resolve_weights("https://storage.example.com/mot17/weights.safetensors")
+        soccernet = resolve_weights("https://storage.example.com/soccernet/weights.safetensors")
+
+        assert mot17 != soccernet
+        assert open(mot17, "rb").read() != open(soccernet, "rb").read()
+
+    def test_model_folder_url_loads_its_config_and_weights(self, tmp_path, monkeypatch) -> None:
+        """A ``save_pretrained`` folder served over https loads like a local one: its config sets the model."""
+        saved = ReIDModel.from_pretrained(
+            architecture="osnet_x0_25", preprocessing=ReIDPreprocessing(input_size=(128, 64)), device="cpu"
+        )
+        saved.save_pretrained(str(tmp_path / "hosted" / "storage.example.com" / "models" / "custom"))
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        loaded = ReIDModel.from_pretrained("https://storage.example.com/models/custom/", device="cpu")
+
+        assert downloads == [
+            "https://storage.example.com/models/custom/reid_config.json",
+            "https://storage.example.com/models/custom/weights.safetensors",
+        ]
+        assert loaded.preprocessing == saved.preprocessing
+        original, restored = saved._backbone.state_dict(), loaded._backbone.state_dict()
+        assert all(torch.equal(original[key], restored[key]) for key in original)
+
+    def test_model_folder_url_without_a_config_raises(self, tmp_path, monkeypatch) -> None:
+        _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        with pytest.raises(ValueError, match="no reid_config.json"):
+            ReIDModel.from_pretrained("https://storage.example.com/models/empty/", device="cpu")
+
+    def test_failed_url_download_names_the_url(self, tmp_path, monkeypatch) -> None:
+        _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        with pytest.raises(RuntimeError, match="https://storage.example.com/missing.pth"):
+            resolve_weights("https://storage.example.com/missing.pth")
+
+    def test_url_query_is_part_of_the_cache_key(self, tmp_path, monkeypatch) -> None:
+        """``?version=1`` and ``?version=2`` are different files and must not share a cache entry."""
+        for version in ("version=1", "version=2"):
+            ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+                str(tmp_path / "hosted" / "storage.example.com" / version / "reid")
+            )
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+        urls = [f"https://storage.example.com/reid/weights.safetensors?{v}" for v in ("version=1", "version=2")]
+
+        first, second = (resolve_weights(url) for url in urls)
+
+        assert downloads == urls
+        assert first.endswith(".safetensors") and second.endswith(".safetensors")
+        assert open(first, "rb").read() != open(second, "rb").read()
+
+    def test_model_folder_url_keeps_its_query_and_drops_its_fragment(self, tmp_path, monkeypatch) -> None:
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+            str(tmp_path / "hosted" / "storage.example.com" / "token=abc" / "models" / "custom")
+        )
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        ReIDModel.from_pretrained("https://storage.example.com/models/custom/?token=abc#readme", device="cpu")
+
+        assert downloads == [
+            "https://storage.example.com/models/custom/reid_config.json?token=abc",
+            "https://storage.example.com/models/custom/weights.safetensors?token=abc",
+        ]
+
+    def test_failed_url_download_keeps_a_file_another_download_finished(self, tmp_path, monkeypatch) -> None:
+        """Two processes can download the same URL; the one that fails must not delete the other's result."""
+        monkeypatch.setenv("REID_CACHE_DIR", str(tmp_path / "cache"))
+        cached = tmp_path / "cache" / "weights" / "storage.example.com" / "reid" / "weights.safetensors"
+
+        def finished_elsewhere_then_fail(url: str, dst: str, *args: object, **kwargs: object) -> None:
+            cached.write_bytes(b"weights from the other download")
+            raise urllib.error.HTTPError(url, 503, "Service Unavailable", None, None)
+
+        monkeypatch.setattr(torch.hub, "download_url_to_file", finished_elsewhere_then_fail)
+
+        with pytest.raises(RuntimeError, match="storage.example.com"):
+            resolve_weights("https://storage.example.com/reid/weights.safetensors")
+        assert cached.read_bytes() == b"weights from the other download"
+        assert [p.name for p in cached.parent.iterdir()] == ["weights.safetensors"]
+
+    def test_empty_url_download_is_not_cached(self, tmp_path, monkeypatch) -> None:
+        """A server that answers with an empty file once must not break every later load."""
+        hosted = tmp_path / "hosted" / "storage.example.com" / "reid" / "weights.safetensors"
+        hosted.parent.mkdir(parents=True)
+        hosted.touch()
+        downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+        url = "https://storage.example.com/reid/weights.safetensors"
+
+        with pytest.raises(RuntimeError, match="empty"):
+            resolve_weights(url)
+        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(hosted.parent))
+        ReIDModel.from_pretrained(url, architecture="osnet_x0_25", device="cpu")
+
+        assert downloads == [url, url]
+
+    def test_url_checkpoint_that_needs_pickle_raises(self, tmp_path, monkeypatch) -> None:
+        """A downloaded ``.pth`` never reaches ``weights_only=False``; the same file loaded locally still does."""
+        checkpoint = tmp_path / "hosted" / "storage.example.com" / "reid" / "osnet.pth"
+        checkpoint.parent.mkdir(parents=True)
+        backbone = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")._backbone
+        torch.save({"state_dict": backbone.state_dict(), "args": argparse.Namespace(lr=0.1)}, checkpoint)
+        _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
+
+        with pytest.raises(ValueError, match="safetensors"):
+            ReIDModel.from_pretrained("https://storage.example.com/reid/osnet.pth", architecture="osnet_x0_25")
+        with pytest.warns(UserWarning, match="weights_only=False"):
+            ReIDModel.from_pretrained(str(checkpoint), architecture="osnet_x0_25", device="cpu")
 
     def test_load_state_dict_mismatch_warns(self) -> None:
         source = nn.Linear(4, 2)
