@@ -12,6 +12,8 @@ https://github.com/user-attachments/assets/68fe0a58-1414-4776-a4a0-412cbcb68643
 
 Gallery retrieval with the default model, `osnet_x1_0_msmt17_combineall`: crops ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
 
+Read the [documentation](https://reid.roboflow.com/) for guides and the API reference.
+
 ## Install
 
 ```bash
