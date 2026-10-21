@@ -47,8 +47,8 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+        shell: python
         run: |
-          python - <<'PY'
           import os
           from pathlib import Path
 
@@ -79,7 +79,6 @@ jobs:
                   f"{sorted(map(str, versions))}"
               )
           print(f"All distributions match release tag {expected}")
-          PY
 
       - name: 📤 Upload distribution artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
