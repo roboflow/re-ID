@@ -57,7 +57,9 @@ jobs:
 
           tag = os.environ["RELEASE_TAG"]
           expected = Version(tag[1:] if tag.startswith("v") else tag)
-          distributions = sorted(Path("dist").iterdir())
+          distributions = sorted(
+              path for path in Path("dist").iterdir() if path.name != ".gitignore"
+          )
           if not distributions:
               raise SystemExit("No distribution artifacts were built")
 
