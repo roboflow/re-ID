@@ -49,36 +49,9 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         shell: python
         run: |
-          import os
-          from pathlib import Path
+          import runpy
 
-          from packaging.utils import parse_sdist_filename, parse_wheel_filename
-          from packaging.version import Version
-
-          tag = os.environ["RELEASE_TAG"]
-          expected = Version(tag[1:] if tag.startswith("v") else tag)
-          distributions = sorted(
-              path for path in Path("dist").iterdir() if path.name != ".gitignore"
-          )
-          if not distributions:
-              raise SystemExit("No distribution artifacts were built")
-
-          versions = set()
-          for distribution in distributions:
-              if distribution.name.endswith(".whl"):
-                  _, version, _, _ = parse_wheel_filename(distribution.name)
-              elif distribution.name.endswith(".tar.gz"):
-                  _, version = parse_sdist_filename(distribution.name)
-              else:
-                  raise SystemExit(f"Unexpected distribution artifact: {distribution.name}")
-              versions.add(version)
-
-          if versions != {expected}:
-              raise SystemExit(
-                  f"Release tag {expected} does not match built distribution versions "
-                  f"{sorted(map(str, versions))}"
-              )
-          print(f"All distributions match release tag {expected}")
+          runpy.run_path(".github/scripts/validate_distribution_versions.py", run_name="__main__")
 
       - name: 📤 Upload distribution artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
