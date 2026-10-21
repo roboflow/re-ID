@@ -47,11 +47,8 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        shell: python
         run: |
-          import runpy
-
-          runpy.run_path(".github/scripts/validate_distribution_versions.py", run_name="__main__")
+          python .github/scripts/validate_distribution_versions.py
 
       - name: 📤 Upload distribution artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
