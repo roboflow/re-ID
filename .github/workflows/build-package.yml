@@ -11,6 +11,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'README.md'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/build-package.yml'
@@ -41,6 +42,42 @@ jobs:
           uv build
           uv run --no-sync twine check --strict dist/*
           ls -l dist/
+
+      - name: Validate distribution version against release tag
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from packaging.utils import parse_sdist_filename, parse_wheel_filename
+          from packaging.version import Version
+
+          tag = os.environ["RELEASE_TAG"]
+          expected = Version(tag[1:] if tag.startswith("v") else tag)
+          distributions = sorted(Path("dist").iterdir())
+          if not distributions:
+              raise SystemExit("No distribution artifacts were built")
+
+          versions = set()
+          for distribution in distributions:
+              if distribution.name.endswith(".whl"):
+                  _, version, _, _ = parse_wheel_filename(distribution.name)
+              elif distribution.name.endswith(".tar.gz"):
+                  _, version = parse_sdist_filename(distribution.name)
+              else:
+                  raise SystemExit(f"Unexpected distribution artifact: {distribution.name}")
+              versions.add(version)
+
+          if versions != {expected}:
+              raise SystemExit(
+                  f"Release tag {expected} does not match built distribution versions "
+                  f"{sorted(map(str, versions))}"
+              )
+          print(f"All distributions match release tag {expected}")
+          PY
 
       - name: 📤 Upload distribution artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
