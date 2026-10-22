@@ -20,7 +20,7 @@ Person re-identification (Re-ID) recognizes the same person in different images:
 ## Install
 
 ```bash
-pip install reid
+pip install "reid==0.1.0rc1"
 ```
 
 ## Quickstart

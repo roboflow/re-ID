@@ -15,7 +15,7 @@ Gallery retrieval with the default model, `osnet_x1_0_msmt17_combineall`: crops 
 ## Install
 
 ```bash
-pip install "reid>=0.1.0.dev0"
+pip install "reid==0.1.0rc1"
 ```
 
 <details>
