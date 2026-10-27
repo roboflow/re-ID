@@ -9,7 +9,6 @@ title: Load a Re-ID model
 1. **Pretrained model name.** `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")`. The package supplies the architecture, weights, and preprocessing settings, and downloads the weights the first time a name is used; `list_aliases()` lists the supported names. `ReIDModel.from_pretrained()` with no name loads `osnet_x1_0_msmt17_combineall`.
 2. **Saved model folder.** `ReIDModel.from_pretrained("/path/to/export")`, `ReIDModel.from_pretrained("hf://org/repo")`, or `ReIDModel.from_pretrained("https://example.com/models/my_model/")`. The folder must contain `weights.safetensors` and `reid_config.json`, with these names, as `save_pretrained` writes them.
 3. **Weights file.** `ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")`. Hugging Face (`hf://org/repo/file.pth`), Google Drive (`gd://<file-id>`), and web (`https://.../weights.pth`) sources work the same way. The one difference: a `.pth` from the web must load with PyTorch's safe `weights_only=True`, because a checkpoint that needs full unpickling can run code. Convert such a file to `.safetensors`, or download it and pass the local path if you trust its source. Name the architecture, because the file carries no model configuration; `list_architectures()` lists the options. If most of the architecture's weights are missing from the file, `from_pretrained` raises an error, because the weights come from a different model. A partial load above that, such as a checkpoint with a different head, loads with a warning, and the missing parameters keep random values. So make sure the weights file was trained with the architecture you name.
-4. **Random initialization.** `ReIDModel.from_pretrained(architecture="osnet_x1_0")`. The weights are random, so the embeddings carry no identity information; use this only to test the API without downloading weights.
 
 ```python
 from reid import ReIDModel
@@ -19,6 +18,8 @@ model = ReIDModel.from_pretrained("/path/to/export")
 model = ReIDModel.from_pretrained("https://example.com/models/my_model/")
 model = ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")
 ```
+
+For initializing a model with random weights on any architecture, use `ReIDModel.from_architecture("osnet_x1_0")`. Its embeddings carry no identity information until it is trained.
 
 `model.save_pretrained(directory)` writes the weights to `weights.safetensors` and the architecture and preprocessing settings to `reid_config.json`, so `ReIDModel.from_pretrained(directory)` restores the same model.
 

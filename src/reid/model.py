@@ -27,7 +27,7 @@ from PIL import Image as PILImage
 from safetensors.torch import save_file
 from torch.utils.data import DataLoader
 
-from reid.architectures import build_architecture
+from reid.architectures import build_architecture, default_preprocessing_for_architecture
 from reid.catalog import ModelCard, save_model_config
 from reid.checks import validate_positive_int
 from reid.crop_dataset import CropDataset
@@ -131,7 +131,7 @@ class ReIDModel:
         preprocessing: ReIDPreprocessing | None = None,
         device: str = "auto",
     ) -> ReIDModel:
-        """Load a ``ReIDModel`` from an alias, Hub/local checkpoint, or architecture-only init.
+        """Load a ``ReIDModel`` with trained weights from an alias or a Hub, web or local checkpoint.
 
         ``source`` may be a curated alias, ``hf://`` repo or file, an
         ``http(s)://`` file or folder URL, a local path or directory with
@@ -149,7 +149,8 @@ class ReIDModel:
             Loaded model with the backbone on ``device``.
 
         Raises:
-            ValueError: If a bare weights file is given without ``architecture``,
+            ValueError: If ``architecture`` is given without a ``source`` (use :meth:`from_architecture` for a randomly
+                initialised model), if a bare weights file is given without ``architecture``,
                 or the weights cover less of the architecture than required:
                 all of it for a pretrained name or saved model, half for a bare
                 weights file.
@@ -163,8 +164,7 @@ class ReIDModel:
         if plan.domain_warning:
             warnings.warn(plan.domain_warning, UserWarning, stacklevel=2)
 
-        # Always build offline here. Checkpoint weights (when present) are loaded
-        # explicitly below; architecture-only builds stay randomly initialised.
+        # Always build offline here; the checkpoint weights are loaded explicitly below.
         backbone = build_architecture(plan.architecture, pretrained=False)
         backbone.eval()
 
@@ -188,6 +188,38 @@ class ReIDModel:
             resolved_device,
             plan.preprocessing,
             architecture=plan.architecture if isinstance(plan.architecture, str) else None,
+        )
+
+    @classmethod
+    def from_architecture(
+        cls,
+        architecture: str | nn.Module,
+        *,
+        preprocessing: ReIDPreprocessing | None = None,
+        device: str = "auto",
+    ) -> ReIDModel:
+        """Build a ``ReIDModel`` with randomly initialised weights, without downloading anything.
+
+        The embeddings carry no identity information until the model is trained, so use it to test the API or as a
+        starting point for training. To load trained weights, use :meth:`from_pretrained`.
+
+        Args:
+            architecture: Registered architecture name (see ``list_architectures``) or a pre-built ``nn.Module``.
+            preprocessing: Preprocessing override. Defaults to the architecture's own preprocessing.
+            device: Compute device (``"auto"`` picks the best available).
+
+        Returns:
+            Model with random weights, with the backbone on ``device``.
+        """
+        resolved_device = _select_device(device)
+        backbone = build_architecture(architecture, pretrained=False)
+        backbone.to(resolved_device)
+        name = architecture if isinstance(architecture, str) else None
+        return cls(
+            backbone,
+            resolved_device,
+            preprocessing if preprocessing is not None else default_preprocessing_for_architecture(name),
+            architecture=name,
         )
 
     def save_pretrained(self, directory: str) -> None:

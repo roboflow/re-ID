@@ -263,7 +263,7 @@ class TestLoaders:
             ReIDModel.from_pretrained(str(weights), architecture="osnet_x0_25", device="cpu")
 
     def test_saved_model_must_load_completely(self, tmp_path) -> None:
-        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(tmp_path))
+        ReIDModel.from_architecture("osnet_x0_25", device="cpu").save_pretrained(str(tmp_path))
         weights = load_file(tmp_path / "weights.safetensors")
         save_file({k: v for k, v in list(weights.items())[1:]}, tmp_path / "weights.safetensors")  # drop one tensor
 
@@ -271,14 +271,14 @@ class TestLoaders:
             ReIDModel.from_pretrained(str(tmp_path), device="cpu")
 
     def test_saved_model_needs_its_weights_file(self, tmp_path) -> None:
-        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(tmp_path))
+        ReIDModel.from_architecture("osnet_x0_25", device="cpu").save_pretrained(str(tmp_path))
         (tmp_path / "weights.safetensors").unlink()
 
         with pytest.raises(FileNotFoundError, match="Weights file not found"):
             ReIDModel.from_pretrained(str(tmp_path), device="cpu")
 
     def test_saved_fastreid_model_reloads_with_the_same_weights(self, tmp_path) -> None:
-        model = ReIDModel.from_pretrained(architecture=FASTREID_SBS_ARCHITECTURE, device="cpu")
+        model = ReIDModel.from_architecture(FASTREID_SBS_ARCHITECTURE, device="cpu")
         model.save_pretrained(str(tmp_path))
 
         reloaded = ReIDModel.from_pretrained(str(tmp_path), device="cpu")
@@ -295,7 +295,7 @@ class TestLoaders:
             resolve_weights("hf://only_one_part")
 
     def test_url_weights_download_once_then_load_from_cache(self, tmp_path, monkeypatch) -> None:
-        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+        ReIDModel.from_architecture("osnet_x0_25", device="cpu").save_pretrained(
             str(tmp_path / "hosted" / "storage.example.com" / "reid")
         )
         downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
@@ -310,7 +310,7 @@ class TestLoaders:
     def test_urls_ending_in_the_same_file_name_are_cached_apart(self, tmp_path, monkeypatch) -> None:
         """Model folders all hold a ``weights.safetensors``; a cache keyed by file name would mix them up."""
         for name in ("mot17", "soccernet"):
-            ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+            ReIDModel.from_architecture("osnet_x0_25", device="cpu").save_pretrained(
                 str(tmp_path / "hosted" / "storage.example.com" / name)
             )
         _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
@@ -323,8 +323,8 @@ class TestLoaders:
 
     def test_model_folder_url_loads_its_config_and_weights(self, tmp_path, monkeypatch) -> None:
         """A ``save_pretrained`` folder served over https loads like a local one: its config sets the model."""
-        saved = ReIDModel.from_pretrained(
-            architecture="osnet_x0_25", preprocessing=ReIDPreprocessing(input_size=(128, 64)), device="cpu"
+        saved = ReIDModel.from_architecture(
+            "osnet_x0_25", preprocessing=ReIDPreprocessing(input_size=(128, 64)), device="cpu"
         )
         saved.save_pretrained(str(tmp_path / "hosted" / "storage.example.com" / "models" / "custom"))
         downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
@@ -354,7 +354,7 @@ class TestLoaders:
     def test_url_query_is_part_of_the_cache_key(self, tmp_path, monkeypatch) -> None:
         """``?version=1`` and ``?version=2`` are different files and must not share a cache entry."""
         for version in ("version=1", "version=2"):
-            ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+            ReIDModel.from_architecture("osnet_x0_25", device="cpu").save_pretrained(
                 str(tmp_path / "hosted" / "storage.example.com" / version / "reid")
             )
         downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
@@ -367,7 +367,7 @@ class TestLoaders:
         assert open(first, "rb").read() != open(second, "rb").read()
 
     def test_model_folder_url_keeps_its_query_and_drops_its_fragment(self, tmp_path, monkeypatch) -> None:
-        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(
+        ReIDModel.from_architecture("osnet_x0_25", device="cpu").save_pretrained(
             str(tmp_path / "hosted" / "storage.example.com" / "token=abc" / "models" / "custom")
         )
         downloads = _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
@@ -405,7 +405,7 @@ class TestLoaders:
 
         with pytest.raises(RuntimeError, match="empty"):
             resolve_weights(url)
-        ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu").save_pretrained(str(hosted.parent))
+        ReIDModel.from_architecture("osnet_x0_25", device="cpu").save_pretrained(str(hosted.parent))
         ReIDModel.from_pretrained(url, architecture="osnet_x0_25", device="cpu")
 
         assert downloads == [url, url]
@@ -414,7 +414,7 @@ class TestLoaders:
         """A downloaded ``.pth`` never reaches ``weights_only=False``; the same file loaded locally still does."""
         checkpoint = tmp_path / "hosted" / "storage.example.com" / "reid" / "osnet.pth"
         checkpoint.parent.mkdir(parents=True)
-        backbone = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")._backbone
+        backbone = ReIDModel.from_architecture("osnet_x0_25", device="cpu")._backbone
         torch.save({"state_dict": backbone.state_dict(), "args": argparse.Namespace(lr=0.1)}, checkpoint)
         _mock_downloads(monkeypatch, tmp_path / "hosted", cache=tmp_path / "cache")
 
@@ -573,11 +573,15 @@ class TestModelSmoke:
         embs = model.extract_embeddings_from_paths([])
         assert embs.shape == (0, 0)
 
-    def test_from_pretrained_architecture_only(self) -> None:
-        """from_pretrained(architecture=...) builds an OSNet model with no downloads."""
+    def test_from_pretrained_without_source_points_to_from_architecture(self) -> None:
+        with pytest.raises(ValueError, match=r"ReIDModel\.from_architecture\('osnet_x0_25'\)"):
+            ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+
+    def test_from_architecture_builds_without_downloads(self) -> None:
+        """from_architecture builds an OSNet model with random weights and no downloads."""
         # osnet_x0_25 is a clean-room architecture with no external weights, so
         # this builds entirely offline (random init).
-        model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+        model = ReIDModel.from_architecture("osnet_x0_25", device="cpu")
         frame = np.zeros((256, 128, 3), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
         embs = model.extract_embeddings(dets, frame)
@@ -682,7 +686,7 @@ class TestRoundTrip:
     def test_save_and_reload_produces_identical_embeddings(self, tmp_path) -> None:
         # osnet_x0_25 builds offline; its random init is fixed for this process,
         # so the saved weights reload to byte-identical parameters.
-        model_a = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+        model_a = ReIDModel.from_architecture("osnet_x0_25", device="cpu")
         save_dir = str(tmp_path / "saved_model")
         model_a.save_pretrained(save_dir)
 

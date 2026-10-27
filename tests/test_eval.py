@@ -38,7 +38,7 @@ def test_real_model_evaluates_a_dataset_and_its_explicit_splits(tmp_path: Path) 
     """The default protocol, custom sampling, and explicit splits all run through a real encoder."""
     write_identity_crops(tmp_path, num_ids=6, num_per=6)
     data = load_identity_folders(tmp_path)
-    model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+    model = ReIDModel.from_architecture("osnet_x0_25", device="cpu")
 
     # One query per identity by default, two when asked: 6 identities give 6 and 12 queries.
     assert model.evaluate(data, verbose=False).num_queries == 6

@@ -30,8 +30,7 @@ import numpy as np
 import supervision as sv
 from reid import ReIDModel
 
-# Random weights for this API example; load a pretrained model for actual matching.
-model = ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
 frame = np.zeros((256, 128, 3), dtype=np.uint8)
 detections = sv.Detections(xyxy=np.array([[0, 0, 128, 256]], dtype=np.float32))
 embeddings = model.extract_embeddings(detections, frame)
