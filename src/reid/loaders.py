@@ -196,7 +196,7 @@ def resolve_load_plan(
     1. **Default curated alias** — both ``source`` and ``architecture`` omitted;
        ``DEFAULT_MODEL`` is used.
     2. **Curated alias or config directory** — ``source`` resolves via
-       :func:`reid.catalog.resolve_model_card` (alias, ``save_pretrained``
+       :func:`reid.catalog.resolve_model_card` (alias, ``ReIDModel.save``
        directory, HF repo, or ``http(s)://`` folder URL). When ``architecture`` is explicitly overridden,
        the override wins (with a warning); the card's weights and preprocessing
        are retained.
@@ -257,7 +257,7 @@ def resolve_load_plan(
             "file but no `architecture` was provided. Pass e.g. "
             "architecture='osnet_x1_0' to specify the model "
             "architecture, or point to a directory produced by "
-            "save_pretrained() for a self-describing checkpoint."
+            "ReIDModel.save() for a self-describing checkpoint."
         )
     return LoadPlan(
         architecture,

@@ -67,7 +67,7 @@ class ModelCard:
     """Architecture, weights source, and optional domain metadata.
 
     Produced by curated ``ALIASES`` entries or by loading ``reid_config.json``
-    from a ``save_pretrained`` directory / HF repo. Preprocessing for curated
+    from a ``ReIDModel.save`` directory / HF repo. Preprocessing for curated
     aliases is derived from the architecture at load time; saved configs may
     carry a preprocessing override in ``reid_config.json`` (see
     :func:`resolve_model_card`).
@@ -118,7 +118,7 @@ def list_aliases() -> list[str]:
 
 
 def resolve_model_card(source: str) -> tuple[ModelCard, ReIDPreprocessing | None] | None:
-    """Resolve an alias or a ``save_pretrained`` model to a load recipe.
+    """Resolve an alias or a ``ReIDModel.save`` model to a load recipe.
 
     A saved model is a folder holding ``reid_config.json`` and ``weights.safetensors``:
     a local directory, an ``hf://org/repo`` repository, or an ``http(s)://`` folder URL.
@@ -152,7 +152,7 @@ def save_model_config(
         raise ValueError(
             "Cannot save a ModelCard whose architecture is an nn.Module. "
             "Use a named architecture string (e.g. 'osnet_x1_0', "
-            "'timm:resnet50') to enable save_pretrained()."
+            "'timm:resnet50') to enable ReIDModel.save()."
         )
 
     config = {
@@ -170,7 +170,7 @@ def save_model_config(
 
 
 def _find_saved_model(source: str) -> tuple[str, str] | None:
-    """Locate the two files of the ``save_pretrained`` folder that ``source`` names.
+    """Locate the two files of the ``ReIDModel.save`` folder that ``source`` names.
 
     ``source`` may be a local directory, an ``hf://org/repo`` repository, or an
     ``http(s)://`` folder URL. The config is read right away to build the model card,
@@ -193,7 +193,7 @@ def _find_saved_model(source: str) -> tuple[str, str] | None:
         if not os.path.isfile(config_path):
             raise ValueError(
                 f"Cannot load {source!r}: directory has no reid_config.json. "
-                "Point to a directory produced by ReIDModel.save_pretrained(), "
+                "Point to a directory produced by ReIDModel.save(), "
                 "or pass a weights *file* path together with architecture=... ."
             )
         return config_path, os.path.join(source, "weights.safetensors")
@@ -237,7 +237,7 @@ def _download_url_config(folder_url: str) -> str:
     except RuntimeError as exc:
         raise ValueError(
             f"Cannot load {folder_url!r}: no reid_config.json at {config_url}. "
-            "Point to a folder produced by ReIDModel.save_pretrained(), "
+            "Point to a folder produced by ReIDModel.save(), "
             "or pass a weights *file* URL together with architecture=... ."
         ) from exc
 

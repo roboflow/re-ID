@@ -73,15 +73,14 @@ class ReIDModel:
 
     Provides ``extract_embeddings`` (for video-frame crops) and
     ``extract_embeddings_from_paths`` (for on-disk crops), plus
-    ``from_pretrained`` and ``save_pretrained``. The default checkpoint is
+    ``from_pretrained`` and ``save``. The default checkpoint is
     pedestrian-trained; pass ``source`` / ``architecture`` for other domains.
 
     Args:
         backbone: Encoder module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
         device: Device the backbone runs on.
         preprocessing: Crop and embedding preprocessing.
-        architecture: Registered architecture name, required by
-            ``save_pretrained``. ``None`` for a raw ``nn.Module`` backbone.
+        architecture: Registered architecture name, required by ``save``. ``None`` for a raw ``nn.Module`` backbone.
     """
 
     def __init__(
@@ -222,8 +221,10 @@ class ReIDModel:
             architecture=name,
         )
 
-    def save_pretrained(self, directory: str) -> None:
-        """Persist ``weights.safetensors`` and ``reid_config.json`` for later loads.
+    def save(self, directory: str) -> None:
+        """Save the model's current weights and its configuration, so ``from_pretrained(directory)`` loads it back.
+
+        Writes the weights to ``weights.safetensors`` and the architecture and preprocessing to ``reid_config.json``.
 
         Args:
             directory: Output directory (created if missing).
@@ -234,9 +235,8 @@ class ReIDModel:
         if self._architecture is None:
             raise ValueError(
                 "Cannot save a model whose architecture name is unknown. "
-                "Build the model via from_pretrained() with a named "
-                "architecture (e.g. 'osnet_x1_0', 'timm:resnet50') to "
-                "enable save_pretrained()."
+                "Build it with from_pretrained() or from_architecture() and a named "
+                "architecture (e.g. 'osnet_x1_0', 'timm:resnet50') to enable ReIDModel.save()."
             )
 
         os.makedirs(directory, exist_ok=True)

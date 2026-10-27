@@ -126,7 +126,7 @@ def remap_fastreid_sbs_state_dict(state_dict: dict) -> dict:
 
     Renames FastReID ``heads.*`` keys to ``pool.*`` / ``bottleneck.*`` and passes
     ``backbone.*`` through unchanged, as well as ``pool.*`` / ``bottleneck.*`` keys
-    already in this layout (a model written by ``save_pretrained``). Skips
+    already in this layout (a model written by ``ReIDModel.save``). Skips
     ``heads.weight`` (classifier). GeM ``heads.pool_layer.p`` becomes ``pool.p``
     and replaces the 3.0 init default.
     """
