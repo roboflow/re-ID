@@ -47,7 +47,16 @@ Weights download the first time a model is loaded and are kept on disk, so later
 
 ## Preprocessing
 
-Each architecture has default preprocessing: OSNet resizes crops to 256 × 128 and FastReID SBS to 384 × 128, both by stretching. Pass a `ReIDPreprocessing` to `from_pretrained(..., preprocessing=...)` to override it. These are its fields, and what `reid_config.json` stores under `"preprocessing"`:
+Each model has its way of preprocessing: OSNet resizes crops to 256 × 128 and FastReID SBS to 384 × 128, both by stretching. Pass an instance of the dataclass `ReIDPreprocessing` to `from_pretrained(..., preprocessing=...)` and choose how to do it:
+
+```python
+from reid import ReIDModel, ReIDPreprocessing
+
+preprocessing = ReIDPreprocessing(input_size=(256, 128), resize_mode="letterbox")
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall", preprocessing=preprocessing)
+```
+
+`model.save` writes the same fields to `reid_config.json`, as an object under `"preprocessing"`. Its fields:
 
 | Field           | Meaning                                                                               | Typical                                   |
 | :-------------- | :------------------------------------------------------------------------------------ | :---------------------------------------- |
