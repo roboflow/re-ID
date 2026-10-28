@@ -191,18 +191,16 @@ def resolve_load_plan(
 ) -> LoadPlan:
     """Resolve a ``from_pretrained`` request into the values it needs.
 
-    Resolution follows four load forms (in order):
+    Resolution follows three load forms (in order):
 
     1. **Default curated alias** — both ``source`` and ``architecture`` omitted;
        ``DEFAULT_MODEL`` is used.
     2. **Curated alias or config directory** — ``source`` resolves via
-       :func:`reid.catalog.resolve_model_card` (alias, ``save_pretrained``
+       :func:`reid.catalog.resolve_model_card` (alias, ``ReIDModel.save``
        directory, HF repo, or ``http(s)://`` folder URL). When ``architecture`` is explicitly overridden,
        the override wins (with a warning); the card's weights and preprocessing
        are retained.
-    3. **Architecture-only build** — ``source`` is ``None``; ``architecture`` is
-       required. Random init, no weight downloads.
-    4. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://`` / ``http(s)://``
+    3. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://`` / ``http(s)://``
        URL that does not resolve to a model card; ``architecture`` is required.
 
     Returns:
@@ -212,9 +210,9 @@ def resolve_load_plan(
         ``required_match_fraction`` when set.
 
     Raises:
-        ValueError: For an architecture-only request without ``architecture``,
-            a bare weights file without ``architecture``, or a local directory
-            that is missing ``reid_config.json``.
+        ValueError: For an ``architecture`` without a ``source`` (random weights come from
+            constructing ``ReIDModel(architecture)``), a bare weights file without ``architecture``, or a local
+            directory that is missing ``reid_config.json``.
     """
     from reid.catalog import DEFAULT_MODEL, resolve_model_card
 
@@ -248,14 +246,9 @@ def resolve_load_plan(
         )
 
     if source is None:
-        if architecture is None:
-            raise ValueError("architecture is required when source is None")
-        return LoadPlan(
-            architecture,
-            None,
-            _resolve_preprocessing(preprocessing, None, architecture),
-            None,
-            None,
+        raise ValueError(
+            "from_pretrained loads trained weights, so it needs a source when an architecture is given. "
+            f"For a randomly initialised model, use ReIDModel({architecture!r})."
         )
 
     if architecture is None:
@@ -264,7 +257,7 @@ def resolve_load_plan(
             "file but no `architecture` was provided. Pass e.g. "
             "architecture='osnet_x1_0' to specify the model "
             "architecture, or point to a directory produced by "
-            "save_pretrained() for a self-describing checkpoint."
+            "ReIDModel.save() for a self-describing checkpoint."
         )
     return LoadPlan(
         architecture,

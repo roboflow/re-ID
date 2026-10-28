@@ -17,7 +17,7 @@ Read the [documentation](https://reid.roboflow.com/) for guides and the API refe
 ## Install
 
 ```bash
-pip install "reid>=0.1.0.dev0"
+pip install "reid==0.1.0rc1"
 ```
 
 <details>

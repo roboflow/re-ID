@@ -1,6 +1,6 @@
 [project]
 name = "reid"
-version = "0.1.0.dev0"
+version = "0.1.0rc1"
 description = "Re-identification model stack for appearance embeddings"
 readme = "README.md"
 authors = [
@@ -43,6 +43,9 @@ docs = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.11",
     "mkdocstrings-python>=1.10.9,<3.0.0",
+]
+build = [
+    "twine>=5.1.1",
 ]
 
 [build-system]
