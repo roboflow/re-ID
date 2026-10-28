@@ -19,7 +19,7 @@ model = ReIDModel.from_pretrained("https://example.com/models/my_model/")
 model = ReIDModel.from_pretrained("weights.pth", architecture="osnet_x1_0")
 ```
 
-For initializing a model with random weights on any architecture, use `ReIDModel.from_architecture("osnet_x1_0")`. Its embeddings carry no identity information until it is trained.
+For initializing a model with random weights on any architecture, use `ReIDModel("osnet_x1_0")`. Its embeddings carry no identity information until it is trained.
 
 `model.save(directory)` writes the model's current weights to `weights.safetensors` and the architecture and preprocessing settings to `reid_config.json`, so `ReIDModel.from_pretrained(directory)` restores the same model.
 

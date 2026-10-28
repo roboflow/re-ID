@@ -76,28 +76,34 @@ class ReIDModel:
     ``from_pretrained`` and ``save``. The default checkpoint is
     pedestrian-trained; pass ``source`` / ``architecture`` for other domains.
 
+    Constructing it builds the architecture with randomly initialised weights, without downloading anything. Its
+    embeddings carry no identity information until it is trained; to load trained weights, use
+    :meth:`from_pretrained`.
+
     Args:
-        backbone: Encoder module (``(B, 3, H, W)`` → ``(B, D)`` in eval).
-        device: Device the backbone runs on.
-        preprocessing: Crop and embedding preprocessing.
-        architecture: Registered architecture name, required by ``save``. ``None`` for a raw ``nn.Module`` backbone.
+        architecture: Registered architecture name (see ``list_architectures``), ``timm:<name>``, or a pre-built
+            ``nn.Module`` (``(B, 3, H, W)`` → ``(B, D)`` in eval). ``save`` needs a name.
+        preprocessing: Crop and embedding preprocessing. Defaults to the architecture's own preprocessing.
+        device: Compute device (``"auto"`` picks the best available).
     """
 
     def __init__(
         self,
-        backbone: nn.Module,
-        device: torch.device,
-        preprocessing: ReIDPreprocessing,
-        architecture: str | None = None,
+        architecture: str | nn.Module,
+        *,
+        preprocessing: ReIDPreprocessing | None = None,
+        device: str | torch.device = "auto",
     ) -> None:
-        self._backbone = backbone
+        self._architecture = architecture if isinstance(architecture, str) else None
+        self._backbone = build_architecture(architecture, pretrained=False)
         # Encoders are inference-only; force eval() so callers that pass a raw
         # nn.Module (e.g. still in train mode) get deterministic BN/dropout.
         self._backbone.eval()
-        self._device = device
+        self.to(device)
+        if preprocessing is None:
+            preprocessing = default_preprocessing_for_architecture(self._architecture)
         self._preprocessing = preprocessing
         self._crop_transform = preprocessing.build_crop_transform()
-        self._architecture = architecture
         logger.info("ReIDModel preprocessing: %s", preprocessing.describe())
 
     @property
@@ -148,14 +154,12 @@ class ReIDModel:
             Loaded model with the backbone on ``device``.
 
         Raises:
-            ValueError: If ``architecture`` is given without a ``source`` (use :meth:`from_architecture` for a randomly
-                initialised model), if a bare weights file is given without ``architecture``,
+            ValueError: If ``architecture`` is given without a ``source`` (construct ``ReIDModel(architecture)`` for a
+                randomly initialised model), if a bare weights file is given without ``architecture``,
                 or the weights cover less of the architecture than required:
                 all of it for a pretrained name or saved model, half for a bare
                 weights file.
         """
-        resolved_device = _select_device(device)
-
         # Resolve the load recipe (architecture, weights, preprocessing, domain
         # warning, and strictness) in one place.
         plan = resolve_load_plan(source, architecture, preprocessing)
@@ -163,63 +167,21 @@ class ReIDModel:
         if plan.domain_warning:
             warnings.warn(plan.domain_warning, UserWarning, stacklevel=2)
 
-        # Always build offline here; the checkpoint weights are loaded explicitly below.
-        backbone = build_architecture(plan.architecture, pretrained=False)
-        backbone.eval()
+        model = cls(plan.architecture, preprocessing=plan.preprocessing, device=device)
 
         if plan.weights is not None:
             local_path = resolve_weights(plan.weights)
-            arch_name = plan.architecture if isinstance(plan.architecture, str) else ""
             logger.info("ReIDModel loading weights (%s)", plan.weights)
             load_state_dict(
-                backbone,
+                model._backbone,
                 local_path,
-                resolved_device,
-                architecture=arch_name or None,
+                model.device,
+                architecture=model._architecture,
                 required_match_fraction=plan.required_match_fraction,
                 allow_pickle=not plan.weights.startswith(("http://", "https://")),
             )
 
-        backbone.to(resolved_device)
-
-        return cls(
-            backbone,
-            resolved_device,
-            plan.preprocessing,
-            architecture=plan.architecture if isinstance(plan.architecture, str) else None,
-        )
-
-    @classmethod
-    def from_architecture(
-        cls,
-        architecture: str | nn.Module,
-        *,
-        preprocessing: ReIDPreprocessing | None = None,
-        device: str = "auto",
-    ) -> ReIDModel:
-        """Build a ``ReIDModel`` with randomly initialised weights, without downloading anything.
-
-        The embeddings carry no identity information until the model is trained, so use it to test the API or as a
-        starting point for training. To load trained weights, use :meth:`from_pretrained`.
-
-        Args:
-            architecture: Registered architecture name (see ``list_architectures``) or a pre-built ``nn.Module``.
-            preprocessing: Preprocessing override. Defaults to the architecture's own preprocessing.
-            device: Compute device (``"auto"`` picks the best available).
-
-        Returns:
-            Model with random weights, with the backbone on ``device``.
-        """
-        resolved_device = _select_device(device)
-        backbone = build_architecture(architecture, pretrained=False)
-        backbone.to(resolved_device)
-        name = architecture if isinstance(architecture, str) else None
-        return cls(
-            backbone,
-            resolved_device,
-            preprocessing if preprocessing is not None else default_preprocessing_for_architecture(name),
-            architecture=name,
-        )
+        return model
 
     def save(self, directory: str) -> None:
         """Save the model's current weights and its configuration, so ``from_pretrained(directory)`` loads it back.
@@ -235,8 +197,8 @@ class ReIDModel:
         if self._architecture is None:
             raise ValueError(
                 "Cannot save a model whose architecture name is unknown. "
-                "Build it with from_pretrained() or from_architecture() and a named "
-                "architecture (e.g. 'osnet_x1_0', 'timm:resnet50') to enable ReIDModel.save()."
+                "Build it from a named architecture (e.g. ReIDModel('osnet_x1_0') or "
+                "ReIDModel('timm:resnet50')) or with from_pretrained() to enable ReIDModel.save()."
             )
 
         os.makedirs(directory, exist_ok=True)

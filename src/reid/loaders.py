@@ -211,7 +211,7 @@ def resolve_load_plan(
 
     Raises:
         ValueError: For an ``architecture`` without a ``source`` (random weights come from
-            ``ReIDModel.from_architecture``), a bare weights file without ``architecture``, or a local
+            constructing ``ReIDModel(architecture)``), a bare weights file without ``architecture``, or a local
             directory that is missing ``reid_config.json``.
     """
     from reid.catalog import DEFAULT_MODEL, resolve_model_card
@@ -248,7 +248,7 @@ def resolve_load_plan(
     if source is None:
         raise ValueError(
             "from_pretrained loads trained weights, so it needs a source when an architecture is given. "
-            f"For a randomly initialised model, use ReIDModel.from_architecture({architecture!r})."
+            f"For a randomly initialised model, use ReIDModel({architecture!r})."
         )
 
     if architecture is None:

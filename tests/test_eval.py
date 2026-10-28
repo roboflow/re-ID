@@ -17,14 +17,13 @@ import torch
 from reid import ReIDModel, load_identity_folders
 from reid.data import ReIDSplit
 from reid.eval import ReassociationProtocol, RetrievalProtocol
-from reid.preprocessing import ReIDPreprocessing
 
 from .crop_images import write_identity_crops, write_mot_crop
 
 
 def _model() -> ReIDModel:
     """A real ``ReIDModel`` whose embeddings each test supplies or monkeypatches."""
-    return ReIDModel(backbone=torch.nn.Identity(), device=torch.device("cpu"), preprocessing=ReIDPreprocessing())
+    return ReIDModel(torch.nn.Identity(), device="cpu")
 
 
 def _model_with(vectors: dict[str, list[float]]) -> ReIDModel:
@@ -38,7 +37,7 @@ def test_real_model_evaluates_a_dataset_and_its_explicit_splits(tmp_path: Path) 
     """The default protocol, custom sampling, and explicit splits all run through a real encoder."""
     write_identity_crops(tmp_path, num_ids=6, num_per=6)
     data = load_identity_folders(tmp_path)
-    model = ReIDModel.from_architecture("osnet_x0_25", device="cpu")
+    model = ReIDModel("osnet_x0_25", device="cpu")
 
     # One query per identity by default, two when asked: 6 identities give 6 and 12 queries.
     assert model.evaluate(data, verbose=False).num_queries == 6
