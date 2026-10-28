@@ -1,5 +1,5 @@
 site_name: Re-ID
-site_url: https://roboflow.github.io/re-ID/
+site_url: https://reid.roboflow.com/
 site_author: Roboflow
 site_description: Tools for re-identification visual feature extraction and evaluation.
 repo_name: roboflow/re-ID
