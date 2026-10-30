@@ -25,14 +25,14 @@ _WEIGHTS_FILE_SUFFIXES = (".safetensors", ".pth", ".pt")
 # OSNet x1.0 trained on MSMT17 with combineall (train + query + gallery).
 # Strong general-purpose pedestrian features, but combineall includes MSMT17
 # test IDs — not suitable for MSMT17 evaluation.
-_DEFAULT_OSNET_WEIGHTS = (
+_OSNET_MSMT17_COMBINEALL_WEIGHTS = (
     "hf://kaiyangzhou/osnet/"
     "osnet_x1_0_msmt17_combineall_256x128_amsgrad_ep150_stp60_lr0.0015_b64_fb10"
     "_softmax_labelsmooth_flip_jitter.pth"
 )
 
 _DOMAIN_WARNING = (
-    "The default ReIDModel weights were trained on MSMT17 pedestrian images. "
+    "The osnet_x1_0_msmt17_combineall weights were trained on MSMT17 pedestrian images. "
     "Performance may degrade significantly on non-person objects (vehicles, "
     "animals, products, etc.). Pass a domain-specific checkpoint via "
     "`ReIDModel.from_pretrained(source, architecture=...)` for other use cases."
@@ -41,9 +41,6 @@ _DOMAIN_WARNING = (
 # ---------------------------------------------------------------------------
 # Public constants and types
 # ---------------------------------------------------------------------------
-
-DEFAULT_MODEL = "osnet_x1_0_msmt17_combineall"
-"""Curated alias used when ``ReIDModel.from_pretrained`` gets no ``source``."""
 
 # BoT-SORT MOT17 SBS-S50 (ResNeSt50 + GeM + BNNeck), trained on MOT17 train-half GT crops.
 # Weights: https://github.com/niraharon/bot-sort#model-zoo
@@ -79,9 +76,9 @@ class ModelCard:
 
 
 ALIASES: dict[str, ModelCard] = {
-    DEFAULT_MODEL: ModelCard(
+    "osnet_x1_0_msmt17_combineall": ModelCard(
         architecture="osnet_x1_0",
-        weights=_DEFAULT_OSNET_WEIGHTS,
+        weights=_OSNET_MSMT17_COMBINEALL_WEIGHTS,
         domain_warning=_DOMAIN_WARNING,
     ),
     FASTREID_MOT17_SBS50: ModelCard(

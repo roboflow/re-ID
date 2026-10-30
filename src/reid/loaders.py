@@ -185,22 +185,20 @@ def _resolve_preprocessing(
 
 
 def resolve_load_plan(
-    source: str | None,
+    source: str,
     architecture: str | nn.Module | None,
     preprocessing: ReIDPreprocessing | None,
 ) -> LoadPlan:
     """Resolve a ``from_pretrained`` request into the values it needs.
 
-    Resolution follows three load forms (in order):
+    Resolution follows two load forms (in order):
 
-    1. **Default curated alias** — both ``source`` and ``architecture`` omitted;
-       ``DEFAULT_MODEL`` is used.
-    2. **Curated alias or config directory** — ``source`` resolves via
+    1. **Curated alias or config directory** — ``source`` resolves via
        :func:`reid.catalog.resolve_model_card` (alias, ``ReIDModel.save``
        directory, HF repo, or ``http(s)://`` folder URL). When ``architecture`` is explicitly overridden,
        the override wins (with a warning); the card's weights and preprocessing
        are retained.
-    3. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://`` / ``http(s)://``
+    2. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://`` / ``http(s)://``
        URL that does not resolve to a model card; ``architecture`` is required.
 
     Returns:
@@ -210,16 +208,12 @@ def resolve_load_plan(
         ``required_match_fraction`` when set.
 
     Raises:
-        ValueError: For an ``architecture`` without a ``source`` (random weights come from
-            constructing ``ReIDModel(architecture)``), a bare weights file without ``architecture``, or a local
-            directory that is missing ``reid_config.json``.
+        ValueError: For a bare weights file without ``architecture``, or a local directory that is missing
+            ``reid_config.json``.
     """
-    from reid.catalog import DEFAULT_MODEL, resolve_model_card
+    from reid.catalog import resolve_model_card
 
-    if source is None and architecture is None:
-        source = DEFAULT_MODEL
-
-    resolved = resolve_model_card(source) if source is not None else None
+    resolved = resolve_model_card(source)
     if resolved is not None:
         card, config_preprocessing = resolved
         arch_overridden = False
@@ -243,12 +237,6 @@ def resolve_load_plan(
             _resolve_preprocessing(preprocessing, config_preprocessing, card.architecture),
             card.domain_warning,
             required_fraction,
-        )
-
-    if source is None:
-        raise ValueError(
-            "from_pretrained loads trained weights, so it needs a source when an architecture is given. "
-            f"For a randomly initialised model, use ReIDModel({architecture!r})."
         )
 
     if architecture is None:

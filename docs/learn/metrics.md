@@ -21,7 +21,7 @@ Evaluate a pretrained model on the Market-1501 query and gallery splits:
 ```python
 from reid import ReIDModel, load_market1501
 
-model = ReIDModel.from_pretrained()
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
 query, gallery = load_market1501("/path/to/Market-1501-v15.09.15")
 result = model.evaluate(query, gallery)
 print(result.metrics)
@@ -35,7 +35,7 @@ Metrics are percentages. A typical result looks like:
 3368
 ```
 
-The default model was trained on MSMT17, so these Market-1501 numbers measure cross-domain transfer; [Benchmarks](#benchmarks) shows how to reproduce the published same-domain results.
+`osnet_x1_0_msmt17_combineall` was trained on MSMT17, so these Market-1501 numbers measure cross-domain transfer; [Benchmarks](#benchmarks) shows how to reproduce the published same-domain results.
 
 ---
 
@@ -129,7 +129,7 @@ With exactly one correct match, average precision equals the reciprocal rank, so
 
 ## Benchmarks
 
-Use a checkpoint trained on the training split of the dataset you evaluate. The default `osnet_x1_0_msmt17_combineall` was trained on all of MSMT17, test identities included: on MSMT17 it leaks the test split, and on Market-1501 it measures **cross-domain** transfer: Rank-1 66.3 and mAP 37.4 with euclidean distance. The examples below load the same-domain OSNet x1.0 checkpoints from torchreid. Their published results use **euclidean** distance, so the examples do too; [`docs/cookbooks/how-to-benchmark-reid-models.ipynb`](https://github.com/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb) runs both end to end.
+Use a checkpoint trained on the training split of the dataset you evaluate. `osnet_x1_0_msmt17_combineall` was trained on all of MSMT17, test identities included: on MSMT17 it leaks the test split, and on Market-1501 it measures **cross-domain** transfer: Rank-1 66.3 and mAP 37.4 with euclidean distance. The examples below load the same-domain OSNet x1.0 checkpoints from torchreid. Their published results use **euclidean** distance, so the examples do too; [`docs/cookbooks/how-to-benchmark-reid-models.ipynb`](https://github.com/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb) runs both end to end.
 
 ### Market-1501
 
