@@ -14,7 +14,7 @@ Re-ID works as a search. The crop of the person you want to find is the **query*
 
 ![A query player, a gallery of 12 crops from other clips, and the same crops ranked by similarity to the query](../assets/query-gallery.webp)
 
-<p align="center" style="margin-top: -0.4em;"><small>One query from a SoccerNet clip, ranked by the default model against 12 crops from the game's other clips. The query's person lands at ranks 1, 2, 4, and 7. Which images the gallery holds depends on the evaluation setup.</small></p>
+<p align="center" style="margin-top: -0.4em;"><small>One query from a SoccerNet clip, ranked by <code>osnet_x1_0_msmt17_combineall</code> against 12 crops from the game's other clips. The query's person lands at ranks 1, 2, 4, and 7. Which images the gallery holds depends on the evaluation setup.</small></p>
 
 ### Query set and gallery set
 
@@ -76,7 +76,7 @@ Market-1501 and MSMT17 provide their own query and gallery splits; pass these di
 ```python
 from reid import ReIDModel, load_market1501
 
-model = ReIDModel.from_pretrained()
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
 query, gallery = load_market1501("/path/to/Market-1501")
 result = model.evaluate(query, gallery)
 
