@@ -39,7 +39,6 @@ from reid import ReIDModel
 from reid.architectures import build_architecture, default_preprocessing_for_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE, FastReIDSBSResNeSt50
 from reid.catalog import (
-    DEFAULT_MODEL,
     FASTREID_MOT17_SBS50,
     list_aliases,
     resolve_model_card,
@@ -168,7 +167,7 @@ class TestRegistry:
         aliases = list_aliases()
         assert aliases == sorted(
             [
-                DEFAULT_MODEL,
+                "osnet_x1_0_msmt17_combineall",
                 FASTREID_MOT17_SBS50,
                 "osnet_x1_0_mot17",
                 "osnet_x1_0_sportsmot",
@@ -177,8 +176,8 @@ class TestRegistry:
             ]
         )
 
-    def test_resolve_default_alias(self) -> None:
-        resolved = resolve_model_card(DEFAULT_MODEL)
+    def test_resolve_msmt17_combineall_alias(self) -> None:
+        resolved = resolve_model_card("osnet_x1_0_msmt17_combineall")
         assert resolved is not None
         card, config_preprocessing = resolved
         assert card.architecture == "osnet_x1_0"
@@ -566,10 +565,6 @@ class TestModelSmoke:
         embs = model.extract_embeddings_from_paths([])
         assert embs.shape == (0, 0)
 
-    def test_from_pretrained_without_source_points_to_the_constructor(self) -> None:
-        with pytest.raises(ValueError, match=r"use ReIDModel\('osnet_x0_25'\)"):
-            ReIDModel.from_pretrained(architecture="osnet_x0_25", device="cpu")
-
     def test_constructor_builds_without_downloads(self) -> None:
         """The constructor builds an OSNet model with random weights and no downloads."""
         # osnet_x0_25 is a clean-room architecture with no external weights, so
@@ -697,12 +692,12 @@ class TestRoundTrip:
 
 
 @pytest.mark.slow
-def test_default_osnet_alias_loads_with_finite_output() -> None:
-    """Download ``DEFAULT_MODEL`` and smoke the default encoder path.
+def test_msmt17_combineall_alias_loads_with_finite_output() -> None:
+    """Download ``osnet_x1_0_msmt17_combineall`` and smoke the encoder path.
 
     Curated aliases require a 100% state-dict match; loading must not raise.
     """
-    model = ReIDModel.from_pretrained(DEFAULT_MODEL, device="cpu")
+    model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall", device="cpu")
     frame = np.zeros((256, 128, 3), dtype=np.uint8)
     dets = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 256.0]], dtype=np.float32))
 

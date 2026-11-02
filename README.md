@@ -10,7 +10,7 @@
 
 https://github.com/user-attachments/assets/68fe0a58-1414-4776-a4a0-412cbcb68643
 
-Gallery retrieval with the default model, `osnet_x1_0_msmt17_combineall`: crops ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
+Gallery retrieval with `osnet_x1_0_msmt17_combineall`: crops ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
 
 Read the [documentation](https://reid.roboflow.com/) for guides and the API reference.
 
@@ -33,7 +33,7 @@ For development, clone the repository and run `uv sync --all-extras` or `pip ins
 
 ## Quick start
 
-`extract_embeddings` computes one embedding for each bounding box in a frame. Pass the boxes as `sv.Detections`, which you can get from a detector like [RF-DETR](https://github.com/roboflow/rf-detr). Below, two people are boxed in the first frame of a sample video. `from_pretrained()` with no name downloads the default model, OSNet x1.0 trained on MSMT17.
+`extract_embeddings` computes one embedding for each bounding box in a frame. Pass the boxes as `sv.Detections`, which you can get from a detector like [RF-DETR](https://github.com/roboflow/rf-detr). Below, two people are boxed in the first frame of a sample video. `from_pretrained` downloads the model you name, here OSNet x1.0 trained on MSMT17.
 
 ```python
 import numpy as np
@@ -41,7 +41,7 @@ import supervision as sv
 from supervision.assets import VideoAssets, download_assets
 from reid import ReIDModel
 
-model = ReIDModel.from_pretrained()
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
 
 frame = next(sv.get_video_frames_generator(download_assets(VideoAssets.PEOPLE_WALKING)))
 detections = sv.Detections(xyxy=np.array([[746, 446, 828, 628], [1136, 502, 1214, 660]], dtype=np.float32))
@@ -59,6 +59,8 @@ embeddings = model.extract_embeddings_from_paths(["crop_1.jpg", "crop_2.jpg"])
 
 For every way to load a model, including saved models, Hugging Face repositories, and weights files, see the [loading guide](docs/guides/loading.md).
 
+There are two ways to build a model: `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")` loads trained weights, and `ReIDModel("osnet_x1_0")` builds the architecture with random weights.
+
 ## Evaluate
 
 `model.evaluate` scores a model on benchmark splits or on your own identity folders, one folder of crops per person.
@@ -66,7 +68,7 @@ For every way to load a model, including saved models, Hugging Face repositories
 ```python
 from reid import ReIDModel, load_identity_folders, load_market1501
 
-model = ReIDModel.from_pretrained()
+model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
 
 query, gallery = load_market1501("/path/to/Market-1501")
 result = model.evaluate(query, gallery)
@@ -80,14 +82,14 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 
 ## Pretrained models
 
-| Name                                     | Architecture             | Trained on                          | Use for                                                                                         |
-| :--------------------------------------- | :----------------------- | :---------------------------------- | :---------------------------------------------------------------------------------------------- |
-| `osnet_x1_0_msmt17_combineall` (default) | OSNet x1.0               | MSMT17, all splits combined         | General pedestrian embeddings. Not for evaluating on MSMT17, whose test identities it has seen. |
-| `fastreid_mot17_sbs50`                   | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | MOT17 tracking, as in BoT-SORT                                                                  |
-| `osnet_x1_0_mot17`                       | OSNet x1.0               | MOT17 train-half crops              | Tracking pedestrians, as in MOT17                                                               |
-| `osnet_x1_0_sportsmot`                   | OSNet x1.0               | SportsMOT train crops               | Tracking basketball, football and volleyball players, as in SportsMOT                           |
-| `osnet_x1_0_dancetrack`                  | OSNet x1.0               | DanceTrack train crops              | Tracking dancers in similar outfits, as in DanceTrack                                           |
-| `osnet_x1_0_soccernet`                   | OSNet x1.0               | SoccerNet train crops               | Tracking soccer players, as in SoccerNet                                                        |
+| Name                           | Architecture             | Trained on                          | Use for                                                                                         |
+| :----------------------------- | :----------------------- | :---------------------------------- | :---------------------------------------------------------------------------------------------- |
+| `osnet_x1_0_msmt17_combineall` | OSNet x1.0               | MSMT17, all splits combined         | General pedestrian embeddings. Not for evaluating on MSMT17, whose test identities it has seen. |
+| `fastreid_mot17_sbs50`         | FastReID SBS, ResNeSt-50 | MOT17 train-half ground-truth crops | MOT17 tracking, as in BoT-SORT                                                                  |
+| `osnet_x1_0_mot17`             | OSNet x1.0               | MOT17 train-half crops              | Tracking pedestrians, as in MOT17                                                               |
+| `osnet_x1_0_sportsmot`         | OSNet x1.0               | SportsMOT train crops               | Tracking basketball, football and volleyball players, as in SportsMOT                           |
+| `osnet_x1_0_dancetrack`        | OSNet x1.0               | DanceTrack train crops              | Tracking dancers in similar outfits, as in DanceTrack                                           |
+| `osnet_x1_0_soccernet`         | OSNet x1.0               | SoccerNet train crops               | Tracking soccer players, as in SoccerNet                                                        |
 
 `list_aliases()` lists these names. Any `timm:<name>` backbone and other OSNet sizes load from a weights file; see the [loading guide](docs/guides/loading.md).
 

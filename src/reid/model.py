@@ -73,8 +73,7 @@ class ReIDModel:
 
     Provides ``extract_embeddings`` (for video-frame crops) and
     ``extract_embeddings_from_paths`` (for on-disk crops), plus
-    ``from_pretrained`` and ``save``. The default checkpoint is
-    pedestrian-trained; pass ``source`` / ``architecture`` for other domains.
+    ``from_pretrained`` and ``save``.
 
     Constructing it builds the architecture with randomly initialised weights, without downloading anything. Its
     embeddings carry no identity information until it is trained; to load trained weights, use
@@ -130,7 +129,7 @@ class ReIDModel:
     @classmethod
     def from_pretrained(
         cls,
-        source: str | None = None,
+        source: str,
         *,
         architecture: str | nn.Module | None = None,
         preprocessing: ReIDPreprocessing | None = None,
@@ -138,13 +137,11 @@ class ReIDModel:
     ) -> ReIDModel:
         """Load a ``ReIDModel`` with trained weights from an alias or a Hub, web or local checkpoint.
 
-        ``source`` may be a curated alias, ``hf://`` repo or file, an
-        ``http(s)://`` file or folder URL, a local path or directory with
-        ``reid_config.json``, or ``None`` for the default model. A bare
-        ``.pth`` / ``.safetensors`` file requires ``architecture``.
+        ``source`` may be a curated alias, ``hf://`` repo or file, an ``http(s)://`` file or folder URL, or a local path
+        or directory with ``reid_config.json``. A bare ``.pth`` / ``.safetensors`` file requires ``architecture``.
 
         Args:
-            source: Model source (alias, Hub URL, file or folder URL, local path, or ``None``).
+            source: Model source (alias, Hub URL, file or folder URL, or local path).
             architecture: Backbone override; required for bare weight files, and
                 must be the architecture the weights were trained with.
             preprocessing: Preprocessing override.
@@ -154,11 +151,9 @@ class ReIDModel:
             Loaded model with the backbone on ``device``.
 
         Raises:
-            ValueError: If ``architecture`` is given without a ``source`` (construct ``ReIDModel(architecture)`` for a
-                randomly initialised model), if a bare weights file is given without ``architecture``,
-                or the weights cover less of the architecture than required:
-                all of it for a pretrained name or saved model, half for a bare
-                weights file.
+            ValueError: If a bare weights file is given without ``architecture``, or the weights cover less of the
+                architecture than required: all of it for a pretrained name or saved model, half for a bare weights
+                file.
         """
         # Resolve the load recipe (architecture, weights, preprocessing, domain
         # warning, and strictness) in one place.
@@ -198,7 +193,7 @@ class ReIDModel:
             raise ValueError(
                 "Cannot save a model whose architecture name is unknown. "
                 "Build it from a named architecture (e.g. ReIDModel('osnet_x1_0') or "
-                "ReIDModel('timm:resnet50')) or with from_pretrained() to enable ReIDModel.save()."
+                "ReIDModel('timm:resnet50')) or with from_pretrained(source) to enable ReIDModel.save()."
             )
 
         os.makedirs(directory, exist_ok=True)
