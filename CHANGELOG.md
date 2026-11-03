@@ -1,0 +1,22 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+## [0.1.0] — 2026-10-30
+
+First public release of `reid`: appearance embeddings and Re-ID evaluation for tracking, on top of `supervision`.
+
+### 🚀 Added
+
+- **Load trained Re-ID models from anywhere.** `ReIDModel.from_pretrained(source, *, architecture=None, preprocessing=None, device="auto")` takes a curated alias, an `hf://` repo or file, a `gd://` link, an `http(s)://` file or folder URL, a local weights file, or a directory written by `ReIDModel.save`. Weights must match the architecture: all of it for a curated or saved model, at least half for a bare weights file. URL downloads are cached, and pickle loading is refused for `http(s)://` weights. ([#1](https://github.com/roboflow/re-ID/pull/1), [#7](https://github.com/roboflow/re-ID/pull/7), [#12](https://github.com/roboflow/re-ID/pull/12), [#22](https://github.com/roboflow/re-ID/pull/22), [#25](https://github.com/roboflow/re-ID/pull/25))
+- **Build, move and save models.** `ReIDModel(architecture, *, preprocessing=None, device="auto")` builds an architecture by name or `timm:<name>` with random weights, or wraps your own `nn.Module`; `ReIDModel.save(directory)` writes `weights.safetensors` plus `reid_config.json` and round-trips through `from_pretrained`; `to()` and `device` move it between devices. ([#1](https://github.com/roboflow/re-ID/pull/1), [#7](https://github.com/roboflow/re-ID/pull/7), [#22](https://github.com/roboflow/re-ID/pull/22))
+- **Embeddings for detections.** `ReIDModel.extract_embeddings(detections, frame)` embeds `supervision.Detections` crops from a BGR frame; `extract_embeddings_from_paths(paths, num_workers=...)` embeds crops on disk. ([#1](https://github.com/roboflow/re-ID/pull/1), [#7](https://github.com/roboflow/re-ID/pull/7))
+- **Evaluation protocols.** `ReIDModel.evaluate(data, gallery=None, *, protocol=...)` returns a `ReIDResult`. `RetrievalProtocol` reports mAP, rank-1/5/10 and mINP; `ReassociationProtocol` reports rank-1 and MRR for re-finding an identity after `gap_frames`. Custom protocols subclass `EvaluationProtocol`. ([#1](https://github.com/roboflow/re-ID/pull/1), [#7](https://github.com/roboflow/re-ID/pull/7))
+- **Public `distance_matrix`.** `distance_matrix(query, gallery, *, distance="cosine" | "euclidean")` exposes the distances `evaluate` ranks with, in float32; an empty side gives an empty matrix. ([#11](https://github.com/roboflow/re-ID/pull/11))
+- **Datasets.** `ReIDSplit`, `load_market1501`, `load_msmt17` and `load_identity_folders` (one folder per identity). ([#1](https://github.com/roboflow/re-ID/pull/1), [#7](https://github.com/roboflow/re-ID/pull/7))
+- **MOT crops for re-association.** `reid.data.mot.generate_mot_patches` turns MOT-format sequences into identity-folder crops, with `MOTSplit` (`train_half`, `val_half`, `full`) and MOT17 detector-variant dedup. ([#7](https://github.com/roboflow/re-ID/pull/7))
+- **Model catalog.** `list_aliases()` with curated weights: `osnet_x1_0_msmt17_combineall`, `fastreid_mot17_sbs50` (`FASTREID_MOT17_SBS50`), and the Roboflow Trackers encoders `osnet_x1_0_mot17`, `osnet_x1_0_sportsmot`, `osnet_x1_0_dancetrack`, `osnet_x1_0_soccernet`. ([#1](https://github.com/roboflow/re-ID/pull/1), [#7](https://github.com/roboflow/re-ID/pull/7), [#12](https://github.com/roboflow/re-ID/pull/12))
+- **Architectures.** OSNet x0.25/x0.5/x0.75/x1.0, FastReID SBS ResNeSt50 and any `timm:<name>` backbone; `list_architectures()`. ([#1](https://github.com/roboflow/re-ID/pull/1))
+- **Preprocessing.** `ReIDPreprocessing` (input size, resize mode, `to_dict`/`from_dict`, stored in `reid_config.json`) and `Interpolation`, resizing with PIL to match torchreid. ([#1](https://github.com/roboflow/re-ID/pull/1), [#7](https://github.com/roboflow/re-ID/pull/7))
+- **Typed package** (`py.typed`) for Python 3.10+, Apache-2.0. ([#1](https://github.com/roboflow/re-ID/pull/1), [#6](https://github.com/roboflow/re-ID/pull/6))
+- **Documentation site** at reid.roboflow.com: loading and evaluation guides, metrics explained with a video and figures, API reference from docstrings, and tutorial notebooks. ([#4](https://github.com/roboflow/re-ID/pull/4), [#5](https://github.com/roboflow/re-ID/pull/5), [#8](https://github.com/roboflow/re-ID/pull/8), [#9](https://github.com/roboflow/re-ID/pull/9), [#13](https://github.com/roboflow/re-ID/pull/13), [#14](https://github.com/roboflow/re-ID/pull/14), [#16](https://github.com/roboflow/re-ID/pull/16))
