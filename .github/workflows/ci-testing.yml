@@ -8,7 +8,7 @@ on:
 jobs:
   lint:
     name: Lint
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [depot-ubuntu-latest, depot-windows-2025, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,3 +43,19 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -q --tb=short -m "not slow"
+
+  ci-guard:
+    name: CI guard
+    if: ${{ always() }}
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI results
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          if [[ "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" ]]; then
+            echo "CI failed: lint=$LINT_RESULT, test=$TEST_RESULT"
+            exit 1
+          fi

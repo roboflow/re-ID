@@ -221,3 +221,4 @@ __marimo__/
 # Local eval / scratch
 .reports/
 .temp/
+releases/

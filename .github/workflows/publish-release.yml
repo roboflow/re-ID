@@ -21,7 +21,7 @@ jobs:
     name: Publish Release Package
     needs: build
     if: github.event_name == 'release' && github.event.release.prerelease != true
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-latest
     environment:
       name: release
       url: https://pypi.org/project/reid/
@@ -48,7 +48,7 @@ jobs:
     name: Upload GitHub Release Artifacts
     needs: build
     if: github.event_name == 'release'
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write # Required to create and update GitHub Releases
