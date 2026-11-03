@@ -27,7 +27,7 @@ jobs:
   publish-pre-release:
     name: Publish Pre-release Package
     needs: build
-    runs-on: depot-ubuntu-latest
+    runs-on: ubuntu-latest
     environment:
       name: test
       url: https://pypi.org/project/reid/
