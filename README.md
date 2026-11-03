@@ -2,13 +2,13 @@
     <h1>reid</h1>
     <p>Load and evaluate person re-identification models in Python.</p>
 
-[![version](https://badge.fury.io/py/reid.svg)](https://badge.fury.io/py/reid) [![downloads](https://img.shields.io/pypi/dm/reid)](https://pypistats.org/packages/reid) [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE) [![python-version](https://img.shields.io/pypi/pyversions/reid)](https://badge.fury.io/py/reid) [![discord](https://img.shields.io/discord/1159501506232451173?logo=discord&label=discord&labelColor=fff&color=5865f2&link=https%3A%2F%2Fdiscord.gg%2FGbfgXGJ8Bk)](https://discord.gg/GbfgXGJ8Bk)
+[![version](https://badge.fury.io/py/reid.svg)](https://badge.fury.io/py/reid) [![downloads](https://img.shields.io/pypi/dm/reid)](https://pypistats.org/packages/reid) [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/roboflow/re-ID/blob/main/LICENSE) [![python-version](https://img.shields.io/pypi/pyversions/reid)](https://badge.fury.io/py/reid) [![discord](https://img.shields.io/discord/1159501506232451173?logo=discord&label=discord&labelColor=fff&color=5865f2&link=https%3A%2F%2Fdiscord.gg%2FGbfgXGJ8Bk)](https://discord.gg/GbfgXGJ8Bk)
 
 </div>
 
 `reid` turns a person crop into an appearance embedding, a vector that is close for crops of the same person and far apart for different people. It loads pretrained OSNet and FastReID checkpoints, embeds `supervision.Detections` from any detector or crops saved on disk, and measures how well a model matches people: across cameras with retrieval on Market-1501 and MSMT17, or over time with re-association on crops cut from MOT-format video. Requires Python 3.10 or newer.
 
-https://github.com/user-attachments/assets/68fe0a58-1414-4776-a4a0-412cbcb68643
+<video src="https://github.com/user-attachments/assets/68fe0a58-1414-4776-a4a0-412cbcb68643" controls muted><a href="https://reid.roboflow.com/"><img src="https://raw.githubusercontent.com/roboflow/re-ID/refs/heads/main/docs/assets/reid-gallery-retrieval-poster.webp" alt="Gallery retrieval with osnet_x1_0_msmt17_combineall"></a></video>
 
 Gallery retrieval with `osnet_x1_0_msmt17_combineall`: crops ranked by cosine distance to a query player, closest first. The other [pretrained models](#pretrained-models) work the same way.
 
@@ -57,7 +57,7 @@ Crops already saved as images work the same way:
 embeddings = model.extract_embeddings_from_paths(["crop_1.jpg", "crop_2.jpg"])
 ```
 
-For every way to load a model, including saved models, Hugging Face repositories, and weights files, see the [loading guide](docs/guides/loading.md).
+For every way to load a model, including saved models, Hugging Face repositories, and weights files, see the [loading guide](https://reid.roboflow.com/guides/loading/).
 
 There are two ways to build a model: `ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")` loads trained weights, and `ReIDModel("osnet_x1_0")` builds the architecture with random weights.
 
@@ -78,7 +78,7 @@ result.metrics
 # {'map': ..., 'rank1': ..., 'rank5': ..., 'rank10': ..., 'minp': ...}
 ```
 
-For crops cut from video, `ReassociationProtocol` asks whether the model recognizes a person a set number of frames later, the way a tracker uses it. See the [evaluation guide](docs/guides/evaluation.md) and the [metric definitions](docs/learn/metrics.md).
+For crops cut from video, `ReassociationProtocol` asks whether the model recognizes a person a set number of frames later, the way a tracker uses it. See the [evaluation guide](https://reid.roboflow.com/guides/evaluation/) and the [metric definitions](https://reid.roboflow.com/learn/metrics/).
 
 ## Pretrained models
 
@@ -91,12 +91,12 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 | `osnet_x1_0_dancetrack`        | OSNet x1.0               | DanceTrack train crops              | Tracking dancers in similar outfits, as in DanceTrack                                           |
 | `osnet_x1_0_soccernet`         | OSNet x1.0               | SoccerNet train crops               | Tracking soccer players, as in SoccerNet                                                        |
 
-`list_aliases()` lists these names. Any `timm:<name>` backbone and other OSNet sizes load from a weights file; see the [loading guide](docs/guides/loading.md).
+`list_aliases()` lists these names. Any `timm:<name>` backbone and other OSNet sizes load from a weights file; see the [loading guide](https://reid.roboflow.com/guides/loading/).
 
 ## Tutorials
 
 <p align="left">
-<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><img src="docs/assets/tutorials/rank-metrics.jpg" alt="A query player and the first eight crops of the gallery ranked by distance, the same player at ranks 1 to 6" width="300px" align="left" /></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><img src="https://raw.githubusercontent.com/roboflow/re-ID/refs/heads/main/docs/assets/tutorials/rank-metrics.jpg" alt="A query player and the first eight crops of the gallery ranked by distance, the same player at ranks 1 to 6" width="300px" align="left" /></a>
 <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><strong>How to Use Re-ID</strong></a>
 <br/>Load a model, match the boxes of a MOT17 frame to a later frame with <code>distance_matrix</code>, see identities cluster, and evaluate with retrieval and re-association.
 <br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-use-reid.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
@@ -104,7 +104,7 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 <br clear="left"/>
 
 <p align="left">
-<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><img src="docs/assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="300px" align="left" /></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><img src="https://raw.githubusercontent.com/roboflow/re-ID/refs/heads/main/docs/assets/query-gallery.webp" alt="A query player, a gallery of crops, and the gallery ranked by similarity with the matches outlined" width="300px" align="left" /></a>
 <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><strong>How to Benchmark Re-ID Models</strong></a>
 <br/>Evaluate OSNet x1.0 on Market-1501 and MSMT17 and compare against the torchreid model zoo.
 <br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
@@ -113,11 +113,11 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 
 ## Guides
 
-| Guide                                           | What you will do                                                                                               |
-| :---------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
-| [Load a model](docs/guides/loading.md)          | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
-| [Evaluate a model](docs/guides/evaluation.md)   | Score a model on Market-1501, your own identity folders, or crops cut from video                               |
-| [Understand the metrics](docs/learn/metrics.md) | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association                                     |
+| Guide                                                              | What you will do                                                                                               |
+| :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
+| [Load a model](https://reid.roboflow.com/guides/loading/)          | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
+| [Evaluate a model](https://reid.roboflow.com/guides/evaluation/)   | Score a model on Market-1501, your own identity folders, or crops cut from video                               |
+| [Understand the metrics](https://reid.roboflow.com/learn/metrics/) | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association                                     |
 
 ## Citation
 
@@ -142,4 +142,4 @@ For the models themselves, cite OSNet ([Zhou et al., ICCV 2019](https://arxiv.or
 
 ## License
 
-The code is released under the [Apache 2.0 license](LICENSE).
+The code is released under the [Apache 2.0 license](https://github.com/roboflow/re-ID/blob/main/LICENSE).
