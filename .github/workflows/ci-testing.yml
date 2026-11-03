@@ -43,3 +43,19 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -q --tb=short -m "not slow"
+
+  ci-guard:
+    name: CI guard
+    if: ${{ always() }}
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI results
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          if [[ "$LINT_RESULT" != "success" || "$TEST_RESULT" != "success" ]]; then
+            echo "CI failed: lint=$LINT_RESULT, test=$TEST_RESULT"
+            exit 1
+          fi
