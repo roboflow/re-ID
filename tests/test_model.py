@@ -632,6 +632,22 @@ class TestExtractContract:
         with pytest.raises(ValueError, match="batch_size"):
             model.extract_embeddings(dets, frame, batch_size=0)
 
+    @pytest.mark.parametrize(
+        "frame",
+        [
+            np.zeros((64, 64), dtype=np.uint8),
+            np.zeros((64, 64, 1), dtype=np.uint8),
+            np.zeros((64, 64, 4), dtype=np.uint8),
+        ],
+        ids=["grayscale", "single_channel", "bgra"],
+    )
+    def test_extract_embeddings_rejects_non_bgr_frame(self, frame: np.ndarray) -> None:
+        """Appearance encoders expect BGR HxWx3 video frames, not grayscale or BGRA."""
+        model = self._tiny_model(ReIDPreprocessing())
+        dets = sv.Detections(xyxy=np.array([[0, 0, 32, 32]], dtype=np.float32))
+        with pytest.raises(ValueError, match="HxWx3 BGR"):
+            model.extract_embeddings(dets, frame)
+
     def test_frame_and_path_extract_parity(self, tmp_path) -> None:
         """Same crop via a frame box vs. an on-disk file yields identical embeddings."""
         # to_rgb=False keeps frame bytes as-is; PIL path loads RGB on disk the same way.
