@@ -369,11 +369,14 @@ class ReIDModel:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
 
         Raises:
-            ValueError: If ``batch_size`` is not a positive integer.
+            ValueError: If ``batch_size`` is not a positive integer, or ``frame``
+                is not an ``HxWx3`` BGR image.
         """
         if len(detections) == 0:
             return np.empty((0, 0), dtype=np.float32)
         validate_positive_int(batch_size, "batch_size")
+        if frame.ndim != 3 or frame.shape[2] != 3:
+            raise ValueError(f"frame must be an HxWx3 BGR image, got shape {frame.shape}.")
 
         frame_h, frame_w = frame.shape[:2]
         tensors: list[torch.Tensor] = []
