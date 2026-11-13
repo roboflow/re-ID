@@ -133,6 +133,8 @@ Use `"full"` for sequences kept only for evaluation. Use `"train_half"` and `"va
 
 Re-association reports `rank1`, the percentage of queries whose correct match is the closest of their candidates, and `mrr`, the [mean reciprocal rank](../learn/metrics.md#mrr): each query scores 1/r, where r is the rank of its correct match (1 at rank 1, 1/2 at rank 2), and `mrr` averages these scores. Each query has exactly one correct match, so mean average precision is the mean reciprocal rank.
 
+To evaluate query and gallery crops you cut separately, load each folder with `load_identity_folders` and pass both to `model.evaluate`. Cut both with `generate_mot_patches` from the same ground truth, so a track ID names the same person in both.
+
 Re-association scores rankings of saved crops; it does not run a tracker or decide any match. Set `gap_frames` to the gaps your tracker has to bridge, and measure tracking performance separately with [Roboflow Trackers](https://github.com/roboflow/trackers).
 
 ## Limit which gallery images each query is ranked against

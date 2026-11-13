@@ -146,10 +146,6 @@ class TestInputs:
         with pytest.raises(ValueError, match="only apply when the partition is derived"):
             RetrievalProtocol(seed=1).build_query_gallery(_ONE_IMAGE, _ONE_IMAGE)
 
-    def test_reassociation_builds_its_own_gallery(self) -> None:
-        with pytest.raises(ValueError, match="gallery must be omitted"):
-            ReassociationProtocol().build_query_gallery(_ONE_IMAGE, _ONE_IMAGE)
-
     def test_empty_gallery_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="nonempty"):
             RetrievalProtocol().build_query_gallery(_ONE_IMAGE, _EMPTY)

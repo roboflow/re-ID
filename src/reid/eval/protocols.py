@@ -54,9 +54,10 @@ class EvaluationProtocol(ABC):
             data: Images to evaluate. The protocol splits them into query and
                 gallery images; when ``gallery`` is provided, they are the query
                 images.
-            gallery: Gallery images for the queries in ``data``. When provided,
-                both splits are used as given; re-association builds its own
-                gallery and rejects one.
+            gallery: Gallery images for the queries in ``data``. Retrieval ranks
+                each query against all of them. Re-association ranks each query
+                against the gallery crops of the same sequence ``gap_frames``
+                later.
 
         Returns:
             ``(query, gallery, candidate_mask, metadata)``. ``candidate_mask``
@@ -170,6 +171,9 @@ class ReassociationProtocol(EvaluationProtocol):
     Queries use frames divisible by ``query_stride`` and need a future positive
     among at least two candidates; other queries are skipped.
 
+    With an explicit gallery, queries come from ``data`` and their candidates
+    from ``gallery``.
+
     Args:
         gap_frames: Frames between a query and its candidates.
         query_stride: Queries are taken at frames divisible by this value.
@@ -192,15 +196,14 @@ class ReassociationProtocol(EvaluationProtocol):
         data: ReIDSplit,
         gallery: ReIDSplit | None = None,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
-        if gallery is not None:
-            raise ValueError("ReassociationProtocol constructs its own gallery; gallery must be omitted.")
-        if not isinstance(data, ReIDSplit):
-            raise TypeError(
-                f"Re-association needs a ReIDSplit of MOT crops, got {type(data).__name__}; "
-                "load the crops with reid.load_identity_folders."
-            )
+        for split in (data,) if gallery is None else (data, gallery):
+            if not isinstance(split, ReIDSplit):
+                raise TypeError(
+                    f"Re-association needs a ReIDSplit of MOT crops, got {type(split).__name__}; "
+                    "load the crops with reid.load_identity_folders."
+                )
         query, gallery_split, mask, counts = _build_reassociation_candidates(
-            data, gap_frames=self.gap_frames, query_stride=self.query_stride
+            data, gallery, gap_frames=self.gap_frames, query_stride=self.query_stride
         )
         skipped = (
             counts["skipped_missing_future"]
@@ -209,6 +212,7 @@ class ReassociationProtocol(EvaluationProtocol):
         )
         metadata = {
             "protocol": self.name,
+            "source": "derived" if gallery is None else "explicit",
             "parameters": {"gap_frames": self.gap_frames, "query_stride": self.query_stride},
             "distance": self.distance,
             "num_skipped_queries": skipped,
