@@ -19,10 +19,10 @@ Re-ID metrics measure how well a model finds images of the same person among can
 Evaluate a pretrained model on the Market-1501 query and gallery splits:
 
 ```python
-from reid import ReIDModel, load_market1501
+from reid import ReIDModel, load_market1501_test
 
 model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
-query, gallery = load_market1501("/path/to/Market-1501-v15.09.15")
+query, gallery = load_market1501_test("/path/to/Market-1501-v15.09.15")
 result = model.evaluate(query, gallery)
 print(result.metrics)
 print(result.num_queries)
@@ -134,27 +134,27 @@ Use a checkpoint trained on the training split of the dataset you evaluate. `osn
 ### Market-1501
 
 ```python
-from reid import ReIDModel, load_market1501
+from reid import ReIDModel, load_market1501_test
 from reid.eval import RetrievalProtocol
 
 model = ReIDModel.from_pretrained("/path/to/osnet_x1_0_market1501.pth", architecture="osnet_x1_0")
-query, gallery = load_market1501("/path/to/Market-1501-v15.09.15")
+query, gallery = load_market1501_test("/path/to/Market-1501-v15.09.15")
 result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"))
 print(result.metrics)
 ```
 
 This gives Rank-1 94.4 and mAP 82.5, the same as torchreid's own evaluation of this checkpoint, which we ran on the same data. torchreid's published model zoo table lists 94.2 / 82.6; torchreid reproduces that only with Pillow 6.0, from April 2019, because newer Pillow versions resize the crops slightly differently.
 
-**Market-1501 labels.** Besides its people, numbered 1 to 1501, the Market-1501 gallery has two labels: `pid=0` marks background images, which stay in the gallery as distractors, and `pid=-1` marks bad detections, which `load_market1501` treats as junk (`gallery_junk_pids={-1}`). torchreid scores Market-1501 the same way. MSMT17 has no such labels.
+**Market-1501 labels.** Besides its people, numbered 1 to 1501, the Market-1501 gallery has two labels: `pid=0` marks background images, which stay in the gallery as distractors, and `pid=-1` marks bad detections, which `load_market1501_test` treats as junk (`gallery_junk_pids={-1}`). torchreid scores Market-1501 the same way. MSMT17 has no such labels.
 
 ### MSMT17
 
 ```python
-from reid import ReIDModel, load_msmt17
+from reid import ReIDModel, load_msmt17_test
 from reid.eval import RetrievalProtocol
 
 model = ReIDModel.from_pretrained("/path/to/osnet_x1_0_msmt17.pth", architecture="osnet_x1_0")
-query, gallery = load_msmt17("/path/to/MSMT17_V1")
+query, gallery = load_msmt17_test("/path/to/MSMT17_V1")
 result = model.evaluate(query, gallery, protocol=RetrievalProtocol(distance="euclidean"))
 print(result.metrics)
 ```

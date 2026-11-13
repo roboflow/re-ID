@@ -29,20 +29,24 @@ def _crops_by_frame(split: ReIDSplit) -> dict[str, dict[int, dict[int, Path]]]:
 
 
 def _build_reassociation_candidates(
-    split: ReIDSplit,
+    data: ReIDSplit,
+    gallery: ReIDSplit | None = None,
     *,
     gap_frames: int,
     query_stride: int,
 ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray, dict]:
-    """Return fixed queries, deduplicated gallery, eligibility mask and counts.
+    """Return the queries, the gallery crops they are ranked against, the candidate mask and counts.
 
-    Queries occur at frames divisible by ``query_stride``. Candidates are all
-    identities in the same sequence exactly ``gap_frames`` later. A query is
-    scored only if its identity is present among at least two candidates.
+    Queries are the crops of ``data`` at frames divisible by ``query_stride``.
+    Candidates are all identities in the same sequence exactly ``gap_frames``
+    later, taken from ``gallery``, or from ``data`` when it is omitted. A query
+    is scored only if its identity is present among at least two candidates.
     """
-    frames = _crops_by_frame(split)
+    query_frames = _crops_by_frame(data)
+    gallery_frames = query_frames if gallery is None else _crops_by_frame(gallery)
     identities = {
         (sequence, identity)
+        for frames in (query_frames, gallery_frames)
         for sequence, seq_frames in frames.items()
         for crops in seq_frames.values()
         for identity in crops
@@ -51,11 +55,12 @@ def _build_reassociation_candidates(
 
     records: list[tuple[str, int, Path, tuple[tuple[int, Path], ...]]] = []
     skipped = {"skipped_missing_future": 0, "skipped_absent_positive": 0, "skipped_insufficient_candidates": 0}
-    for sequence, seq_frames in sorted(frames.items()):
+    # filter queries that dont have possible retrievals
+    for sequence, seq_frames in sorted(query_frames.items()):
         for frame, crops in sorted(seq_frames.items()):
             if frame % query_stride:
                 continue
-            future = seq_frames.get(frame + gap_frames)
+            future = gallery_frames.get(sequence, {}).get(frame + gap_frames)
             for identity, query_path in sorted(crops.items()):
                 if future is None:
                     skipped["skipped_missing_future"] += 1
@@ -76,17 +81,19 @@ def _build_reassociation_candidates(
     gallery_index = {record: index for index, record in enumerate(gallery_records)}
     # TODO: Store per-query candidate indices and score only eligible pairs to avoid
     # dense query x gallery masks/distances while preserving metric semantics.
+
+    # mark the galleries that associate to which queries
     candidate_mask = np.zeros((len(records), len(gallery_records)), dtype=bool)
     for row, (sequence, _, _, candidates) in enumerate(records):
         for identity, path in candidates:
             candidate_mask[row, gallery_index[(sequence, identity, path)]] = True
 
-    query = ReIDSplit(
+    query_split = ReIDSplit(
         image_paths=[str(path) for _, _, path, _ in records],
         pids=np.array([pid_by_identity[(sequence, identity)] for sequence, identity, _, _ in records], dtype=np.int32),
         camids=np.zeros(len(records), dtype=np.int32),
     )
-    gallery = ReIDSplit(
+    gallery_split = ReIDSplit(
         image_paths=[str(path) for _, _, path in gallery_records],
         pids=np.array(
             [pid_by_identity[(sequence, identity)] for sequence, identity, _ in gallery_records], dtype=np.int32
@@ -95,11 +102,11 @@ def _build_reassociation_candidates(
     )
     candidate_counts = candidate_mask.sum(axis=1)
     metadata = {
-        "num_query_crops": len(query),
-        "num_gallery_crops": len(gallery),
+        "num_query_crops": len(query_split),
+        "num_gallery_crops": len(gallery_split),
         "mean_candidates": float(candidate_counts.mean()),
         "min_candidates": int(candidate_counts.min()),
         "max_candidates": int(candidate_counts.max()),
         **skipped,
     }
-    return query, gallery, candidate_mask, metadata
+    return query_split, gallery_split, candidate_mask, metadata

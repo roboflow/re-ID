@@ -30,6 +30,7 @@ dependencies = [
     "safetensors>=0.4",
     "Pillow>=10",
     "gdown>=5",
+    "pydeprecate>=0.8.0",
 ]
 
 [project.optional-dependencies]

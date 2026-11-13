@@ -233,9 +233,10 @@ class ReIDModel:
             data: Images to evaluate. The protocol splits them into query and
                 gallery images; when ``gallery`` is provided, they are the query
                 images.
-            gallery: Gallery images for the queries in ``data``. When provided,
-                both splits are used as given; re-association builds its own
-                gallery and rejects one.
+            gallery: Gallery images for the queries in ``data``. Retrieval ranks
+                each query against all of them. Re-association ranks each query
+                against the gallery crops of the same sequence ``gap_frames``
+                later.
             protocol: Evaluation protocol. Defaults to
                 ``RetrievalProtocol``.
             batch_size: Images per embedding batch.
