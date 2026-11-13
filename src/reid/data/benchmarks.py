@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from deprecate import deprecated, void
 
 from reid.data.splits import ReIDSplit
 
@@ -28,8 +29,15 @@ def _parse_msmt17_camid(filename: str) -> int:
     return int(Path(filename).stem.split("_")[2]) - 1
 
 
-def _load_msmt17_list(list_file: Path, image_root: Path) -> ReIDSplit:
-    """Load one MSMT17 query/gallery list file."""
+def _load_msmt17_list(root: str | Path, list_name: str, image_dir: str) -> ReIDSplit:
+    """Load the images the list file ``root/list_name`` names, read against ``root/image_dir``."""
+    root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(f"MSMT17 root not found: {root}")
+    image_root = root / image_dir
+    if not image_root.is_dir():
+        raise FileNotFoundError(f"MSMT17 sub-directory not found: {image_root}")
+    list_file = root / list_name
     if not list_file.exists():
         raise FileNotFoundError(f"MSMT17 list file not found: {list_file}")
     paths, pids, camids = [], [], []
@@ -51,8 +59,8 @@ def _load_msmt17_list(list_file: Path, image_root: Path) -> ReIDSplit:
     )
 
 
-def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
-    """Load MSMT17 query and gallery splits from ``root``.
+def load_msmt17_test(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
+    """Load the MSMT17 test query and gallery from ``root``.
 
     Expects ``test/``, ``list_query.txt``, and ``list_gallery.txt``, whose lines
     read ``path pid``. The camera ID comes from the image file name.
@@ -68,16 +76,71 @@ def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
             ``list_gallery.txt`` does not exist.
         ValueError: If a list line is not ``path pid``.
     """
-    root = Path(root)
-    if not root.exists():
-        raise FileNotFoundError(f"MSMT17 root not found: {root}")
-
-    test_root = root / "test"
-    if not test_root.is_dir():
-        raise FileNotFoundError(f"MSMT17 sub-directory not found: {test_root}")
-    query = _load_msmt17_list(root / "list_query.txt", test_root)
-    gallery = _load_msmt17_list(root / "list_gallery.txt", test_root)
+    query = _load_msmt17_list(root, "list_query.txt", "test")
+    gallery = _load_msmt17_list(root, "list_gallery.txt", "test")
     return query, gallery
+
+
+def load_msmt17_train(root: str | Path) -> ReIDSplit:
+    """Load the MSMT17 training images from ``root``.
+
+    Expects ``train/`` and ``list_train.txt``, whose lines read ``path pid``.
+    The camera ID comes from the image file name. The images in
+    ``list_val.txt`` are left out, as torchreid and fast-reid do: load them
+    with ``load_msmt17_val``.
+
+    Args:
+        root: Path to the MSMT17 directory.
+
+    Returns:
+        The training images as one ``ReIDSplit``.
+
+    Raises:
+        FileNotFoundError: If ``root``, ``train/``, or ``list_train.txt`` does
+            not exist.
+        ValueError: If a list line is not ``path pid``.
+    """
+    return _load_msmt17_list(root, "list_train.txt", "train")
+
+
+def load_msmt17_val(root: str | Path) -> ReIDSplit:
+    """Load the MSMT17 validation images from ``root``.
+
+    Expects ``train/`` and ``list_val.txt``, whose lines read ``path pid``. The
+    camera ID comes from the image file name.
+
+    ``list_val.txt`` holds other images of the training people. A model trained
+    on ``load_msmt17_train`` has seen these people, so this split does not test
+    it on new people.
+
+    Args:
+        root: Path to the MSMT17 directory.
+
+    Returns:
+        The validation images as one ``ReIDSplit``.
+
+    Raises:
+        FileNotFoundError: If ``root``, ``train/``, or ``list_val.txt`` does
+            not exist.
+        ValueError: If a list line is not ``path pid``.
+    """
+    return _load_msmt17_list(root, "list_val.txt", "train")
+
+
+@deprecated(target=load_msmt17_test, deprecated_in="0.2.0", remove_in="0.4.0")
+def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
+    """Load the MSMT17 test query and gallery from ``root``.
+
+    Deprecated since 0.2.0 and removed in 0.4.0: use ``load_msmt17_test``,
+    which takes the same ``root`` and returns the same query and gallery.
+
+    Args:
+        root: Path to the MSMT17 directory.
+
+    Returns:
+        Query and gallery as ``(ReIDSplit, ReIDSplit)``.
+    """
+    return void(root)
 
 
 # --------------------------------------------------------------------------- #
@@ -102,12 +165,12 @@ def _parse_market_filename(filename: str) -> tuple[int, int]:
     return pid, camid
 
 
-def _load_market1501_dir(
-    subdir: Path,
-    *,
-    gallery_junk_pids: frozenset[int],
-) -> ReIDSplit:
-    """Load one Market-1501 image directory."""
+def _load_market1501_dir(root: str | Path, image_dir: str) -> ReIDSplit:
+    """Load the Market-1501 image directory ``root/image_dir``."""
+    root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(f"Market-1501 root not found: {root}")
+    subdir = root / image_dir
     if not subdir.exists():
         raise FileNotFoundError(f"Market-1501 sub-directory not found: {subdir}")
     paths, pids, camids = [], [], []
@@ -120,12 +183,12 @@ def _load_market1501_dir(
         image_paths=paths,
         pids=np.array(pids, dtype=np.int32),
         camids=np.array(camids, dtype=np.int32),
-        gallery_junk_pids=gallery_junk_pids,
+        gallery_junk_pids=frozenset({-1}),
     )
 
 
-def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
-    """Load Market-1501 query and gallery splits from ``root``.
+def load_market1501_test(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
+    """Load the Market-1501 test query and gallery from ``root``.
 
     Expects ``query/`` and ``bounding_box_test/``. Person and camera IDs are
     parsed from filenames.
@@ -142,16 +205,43 @@ def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
         ValueError: If an image file name does not start with
             ``<person>_c<camera>``, such as a hidden ``._*`` file macOS writes.
     """
-    root = Path(root)
-    if not root.exists():
-        raise FileNotFoundError(f"Market-1501 root not found: {root}")
-
-    query = _load_market1501_dir(
-        root / "query",
-        gallery_junk_pids=frozenset({-1}),
-    )
-    gallery = _load_market1501_dir(
-        root / "bounding_box_test",
-        gallery_junk_pids=frozenset({-1}),
-    )
+    query = _load_market1501_dir(root, "query")
+    gallery = _load_market1501_dir(root, "bounding_box_test")
     return query, gallery
+
+
+def load_market1501_train(root: str | Path) -> ReIDSplit:
+    """Load the Market-1501 training images from ``root``.
+
+    Expects ``bounding_box_train/``. Person and camera IDs are parsed from
+    filenames. Market-1501 has no validation split.
+
+    Args:
+        root: Path to the Market-1501 directory.
+
+    Returns:
+        The training images as one ``ReIDSplit``.
+
+    Raises:
+        FileNotFoundError: If ``root`` or ``bounding_box_train/`` does not
+            exist.
+        ValueError: If an image file name does not start with
+            ``<person>_c<camera>``, such as a hidden ``._*`` file macOS writes.
+    """
+    return _load_market1501_dir(root, "bounding_box_train")
+
+
+@deprecated(target=load_market1501_test, deprecated_in="0.2.0", remove_in="0.4.0")
+def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
+    """Load the Market-1501 test query and gallery from ``root``.
+
+    Deprecated since 0.2.0 and removed in 0.4.0: use ``load_market1501_test``,
+    which takes the same ``root`` and returns the same query and gallery.
+
+    Args:
+        root: Path to the Market-1501 directory.
+
+    Returns:
+        Query and gallery as ``(ReIDSplit, ReIDSplit)``.
+    """
+    return void(root)

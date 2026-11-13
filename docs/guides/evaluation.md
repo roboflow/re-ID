@@ -74,10 +74,10 @@ Evaluate a model the way you will use it: the queries and gallery should look li
 Market-1501 and MSMT17 provide their own query and gallery splits; pass these directly to the model.
 
 ```python
-from reid import ReIDModel, load_market1501
+from reid import ReIDModel, load_market1501_test
 
 model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
-query, gallery = load_market1501("/path/to/Market-1501")
+query, gallery = load_market1501_test("/path/to/Market-1501")
 result = model.evaluate(query, gallery)
 
 print(result.metrics)
@@ -86,7 +86,7 @@ print(result.num_queries)
 # 3368
 ```
 
-To evaluate your own images, either arrange them like Market-1501 or MSMT17 and load them with `load_market1501` or `load_msmt17`, or put them in identity folders, one per person (`<root>/<identity>/<image>.jpg`), and load them with `load_identity_folders`. `RetrievalProtocol` then splits them: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
+To evaluate your own images, either arrange them like Market-1501 or MSMT17 and load them with `load_market1501_test` or `load_msmt17_test`, or put them in identity folders, one per person (`<root>/<identity>/<image>.jpg`), and load them with `load_identity_folders`. `RetrievalProtocol` then splits them: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
 
 ```python
 from reid import load_identity_folders
