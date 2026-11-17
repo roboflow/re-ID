@@ -125,6 +125,10 @@ class TestReIDPreprocessing:
         with pytest.raises(ValueError, match="resize_mode"):
             ReIDPreprocessing(resize_mode="crop")  # type: ignore[arg-type]
 
+    def test_to_rgb_requires_three_channel_mean(self) -> None:
+        with pytest.raises(ValueError, match="to_rgb"):
+            ReIDPreprocessing(mean=(0.5,), std=(0.5,))
+
     def test_prepare_crop_array_swaps_bgr_frames_only(self) -> None:
         bgr = np.array([[[255, 0, 0]]], dtype=np.uint8)  # blue in BGR
         p = ReIDPreprocessing(to_rgb=True)
@@ -632,21 +636,26 @@ class TestExtractContract:
         with pytest.raises(ValueError, match="batch_size"):
             model.extract_embeddings(dets, frame, batch_size=0)
 
-    @pytest.mark.parametrize(
-        "frame",
-        [
-            np.zeros((64, 64), dtype=np.uint8),
-            np.zeros((64, 64, 1), dtype=np.uint8),
-            np.zeros((64, 64, 4), dtype=np.uint8),
-        ],
-        ids=["grayscale", "single_channel", "bgra"],
-    )
-    def test_extract_embeddings_rejects_non_bgr_frame(self, frame: np.ndarray) -> None:
-        """Appearance encoders expect BGR HxWx3 video frames, not grayscale or BGRA."""
+    def test_extract_embeddings_rejects_channel_mismatch(self) -> None:
+        """A frame whose channel count differs from the preprocessing mean fails with a clear error."""
         model = self._tiny_model(ReIDPreprocessing())
+        frame = np.zeros((64, 64), dtype=np.uint8)
         dets = sv.Detections(xyxy=np.array([[0, 0, 32, 32]], dtype=np.float32))
-        with pytest.raises(ValueError, match="HxWx3 BGR"):
+        with pytest.raises(ValueError, match="channel"):
             model.extract_embeddings(dets, frame)
+
+    @pytest.mark.parametrize(
+        ("frame_shape", "channels"),
+        [((64, 64), 1), ((64, 64, 4), 4)],
+        ids=["grayscale", "four_channel"],
+    )
+    def test_extract_embeddings_accepts_non_rgb_models(self, frame_shape: tuple[int, ...], channels: int) -> None:
+        """Models whose preprocessing is not 3-channel accept frames with a matching channel count."""
+        preprocessing = ReIDPreprocessing(mean=(0.5,) * channels, std=(0.5,) * channels, to_rgb=False)
+        model = self._tiny_model(preprocessing)
+        frame = np.zeros(frame_shape, dtype=np.uint8)
+        dets = sv.Detections(xyxy=np.array([[0, 0, 32, 32]], dtype=np.float32))
+        assert model.extract_embeddings(dets, frame).shape == (1, 16)
 
     def test_frame_and_path_extract_parity(self, tmp_path) -> None:
         """Same crop via a frame box vs. an on-disk file yields identical embeddings."""

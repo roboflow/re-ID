@@ -58,14 +58,14 @@ model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall", preprocessing=
 
 `model.save` writes the same fields to `reid_config.json`, as an object under `"preprocessing"`. Its fields:
 
-| Field           | Meaning                                                                               | Typical                                   |
-| :-------------- | :------------------------------------------------------------------------------------ | :---------------------------------------- |
-| `input_size`    | Image height and width                                                                | OSNet `(256, 128)`; FastReID `(384, 128)` |
-| `resize_mode`   | `stretch` or `letterbox`                                                              | `stretch`                                 |
-| `interpolation` | Image resizing method                                                                 | `bilinear`                                |
-| `to_rgb`        | Swap BGR to RGB for crops cut from video frames; crops read from disk are already RGB | `True`                                    |
-| `mean` / `std`  | Per-channel normalization                                                             | ImageNet values                           |
-| `pad_value`     | Padding pixel value for `letterbox`                                                   | `114`                                     |
+| Field           | Meaning                                                                                                                | Typical                                   |
+| :-------------- | :--------------------------------------------------------------------------------------------------------------------- | :---------------------------------------- |
+| `input_size`    | Image height and width                                                                                                 | OSNet `(256, 128)`; FastReID `(384, 128)` |
+| `resize_mode`   | `stretch` or `letterbox`                                                                                               | `stretch`                                 |
+| `interpolation` | Image resizing method                                                                                                  | `bilinear`                                |
+| `to_rgb`        | Swap BGR to RGB for crops cut from video frames; crops read from disk are already RGB. Requires 3-value `mean` / `std` | `True`                                    |
+| `mean` / `std`  | Per-channel normalization; their length is the number of channels the model expects                                    | ImageNet values                           |
+| `pad_value`     | Padding pixel value for `letterbox`                                                                                    | `114`                                     |
 
 `extract_embeddings` returns raw embedding vectors; evaluation normalizes them when it computes cosine distance.
 

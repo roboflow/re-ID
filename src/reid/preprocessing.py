@@ -55,15 +55,15 @@ class ReIDPreprocessing:
     """
 
     input_size: tuple[int, int] = REID_INPUT_SIZE
-    mean: tuple[float, float, float] = IMAGENET_MEAN
-    std: tuple[float, float, float] = IMAGENET_STD
+    mean: tuple[float, ...] = IMAGENET_MEAN
+    std: tuple[float, ...] = IMAGENET_STD
     interpolation: Interpolation = Interpolation.BILINEAR
     to_rgb: bool = True
     resize_mode: ResizeMode = "stretch"
     pad_value: int = LETTERBOX_PAD_VALUE
 
     def __post_init__(self) -> None:
-        """Normalize interpolation and reject unknown ``resize_mode`` values."""
+        """Normalize interpolation and reject invalid ``resize_mode`` and ``to_rgb`` settings."""
         try:
             interpolation = Interpolation(self.interpolation)
         except ValueError as error:
@@ -73,6 +73,12 @@ class ReIDPreprocessing:
 
         if self.resize_mode not in ("stretch", "letterbox"):
             raise ValueError(f"Unknown resize_mode {self.resize_mode!r}. Choose from: ['letterbox', 'stretch'].")
+
+        if self.to_rgb and len(self.mean) != 3:
+            raise ValueError(
+                f"to_rgb=True swaps BGR to RGB and needs a 3-channel mean, got {len(self.mean)} values. "
+                "Set to_rgb=False for models that are not 3-channel."
+            )
 
     def describe(self) -> str:
         """Human-readable one-line summary."""

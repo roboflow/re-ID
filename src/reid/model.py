@@ -362,21 +362,27 @@ class ReIDModel:
 
         Args:
             detections: Detections whose ``xyxy`` boxes define the crops.
-            frame: BGR video frame the detections were produced on.
+            frame: Video frame the detections were produced on, usually BGR. Its
+                channel count must match the model's preprocessing.
             batch_size: Crops per forward pass.
 
         Returns:
             Float32 array of shape ``(N, D)``, or ``(0, 0)`` when empty.
 
         Raises:
-            ValueError: If ``batch_size`` is not a positive integer, or ``frame``
-                is not an ``HxWx3`` BGR image.
+            ValueError: If ``batch_size`` is not a positive integer, or the
+                channel count of ``frame`` does not match ``len(preprocessing.mean)``.
         """
         if len(detections) == 0:
             return np.empty((0, 0), dtype=np.float32)
         validate_positive_int(batch_size, "batch_size")
-        if frame.ndim != 3 or frame.shape[2] != 3:
-            raise ValueError(f"frame must be an HxWx3 BGR image, got shape {frame.shape}.")
+        channels = 1 if frame.ndim == 2 else frame.shape[2]
+        expected = len(self._preprocessing.mean)
+        if channels != expected:
+            raise ValueError(
+                f"frame has {channels} channel(s) (shape {frame.shape}), "
+                f"but the model's preprocessing expects {expected}."
+            )
 
         frame_h, frame_w = frame.shape[:2]
         tensors: list[torch.Tensor] = []
