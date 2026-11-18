@@ -26,6 +26,7 @@ from reid.eval import (
 )
 from reid.model import ReIDModel
 from reid.preprocessing import Interpolation, ReIDPreprocessing
+from reid.training import TripletLoss
 
 __all__ = [
     "FASTREID_MOT17_SBS50",
@@ -36,6 +37,7 @@ __all__ = [
     "ReIDResult",
     "ReIDSplit",
     "RetrievalProtocol",
+    "TripletLoss",
     "distance_matrix",
     "list_aliases",
     "list_architectures",
