@@ -202,7 +202,7 @@ class ReIDModel:
 
         return model
 
-    def save(self, directory: str) -> None:
+    def save(self, directory: str, verbose: bool = True) -> None:
         """Save the model's current weights and its configuration, so ``from_pretrained(directory)`` loads it back.
 
         Writes the weights to ``weights.safetensors`` and the architecture and preprocessing to ``reid_config.json``.
@@ -211,6 +211,7 @@ class ReIDModel:
 
         Args:
             directory: Output directory (created if missing).
+            verbose: Log the folder the model was saved to, at ``INFO`` level.
         """
         os.makedirs(directory, exist_ok=True)
 
@@ -223,7 +224,8 @@ class ReIDModel:
             weights=None,
         )
         save_model_config(card, directory, preprocessing=self._preprocessing)
-        logger.info("ReIDModel saved to %s", directory)
+        if verbose:
+            logger.info("ReIDModel saved to %s", directory)
 
     # ------------------------------------------------------------------ #
     # Training

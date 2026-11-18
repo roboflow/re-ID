@@ -45,7 +45,7 @@ def save_epoch(model: ReIDModel, output_dir: Path, row: dict[str, float]) -> Non
     last = output_dir / "last"
     last.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output_dir) as temporary:
-        model.save(temporary)
+        model.save(temporary, verbose=False)
         for name in os.listdir(temporary):
             os.replace(Path(temporary) / name, last / name)
 
