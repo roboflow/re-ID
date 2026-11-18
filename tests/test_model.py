@@ -583,6 +583,22 @@ class TestModelSmoke:
 class TestExtractContract:
     """Extraction parity, batching, eval mode, and raw-embedding behavior."""
 
+    @pytest.mark.parametrize(
+        "architecture, embedding_dim",
+        [
+            ("osnet_x0_25", 512),
+            ("timm:mobilenetv3_large_100", 1280),  # its num_features attribute says 960
+        ],
+    )
+    def test_embedding_dim_is_the_length_of_the_embeddings(self, architecture: str, embedding_dim: int) -> None:
+        model = ReIDModel(architecture, device="cpu")
+        frame = np.zeros((256, 128, 3), dtype=np.uint8)
+        detections = sv.Detections(xyxy=np.array([[0.0, 0.0, 128.0, 256.0]]))
+
+        embeddings = model.extract_embeddings(detections, frame)
+
+        assert model.embedding_dim == embeddings.shape[1] == embedding_dim
+
     def _tiny_model(self, preprocessing):
         return ReIDModel(_tiny_encoder(), preprocessing=preprocessing, device="cpu")
 

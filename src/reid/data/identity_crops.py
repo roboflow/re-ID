@@ -149,8 +149,6 @@ def _check_query_params(*, queries_per_id: int, min_crops: int) -> None:
 def _indices_by_label(labels: Sequence[int]) -> dict[int, list[int]]:
     """Map each identity label to the positions of its crops, in input order.
 
-    Used by the retrieval split builder, which groups raw person IDs.
-
     Args:
         labels: Identity label per crop, in crop order.
 

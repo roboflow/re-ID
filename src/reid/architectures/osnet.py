@@ -172,6 +172,8 @@ class OSNet(nn.Module):
         feature_dim: Dimensionality of the final embedding vector.
     """
 
+    trainable_when_frozen = ("fc",)  # the final embedding layer keeps training while the rest of the backbone is frozen
+
     @classmethod
     def default_preprocessing(cls) -> ReIDPreprocessing:
         """Default crop/tensor recipe for OSNet (torchreid / ImageNet norms).

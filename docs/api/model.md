@@ -1,10 +1,12 @@
 ---
-description: Python API reference for loading re-identification models and extracting appearance embeddings with Re-ID.
+description: Python API reference for loading and training re-identification models and extracting appearance embeddings with Re-ID.
 ---
 
 # Model API
 
 ::: reid.ReIDModel
+
+::: reid.TripletLoss
 
 ::: reid.ReIDPreprocessing
 

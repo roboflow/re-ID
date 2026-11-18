@@ -15,8 +15,13 @@ import numpy as np
 
 
 def validate_positive_int(value: object, name: str) -> None:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ValueError(f"{name} must be a positive integer, got {value!r}.")
+    validate_int_at_least(value, name, 1)
+
+
+def validate_int_at_least(value: object, name: str, minimum: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        expected = "a positive integer" if minimum == 1 else f"an integer of at least {minimum}"
+        raise ValueError(f"{name} must be {expected}, got {value!r}.")
 
 
 def validate_candidate_mask(mask: object, num_queries: int, num_gallery: int) -> None:
