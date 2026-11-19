@@ -25,7 +25,7 @@ from reid import ReIDModel, ReIDPreprocessing, ReIDSplit, load_identity_folders
 from reid.architectures import build_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 
-from .crop_images import write_identity_crops
+from .crop_images import write_identity_crops, write_mot_crop
 
 
 def _osnet() -> ReIDModel:
@@ -181,6 +181,20 @@ class TestTraining:
         with pytest.warns(UserWarning, match="the learning rate never reaches lr"):
             _train(_small_module(), crops, epochs=2, warmup_epochs=3)
 
+    def test_leaves_out_a_sequence_with_a_single_identity_with_a_warning(self, tmp_path: Path) -> None:
+        paths = [str(write_mot_crop(tmp_path, "a", track_id, frame)) for track_id in (1, 2) for frame in range(2)]
+        crops = ReIDSplit(
+            image_paths=[*paths, "missing/b_3/b_000000.jpg", "missing/b_3/b_000001.jpg"],  # b's crops aren't on disk
+            pids=np.array([0, 0, 1, 1, 2, 2]),  # identity 2 alone in sequence b
+            camids=np.zeros(6, dtype=int),
+        )
+
+        with pytest.warns(UserWarning, match="Sequences with a single identity will be left out of the batches.*: b."):
+            history = _train(_small_module(), crops, steps_per_epoch=10, sample_per_sequence=True)
+
+        # b's crops don't exist, so any batch that drew sequence b would have raised FileNotFoundError
+        assert len(history) == 1
+
     def test_trains_with_the_optimizer_passed(self, crops: ReIDSplit) -> None:
         built_with = []
 
@@ -299,6 +313,7 @@ class TestOutputDir:
             "steps_per_epoch": 4,  # one pass over 16 crops in batches of 2 identities x 2 crops
             "identities_per_batch": 2,
             "crops_per_identity": 2,
+            "sample_per_sequence": False,
             "lr": 3e-4,
             "warmup_epochs": 0,
             "weight_decay": 5e-4,
@@ -397,3 +412,17 @@ class TestInputGuards:
     def test_rejects_augmentations_that_change_the_crop_size(self) -> None:
         with pytest.raises(ValueError, match="augmentations give 32x32 crops, but the model's input size is 64x32"):
             _train(_osnet(), _missing_crops([0, 0, 1, 1]), augmentations=[CenterCrop(32)])
+
+    def test_rejects_crops_not_named_by_sequence_with_sample_per_sequence(self) -> None:
+        with pytest.raises(ValueError, match="sample_per_sequence=True reads each crop's sequence from its path"):
+            _train(_osnet(), _missing_crops([0, 0, 1, 1]), sample_per_sequence=True)  # crops named missing/0.jpg, ...
+
+    def test_rejects_sample_per_sequence_when_no_sequence_has_two_identities(self) -> None:
+        crops = ReIDSplit(
+            image_paths=["missing/a_1/a_000000.jpg", "missing/a_1/a_000001.jpg", "missing/b_2/b_000000.jpg"],
+            pids=np.array([0, 0, 1]),  # identity 0 alone in sequence a, identity 1 alone in sequence b
+            camids=np.zeros(3, dtype=int),
+        )
+
+        with pytest.raises(ValueError, match="needs a sequence with at least 2 identities"):
+            _train(_osnet(), crops, sample_per_sequence=True)
