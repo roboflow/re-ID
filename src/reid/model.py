@@ -46,7 +46,7 @@ from reid.preprocessing import ReIDPreprocessing
 from reid.training.epoch import train_one_epoch
 from reid.training.losses import TripletLoss
 from reid.training.outputs import append_metrics_row, format_epoch_line, write_training_config
-from reid.training.sampling import PKSampler
+from reid.training.sampling import PKSampler, build_sequence_groups
 from reid.training.schedule import SCHEDULERS_TRAIN_CANNOT_STEP, build_lr_schedule_with_warmup
 from reid.training.transforms import build_train_transform
 
@@ -243,6 +243,7 @@ class ReIDModel:
         steps_per_epoch: int | None = None,
         identities_per_batch: int = 8,
         crops_per_identity: int = 4,
+        sample_per_sequence: bool = False,
         lr: float = 3e-4,
         warmup_epochs: int = 5,
         weight_decay: float = 5e-4,
@@ -289,6 +290,12 @@ class ReIDModel:
                 ``len(train_data) // (identities_per_batch * crops_per_identity)`` batches, and at least 1.
             identities_per_batch: Identities in a batch, at least 2.
             crops_per_identity: Crops of each identity in a batch, at least 2.
+            sample_per_sequence: Build every batch from one sequence, for tracking crops where a person ID only
+                holds inside its sequence. The sequence is read from each crop's path,
+                ``{sequence}_{track}/{sequence}_{frame}.jpg`` as ``generate_mot_patches`` names it. A sequence with
+                fewer than ``identities_per_batch`` identities gives smaller batches, so an epoch sees fewer crops
+                than one pass. A sequence with a single identity is left out, with a warning. ``False`` mixes
+                sequences.
             lr: Learning rate after the warmup.
             warmup_epochs: Epochs of linear warmup, where epoch ``i`` trains at ``lr * i / warmup_epochs``.
                 ``0`` starts at ``lr``.
@@ -334,7 +341,8 @@ class ReIDModel:
                 ``train_data`` holds fewer identities than ``identities_per_batch``. Also if ``train`` can't step
                 ``lr_scheduler``, ``lr_scheduler_kwargs`` come without ``lr_scheduler``, ``trainable_when_frozen``
                 names a module the backbone doesn't have, the augmentations change the crop's size, or
-                ``output_dir`` holds another run's ``last/`` or ``metrics.csv``.
+                ``output_dir`` holds another run's ``last/`` or ``metrics.csv``. With ``sample_per_sequence``, also if
+                a crop's path doesn't name its sequence or no sequence holds 2 identities.
         """
         # Check the arguments and the augmentations' crop size before any work
         if output_dir is not None:
@@ -358,14 +366,16 @@ class ReIDModel:
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-        # Batches of identities_per_batch identities with crops_per_identity crops each
+        # Batches of identities_per_batch identities with crops_per_identity crops each, from one sequence each with
+        # sample_per_sequence
         identities, labels = np.unique(train_data.pids, return_inverse=True)
+        groups = build_sequence_groups(train_data.image_paths, labels) if sample_per_sequence else None
         if steps_per_epoch is None:
             num_batches = max(1, len(train_data) // (identities_per_batch * crops_per_identity))
         else:
             num_batches = steps_per_epoch
         crops = CropDataset(train_data.image_paths, transform)
-        sampler = PKSampler(labels, identities_per_batch, crops_per_identity, num_batches, seed)
+        sampler = PKSampler(labels, identities_per_batch, crops_per_identity, num_batches, seed, groups)
         loader = DataLoader(
             StackDataset(crops, torch.as_tensor(labels)),
             batch_sampler=sampler,
@@ -394,6 +404,7 @@ class ReIDModel:
                 "steps_per_epoch": num_batches,
                 "identities_per_batch": identities_per_batch,
                 "crops_per_identity": crops_per_identity,
+                "sample_per_sequence": sample_per_sequence,
                 "lr": lr,
                 "warmup_epochs": warmup_epochs,
                 "weight_decay": weight_decay,
