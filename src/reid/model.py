@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import tempfile
 import time
 import warnings
 from collections.abc import Sequence
@@ -44,7 +45,7 @@ from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
 from reid.training.epoch import train_one_epoch
 from reid.training.losses import TripletLoss
-from reid.training.outputs import format_epoch_line, save_epoch, write_training_config
+from reid.training.outputs import append_metrics_row, format_epoch_line, write_training_config
 from reid.training.sampling import PKSampler
 from reid.training.schedule import SCHEDULERS_TRAIN_CANNOT_STEP, build_lr_schedule_with_warmup
 from reid.training.transforms import build_train_transform
@@ -143,7 +144,7 @@ class ReIDModel:
 
     @property
     def _architecture_name(self) -> str:
-        """Name ``save`` and ``training_config.json`` record: the architecture's name, or the module's class name."""
+        """The architecture's name, or the module's class name, which ``save`` and ``training_config.json`` record."""
         return self._architecture if self._architecture is not None else type(self._backbone).__name__
 
     # ------------------------------------------------------------------ #
@@ -207,7 +208,8 @@ class ReIDModel:
 
         Writes the weights to ``weights.safetensors`` and the architecture and preprocessing to ``reid_config.json``.
         A model built from a module records the module's class name, such as ``"MyNet"``, and loads back with
-        ``from_pretrained(directory, architecture=MyNet())``.
+        ``from_pretrained(directory, architecture=MyNet())``. Each file is written to a temporary folder first and then
+        moved into ``directory``, so a crash during the save leaves each file whole, from this save or the one before.
 
         Args:
             directory: Output directory (created if missing).
@@ -215,15 +217,17 @@ class ReIDModel:
         """
         os.makedirs(directory, exist_ok=True)
 
-        weights_path = os.path.join(directory, "weights.safetensors")
-        state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
-        save_file(state_dict, weights_path)
-
-        card = ModelCard(
-            architecture=self._architecture_name,
-            weights=None,
-        )
-        save_model_config(card, directory, preprocessing=self._preprocessing)
+        # Write the files into a temporary folder, then move each one into directory in a single step
+        with tempfile.TemporaryDirectory(dir=directory) as temporary:
+            state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
+            save_file(state_dict, os.path.join(temporary, "weights.safetensors"))
+            card = ModelCard(
+                architecture=self._architecture_name,
+                weights=None,
+            )
+            save_model_config(card, temporary, preprocessing=self._preprocessing)
+            for name in os.listdir(temporary):
+                os.replace(os.path.join(temporary, name), os.path.join(directory, name))
         if verbose:
             logger.info("ReIDModel saved to %s", directory)
 
@@ -266,10 +270,9 @@ class ReIDModel:
         Training adds a classification layer over the training identities and minimises the total loss
         ``classification_loss_weight * classification_loss + embedding_loss_weight * embedding_loss``, where
         ``classification_loss`` scores the classification layer's outputs and ``embedding_loss`` the embeddings. The
-        learning rate warms up
-        linearly to ``lr``, then follows passed ``lr_scheduler``. Without one, it drops to a tenth after epoch
-        ``epochs * 3 // 4`` and again after epoch ``epochs * 7 // 8``. A drop that falls inside the warmup moves to
-        its end, and the second drop always comes at least one epoch after the first.
+        learning rate warms up linearly to ``lr``, then follows the ``lr_scheduler`` passed. Without one, it drops to a
+        tenth after epoch ``epochs * 3 // 4`` and again after epoch ``epochs * 7 // 8``. A drop that falls inside the
+        warmup moves to its end, and the second drop always comes at least one epoch after the first.
 
         Start from trained weights loaded with ``from_pretrained``. ``ReIDModel(architecture)`` starts from random
         weights. The model ends in eval mode with the last epoch's weights and every parameter trainable, and
@@ -287,7 +290,7 @@ class ReIDModel:
             identities_per_batch: Identities in a batch, at least 2.
             crops_per_identity: Crops of each identity in a batch, at least 2.
             lr: Learning rate after the warmup.
-            warmup_epochs: Epochs of linear warmup: epoch ``i`` of the warmup trains at ``lr * i / warmup_epochs``.
+            warmup_epochs: Epochs of linear warmup, where epoch ``i`` trains at ``lr * i / warmup_epochs``.
                 ``0`` starts at ``lr``.
             weight_decay: The optimizer's weight decay.
             optimizer: Optimizer class, built as ``optimizer(parameters, lr=lr, weight_decay=weight_decay,
@@ -404,6 +407,8 @@ class ReIDModel:
                 "lr_scheduler_kwargs": lr_scheduler_kwargs,
                 "freeze_backbone_epochs": freeze_backbone_epochs,
                 "classification_loss": repr(classification_loss),
+                # torch's repr of CrossEntropyLoss leaves out label_smoothing
+                "label_smoothing": getattr(classification_loss, "label_smoothing", None),
                 "embedding_loss": repr(embedding_loss),
                 "classification_loss_weight": classification_loss_weight,
                 "embedding_loss_weight": embedding_loss_weight,
@@ -442,7 +447,8 @@ class ReIDModel:
                 row = {"epoch": epoch, "lr": lr_this_epoch, **losses, "time": time.perf_counter() - start}
                 history.append(row)
                 if output_dir is not None:
-                    save_epoch(self, output_dir, row)
+                    self.save(str(output_dir / "last"), verbose=False)
+                    append_metrics_row(output_dir, row)
                 if verbose:
                     print(format_epoch_line(row, epochs))
         finally:
@@ -504,7 +510,7 @@ class ReIDModel:
         if lr_scheduler is not None and issubclass(lr_scheduler, SCHEDULERS_TRAIN_CANNOT_STEP):
             raise ValueError(
                 f"lr_scheduler={lr_scheduler.__name__} can't run in train, which steps the scheduler once per epoch "
-                "with no score: ReduceLROnPlateau needs a validation score every epoch, OneCycleLR and CyclicLR step "
+                "with no score. ReduceLROnPlateau needs a validation score every epoch, OneCycleLR and CyclicLR step "
                 "every batch and bring their own warmup, and ChainedScheduler and SequentialLR take schedulers already "
                 "built on the optimizer, which train creates itself. Pass a scheduler stepped once per epoch, such as "
                 "StepLR or CosineAnnealingLR."

@@ -4,7 +4,7 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""The learning-rate schedule of ``ReIDModel.train``: a warmup, then the default drops or the user's scheduler."""
+"""The learning-rate schedule of ``ReIDModel.train``, a warmup followed by the default drops or the user's scheduler."""
 
 from __future__ import annotations
 

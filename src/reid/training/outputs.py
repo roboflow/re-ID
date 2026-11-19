@@ -4,19 +4,13 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""What a training run writes and prints: ``training_config.json``, ``last/``, ``metrics.csv`` and the epoch line."""
+"""Writing a training run's ``training_config.json`` and ``metrics.csv``, and its line after each epoch."""
 
 from __future__ import annotations
 
 import csv
 import json
-import os
-import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from reid.model import ReIDModel
 
 
 def write_training_config(output_dir: Path, config: dict[str, object]) -> None:
@@ -31,28 +25,17 @@ def write_training_config(output_dir: Path, config: dict[str, object]) -> None:
     (output_dir / "training_config.json").write_text(json.dumps(config, indent=2, default=str) + "\n")
 
 
-def save_epoch(model: ReIDModel, output_dir: Path, row: dict[str, float]) -> None:
-    """Save ``model`` to ``last/`` in ``output_dir`` and append ``row`` to ``metrics.csv``.
-
-    ``model.save`` writes into a temporary folder first, then each file is moved into ``last/`` with ``os.replace``,
-    so after a crash each file in ``last/`` is whole, from this epoch or the one before.
+def append_metrics_row(output_dir: Path, row: dict[str, float]) -> None:
+    """Append ``row`` to ``metrics.csv`` in ``output_dir``, writing the header first when the file is new.
 
     Args:
-        model: Model after the epoch.
         output_dir: The run's output folder.
         row: The epoch's history row; its keys are the columns of ``metrics.csv``.
     """
-    last = output_dir / "last"
-    last.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=output_dir) as temporary:
-        model.save(temporary, verbose=False)
-        for name in os.listdir(temporary):
-            os.replace(Path(temporary) / name, last / name)
-
     metrics = output_dir / "metrics.csv"
     is_new = not metrics.exists()
     with metrics.open("a", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=list(row))
+        writer = csv.DictWriter(file, fieldnames=list(row.keys()))
         if is_new:
             writer.writeheader()
         writer.writerow(row)

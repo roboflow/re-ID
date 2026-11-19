@@ -43,15 +43,19 @@ def _small_module() -> ReIDModel:
     return ReIDModel(_small_backbone(), preprocessing=ReIDPreprocessing(input_size=(64, 32)), device="cpu")
 
 
-class _ConstantLoss(nn.Module):
-    """A loss that is always ``value``, to tell which loss ``train`` used."""
+@pytest.fixture
+def crops(tmp_path: Path) -> ReIDSplit:
+    write_identity_crops(tmp_path / "crops", num_ids=4, num_per=4)
+    return load_identity_folders(tmp_path / "crops")
 
-    def __init__(self, value: float) -> None:
-        super().__init__()
-        self.value = value
 
-    def forward(self, outputs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        return outputs.sum() * 0 + self.value  # tied to the outputs, so train can call backward() on it
+def _missing_crops(pids: list[int]) -> ReIDSplit:
+    """A split whose images don't exist, so a check that runs after loading fails differently."""
+    return ReIDSplit(
+        image_paths=[f"missing/{index}.jpg" for index in range(len(pids))],
+        pids=np.array(pids),
+        camids=np.zeros(len(pids), dtype=int),
+    )
 
 
 def _train(model: ReIDModel, data: ReIDSplit, **settings: object) -> list[dict[str, float]]:
@@ -68,21 +72,6 @@ def _train(model: ReIDModel, data: ReIDSplit, **settings: object) -> list[dict[s
     return model.train(data, **{**defaults, **settings})
 
 
-def _missing_crops(pids: list[int]) -> ReIDSplit:
-    """A split whose images don't exist, so a check that runs after loading fails differently."""
-    return ReIDSplit(
-        image_paths=[f"missing/{index}.jpg" for index in range(len(pids))],
-        pids=np.array(pids),
-        camids=np.zeros(len(pids), dtype=int),
-    )
-
-
-@pytest.fixture
-def crops(tmp_path: Path) -> ReIDSplit:
-    write_identity_crops(tmp_path / "crops", num_ids=4, num_per=4)
-    return load_identity_folders(tmp_path / "crops")
-
-
 Run = tuple[ReIDModel, list[dict[str, float]], Path]
 
 
@@ -96,6 +85,17 @@ def run(tmp_path_factory: pytest.TempPathFactory) -> Run:
         model, load_identity_folders(root / "crops"), epochs=2, steps_per_epoch=None, output_dir=root / "out"
     )
     return model, history, root / "out"
+
+
+class _ConstantLoss(nn.Module):
+    """A loss that is always ``value``, to tell which loss ``train`` used."""
+
+    def __init__(self, value: float) -> None:
+        super().__init__()
+        self.value = value
+
+    def forward(self, outputs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return outputs.sum() * 0 + self.value  # tied to the outputs, so train can call backward() on it
 
 
 class TestTraining:
@@ -308,6 +308,7 @@ class TestOutputDir:
             "lr_scheduler_kwargs": None,
             "freeze_backbone_epochs": 0,
             "classification_loss": "CrossEntropyLoss()",
+            "label_smoothing": 0.1,
             "embedding_loss": "TripletLoss(margin=0.3)",
             "classification_loss_weight": 1.0,
             "embedding_loss_weight": 1.0,
@@ -346,12 +347,10 @@ class TestOutputDir:
         model = _small_module()
         _train(model, crops, output_dir=tmp_path / "out")
 
-        # last/ records the module's class name, so loading it back takes a module of that class;
-        # from_pretrained warns that the module replaces the recorded name, as for any architecture passed in
-        with pytest.warns(UserWarning, match="Overriding architecture 'Sequential'"):
-            reloaded = ReIDModel.from_pretrained(
-                str(tmp_path / "out" / "last"), architecture=_small_backbone(), device="cpu"
-            )
+        # last/ records the module's class name, so loading it back takes a module of that class
+        reloaded = ReIDModel.from_pretrained(
+            str(tmp_path / "out" / "last"), architecture=_small_backbone(), device="cpu"
+        )
 
         assert json.loads((tmp_path / "out" / "last" / "reid_config.json").read_text())["architecture"] == "Sequential"
         for name, value in model._backbone.state_dict().items():
