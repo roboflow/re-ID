@@ -4,15 +4,16 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""``PKSampler``: batches of P identities with K crops each."""
+"""``PKSampler``: batches of P identities with K crops each, and the per-sequence groups it can draw from."""
 
 from __future__ import annotations
 
 from collections import Counter
 
+import numpy as np
 import pytest
 
-from reid.training.sampling import PKSampler
+from reid.training.sampling import PKSampler, build_sequence_groups
 
 
 def test_crops_repeat_only_for_an_identity_with_fewer_than_k() -> None:
@@ -77,3 +78,11 @@ def test_an_identity_of_a_small_group_is_drawn_as_often_as_one_of_a_large_group(
     # the group of 8 with weight max(8, 4) = 8 and gives 4 of its 8: 8 / 12 x 4 / 8 = 1 / 3 per batch
     assert visits[0] == pytest.approx(1000, rel=0.1)  # 3000 batches / 3
     assert visits[2] == pytest.approx(1000, rel=0.1)
+
+
+def test_groups_the_identities_of_each_sequence() -> None:
+    image_paths = ["a_1/a_000000.jpg", "b_2/b_000000.jpg", "a_3/a_000000.jpg", "b_4/b_000000.jpg"]
+
+    groups = build_sequence_groups(image_paths, labels=np.array([0, 1, 2, 3]))
+
+    assert groups == [[0, 2], [1, 3]]  # identities 0 and 2 are in sequence a, 1 and 3 in b
