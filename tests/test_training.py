@@ -299,6 +299,7 @@ class TestOutputDir:
             "steps_per_epoch": 4,  # one pass over 16 crops in batches of 2 identities x 2 crops
             "identities_per_batch": 2,
             "crops_per_identity": 2,
+            "sample_per_sequence": False,
             "lr": 3e-4,
             "warmup_epochs": 0,
             "weight_decay": 5e-4,
@@ -397,3 +398,17 @@ class TestInputGuards:
     def test_rejects_augmentations_that_change_the_crop_size(self) -> None:
         with pytest.raises(ValueError, match="augmentations give 32x32 crops, but the model's input size is 64x32"):
             _train(_osnet(), _missing_crops([0, 0, 1, 1]), augmentations=[CenterCrop(32)])
+
+    def test_rejects_crops_not_named_by_sequence_with_sample_per_sequence(self) -> None:
+        with pytest.raises(ValueError, match="sample_per_sequence=True reads each crop's sequence from its path"):
+            _train(_osnet(), _missing_crops([0, 0, 1, 1]), sample_per_sequence=True)  # crops named missing/0.jpg, ...
+
+    def test_rejects_sample_per_sequence_when_no_sequence_has_two_identities(self) -> None:
+        crops = ReIDSplit(
+            image_paths=["missing/a_1/a_000000.jpg", "missing/a_1/a_000001.jpg", "missing/b_2/b_000000.jpg"],
+            pids=np.array([0, 0, 1]),  # identity 0 alone in sequence a, identity 1 alone in sequence b
+            camids=np.zeros(3, dtype=int),
+        )
+
+        with pytest.raises(ValueError, match="needs a sequence with at least 2 identities"):
+            _train(_osnet(), crops, sample_per_sequence=True)
