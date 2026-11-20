@@ -4,7 +4,7 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""``ReIDModel.train``: the recipe, freezing, the state a run leaves, the output folder, and input guards."""
+"""Tests of the ``ReIDModel.train`` recipe, freezing, validation, the state a run leaves, output folder and guards."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from PIL import Image
 from torch.optim.lr_scheduler import OneCycleLR, StepLR
 from torchvision.transforms import CenterCrop
 
-from reid import ReIDModel, ReIDPreprocessing, ReIDSplit, load_identity_folders
+from reid import ReassociationProtocol, ReIDModel, ReIDPreprocessing, ReIDSplit, load_identity_folders
 from reid.architectures import build_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 
@@ -96,6 +96,25 @@ class _ConstantLoss(nn.Module):
 
     def forward(self, outputs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         return outputs.sum() * 0 + self.value  # tied to the outputs, so train can call backward() on it
+
+
+def _set_validation_scores(
+    monkeypatch: pytest.MonkeyPatch, scores: list[float], metric: str = "map"
+) -> list[dict[str, torch.Tensor]]:
+    """Make ``train``'s validations return ``scores`` in order, so a test decides which epoch scores best.
+
+    ``scores[0]`` is the score before training and ``scores[e]`` the score after epoch ``e``. Returns the list of the
+    model's weights at each validation, filled in as ``train`` runs and indexed the same way.
+    """
+    weights_after_epoch: list[dict[str, torch.Tensor]] = []
+
+    def validate(model: ReIDModel, *arguments: object) -> dict[str, float]:
+        epoch = len(weights_after_epoch)  # 0 before training, then 1, 2, ...
+        weights_after_epoch.append({name: value.clone() for name, value in model._backbone.state_dict().items()})
+        return {f"val/{metric}": scores[epoch]}
+
+    monkeypatch.setattr(ReIDModel, "_validate", validate)
+    return weights_after_epoch
 
 
 class TestTraining:
@@ -283,6 +302,86 @@ class TestFreezing:
             _train(_osnet(), crops, epochs=1, freeze_backbone_epochs=1)
 
 
+class TestValidation:
+    """Validation during training, the epoch saved to ``best/`` and the training it doesn't change."""
+
+    @pytest.mark.filterwarnings("ignore:The weights before training scored")  # one step on random crops may score lower
+    def test_scores_the_weights_before_training_on_val_data_against_val_gallery(self, crops: ReIDSplit) -> None:
+        query = ReIDSplit(image_paths=crops.image_paths[::4], pids=crops.pids[::4], camids=np.zeros(4, dtype=int))
+        gallery = ReIDSplit(  # the other 3 crops of each identity, from another camera
+            image_paths=[path for index, path in enumerate(crops.image_paths) if index % 4],
+            pids=np.repeat([0, 1, 2, 3], 3),
+            camids=np.ones(12, dtype=int),
+        )
+        model = _small_module()
+        before_training = model.evaluate(query, gallery, verbose=False).metrics
+
+        history = _train(model, crops, val_data=query, val_gallery=gallery)
+
+        assert history[0] == {
+            "epoch": 0,
+            **{f"val/{name}": value for name, value in before_training.items()},
+            "time": history[0]["time"],
+        }
+
+    def test_scores_with_the_val_protocol_passed(self, crops: ReIDSplit, tmp_path: Path) -> None:
+        for track_id in (1, 2):
+            for frame in (0, 10):
+                write_mot_crop(tmp_path / "val", "a", track_id, frame)
+        val_crops = load_identity_folders(tmp_path / "val")  # 2 tracks of sequence a, at frames 0 and 10
+
+        history = _train(
+            _small_module(),
+            crops,
+            val_data=val_crops,
+            val_protocol=ReassociationProtocol(gap_frames=10, query_stride=10),
+        )
+
+        assert list(history[0].keys()) == ["epoch", "val/rank1", "val/mrr", "time"]  # the re-association metrics
+
+    def test_best_holds_the_best_epoch_and_the_model_ends_on_the_last(
+        self, crops: ReIDSplit, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        weights_after_epoch = _set_validation_scores(monkeypatch, [5.0, 10.0, 30.0, 20.0])  # epoch 2 scores highest
+        model = _osnet()
+
+        _train(model, crops, epochs=3, output_dir=tmp_path / "out", val_data=crops)
+
+        best = ReIDModel.from_pretrained(str(tmp_path / "out" / "best"), device="cpu")
+        torch.testing.assert_close(best._backbone.state_dict(), weights_after_epoch[2], rtol=0, atol=0)
+        torch.testing.assert_close(model._backbone.state_dict(), weights_after_epoch[3], rtol=0, atol=0)
+
+    def test_a_tie_goes_to_the_later_epoch(
+        self, crops: ReIDSplit, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        weights_after_epoch = _set_validation_scores(monkeypatch, [5.0, 20.0, 20.0])  # epochs 1 and 2 tie
+
+        _train(_osnet(), crops, epochs=2, output_dir=tmp_path / "out", val_data=crops)
+
+        best = ReIDModel.from_pretrained(str(tmp_path / "out" / "best"), device="cpu")
+        torch.testing.assert_close(best._backbone.state_dict(), weights_after_epoch[2], rtol=0, atol=0)
+
+    def test_writes_no_best_without_a_checkpoint_metric(self, crops: ReIDSplit, tmp_path: Path) -> None:
+        _train(_small_module(), crops, output_dir=tmp_path / "out", val_data=crops, checkpoint_metric=None)
+
+        assert not (tmp_path / "out" / "best").exists()
+
+    def test_validation_leaves_the_training_of_a_seed_unchanged(self, crops: ReIDSplit) -> None:
+        with_validation = _small_module()
+        without_validation = copy.deepcopy(with_validation)
+
+        _train(with_validation, crops, epochs=2, val_data=crops)
+        _train(without_validation, crops, epochs=2)
+
+        torch.testing.assert_close(
+            with_validation._backbone.state_dict(), without_validation._backbone.state_dict(), rtol=0, atol=0
+        )
+
+    def test_warns_that_validation_arguments_without_val_data_are_ignored(self, crops: ReIDSplit) -> None:
+        with pytest.warns(UserWarning, match="val_protocol and checkpoint_metric will be ignored without val_data"):
+            _train(_small_module(), crops, val_protocol=ReassociationProtocol(), checkpoint_metric="mrr")
+
+
 class TestOutputDir:
     """``output_dir`` holds ``last/``, ``metrics.csv`` and ``training_config.json``."""
 
@@ -309,6 +408,8 @@ class TestOutputDir:
 
         assert config == {
             "architecture": "osnet_x0_25",
+            "val_protocol": None,  # a run without val_data
+            "checkpoint_metric": None,
             "epochs": 2,
             "steps_per_epoch": 4,  # one pass: 16 crops // (2 identities x 2 crops per batch)
             "identities_per_batch": 2,
@@ -339,7 +440,33 @@ class TestOutputDir:
             "num_crops": 16,
         }
 
-    @pytest.mark.parametrize("earlier_file", ["last/weights.safetensors", "metrics.csv"])
+    def test_metrics_csv_has_every_column_with_validation(self, crops: ReIDSplit, tmp_path: Path) -> None:
+        history = _train(_small_module(), crops, output_dir=tmp_path / "out", val_data=crops)
+
+        with (tmp_path / "out" / "metrics.csv").open() as file:
+            header = next(csv.reader(file))
+
+        # the row before training has no lr or losses, yet the header lists them for the epochs after it
+        assert header == list(history[1].keys())
+
+    def test_training_config_records_the_validation_settings(
+        self, crops: ReIDSplit, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_validation_scores(monkeypatch, [5.0, 10.0], metric="mrr")
+
+        _train(
+            _small_module(),
+            crops,
+            output_dir=tmp_path / "out",
+            val_data=crops,
+            val_protocol=ReassociationProtocol(gap_frames=10),
+        )
+
+        config = json.loads((tmp_path / "out" / "training_config.json").read_text())
+        assert config["val_protocol"] == "ReassociationProtocol(gap_frames=10, query_stride=60, distance='cosine')"
+        assert config["checkpoint_metric"] == "mrr"  # what "auto" means for re-association
+
+    @pytest.mark.parametrize("earlier_file", ["last/weights.safetensors", "best/weights.safetensors", "metrics.csv"])
     def test_rejects_an_output_dir_holding_another_run(
         self, crops: ReIDSplit, tmp_path: Path, earlier_file: str
     ) -> None:
@@ -406,6 +533,21 @@ class TestInputGuards:
     def test_rejects_augmentations_that_change_the_crop_size(self) -> None:
         with pytest.raises(ValueError, match="augmentations give 32x32 crops, but the model's input size is 64x32"):
             _train(_osnet(), _missing_crops([0, 0, 1, 1]), augmentations=[CenterCrop(32)])
+
+    def test_rejects_a_val_protocol_other_than_retrieval_or_reassociation(self) -> None:
+        with pytest.raises(TypeError, match=r"val_protocol must be an instance, such as RetrievalProtocol\(\)"):
+            _train(
+                _osnet(),
+                _missing_crops([0, 0, 1, 1]),
+                val_data=_missing_crops([0, 0, 1, 1]),
+                val_protocol=ReassociationProtocol,  # the class, without parentheses
+            )
+
+    def test_rejects_a_checkpoint_metric_the_protocol_does_not_report(self) -> None:
+        with pytest.raises(ValueError, match="checkpoint_metric='mAP' isn't a metric of RetrievalProtocol"):
+            _train(
+                _osnet(), _missing_crops([0, 0, 1, 1]), val_data=_missing_crops([0, 0, 1, 1]), checkpoint_metric="mAP"
+            )
 
     def test_rejects_crops_not_named_by_sequence_with_sample_per_sequence(self) -> None:
         with pytest.raises(ValueError, match="sample_per_sequence=True reads each crop's sequence from its path"):
