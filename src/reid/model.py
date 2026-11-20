@@ -307,8 +307,7 @@ class ReIDModel:
             freeze_backbone_epochs: Epochs at the start that train only the classification layer and the
                 backbone's modules named in its ``trainable_when_frozen`` (OSNet's ``fc``,
                 FastReID SBS's ``pool`` and ``bottleneck``). A backbone without it trains only the classification
-                layer. The other modules stay in eval mode, so their BatchNorm statistics don't move. Warns if this
-                covers every epoch.
+                layer. The other modules keep their BatchNorm statistics. Warns if this covers every epoch.
             classification_loss: Loss on the classification layer's scores, called as ``loss(scores, labels)``.
             embedding_loss: Loss on the embeddings, called as ``loss(embeddings, labels)``, such as
                 ``TripletLoss(margin=0.5)``.
@@ -317,11 +316,8 @@ class ReIDModel:
             augmentations: ``torchvision.transforms`` objects, run in order on the resized crop. ``RandomErasing``
                 runs after normalisation, since it works on tensors. ``()`` turns augmentation off.
             num_workers: Processes that load and augment crops. ``0`` does it in the main process.
-            mixed_precision: On CUDA, run the forward and backward passes under torch's autocast, which is faster
-                and uses less memory. Convolutions and matrix multiplications run in float16, while operations that
-                need float32's range, such as softmax and the losses, stay in float32. The weights and the optimizer
-                step stay in float32, and the loss is scaled so small gradients don't round to zero. It has no effect
-                on other devices.
+            mixed_precision: Train in mixed precision, running most operations in float16 instead of float32, which
+                is faster and uses less memory. It runs only on CUDA and has no effect on other devices.
             seed: Seed for Python's ``random``, numpy and torch. On CPU, the same call on the same weights repeats the
                 run.
             verbose: Show a progress bar with the epoch's mean loss so far, and print one line after each epoch.

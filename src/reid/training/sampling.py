@@ -52,7 +52,7 @@ class PKSampler(Sampler[list[int]]):
         return self._num_batches
 
     def __iter__(self) -> Iterator[list[int]]:
-        identities = list(self._indices_by_label)
+        identities = list(self._indices_by_label.keys())
         for _ in range(self._num_batches):
             batch: list[int] = []
             # Sample random identities for the batch

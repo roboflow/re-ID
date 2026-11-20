@@ -30,7 +30,7 @@ def append_metrics_row(output_dir: Path, row: dict[str, float]) -> None:
 
     Args:
         output_dir: The run's output folder.
-        row: The epoch's history row; its keys are the columns of ``metrics.csv``.
+        row: The epoch's history row, whose keys are the columns of ``metrics.csv``.
     """
     metrics = output_dir / "metrics.csv"
     is_new = not metrics.exists()

@@ -236,7 +236,7 @@ class TestFreezing:
 
         _train(model, crops, epochs=2, freeze_backbone_epochs=1)
 
-        assert model._backbone.conv1.bn.num_batches_tracked.item() == 1  # a frozen layer: updated in epoch 2 only
+        assert model._backbone.conv1.bn.num_batches_tracked.item() == 1  # a frozen layer, so it updates in epoch 2 only
         assert model._backbone.fc[1].num_batches_tracked.item() == 2  # OSNet's fc keeps training while frozen
 
     @pytest.mark.filterwarnings("ignore:freeze_backbone_epochs=1 is at least epochs=1")
@@ -296,7 +296,7 @@ class TestOutputDir:
         assert config == {
             "architecture": "osnet_x0_25",
             "epochs": 2,
-            "steps_per_epoch": 4,  # one pass: 16 crops // (2 identities x 2 crops per batch)
+            "steps_per_epoch": 4,  # one pass over 16 crops in batches of 2 identities x 2 crops
             "identities_per_batch": 2,
             "crops_per_identity": 2,
             "lr": 3e-4,
@@ -355,6 +355,12 @@ class TestOutputDir:
         assert json.loads((tmp_path / "out" / "last" / "reid_config.json").read_text())["architecture"] == "Sequential"
         for name, value in model._backbone.state_dict().items():
             assert torch.equal(value, reloaded._backbone.state_dict()[name]), name
+
+    def test_last_of_a_model_built_from_a_module_asks_for_that_module(self, crops: ReIDSplit, tmp_path: Path) -> None:
+        _train(_small_module(), crops, output_dir=tmp_path / "out")
+
+        with pytest.raises(ValueError, match="built from your own module Sequential"):
+            ReIDModel.from_pretrained(str(tmp_path / "out" / "last"), device="cpu")
 
 
 class TestInputGuards:

@@ -47,7 +47,7 @@ def build_lr_schedule_with_warmup(
     Args:
         optimizer: The run's optimizer, holding ``lr``.
         epochs: Epochs in the run.
-        warmup_epochs: Epochs of linear warmup; 0 skips it.
+        warmup_epochs: Epochs of linear warmup, and 0 skips it.
         lr_scheduler: Scheduler class that takes over after the warmup, or ``None`` for the default drops.
         lr_scheduler_kwargs: Arguments for ``lr_scheduler``.
     """

@@ -209,14 +209,25 @@ def resolve_load_plan(
         ``required_match_fraction`` when set.
 
     Raises:
-        ValueError: For a bare weights file without ``architecture``, or a local directory that is missing
-            ``reid_config.json``.
+        ValueError: For a bare weights file without ``architecture``, a local directory that is missing
+            ``reid_config.json``, or a folder saved from a model built from a module without ``architecture``.
     """
+    from reid.architectures import list_architectures
     from reid.catalog import resolve_model_card
 
     resolved = resolve_model_card(source)
     if resolved is not None:
         card, config_preprocessing = resolved
+        # save records a model built from a module by its class name, which only that module can rebuild
+        if (
+            architecture is None
+            and card.architecture not in list_architectures()
+            and not card.architecture.startswith("timm:")
+        ):
+            raise ValueError(
+                f"The folder {source!r} was saved from a model built from your own module {card.architecture}, so "
+                f"pass that module to load it, as from_pretrained(folder, architecture={card.architecture}(...))."
+            )
         # Whether the architecture passed replaces the one the folder records
         if architecture is None:
             overridden = False

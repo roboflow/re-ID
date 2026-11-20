@@ -34,7 +34,7 @@ def build_train_transform(preprocessing: ReIDPreprocessing, augmentations: Seque
     Raises:
         ValueError: If the augmentations change the crop's size.
     """
-    # RandomErasing works on tensors, so it runs after Normalize; every other augmentation runs on the image
+    # RandomErasing works on tensors, so it runs after Normalize, and every other augmentation runs on the image
     on_image, on_tensor = [], []
     for augmentation in augmentations:
         if isinstance(augmentation, (RandomErasing, v2.RandomErasing)):
