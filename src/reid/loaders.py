@@ -197,7 +197,8 @@ def resolve_load_plan(
        :func:`reid.catalog.resolve_model_card` (alias, ``ReIDModel.save``
        directory, HF repo, or ``http(s)://`` folder URL). When ``architecture`` is explicitly overridden,
        the override wins (with a warning); the card's weights and preprocessing
-       are retained.
+       are retained. A module of the class ``ReIDModel.save`` recorded is not an override, so
+       it loads without the warning and the weights must match it in full.
     2. **Bare weights file** — ``source`` is a local path or ``hf://`` / ``gd://`` / ``http(s)://``
        URL that does not resolve to a model card; ``architecture`` is required.
 
@@ -208,17 +209,34 @@ def resolve_load_plan(
         ``required_match_fraction`` when set.
 
     Raises:
-        ValueError: For a bare weights file without ``architecture``, or a local directory that is missing
-            ``reid_config.json``.
+        ValueError: For a bare weights file without ``architecture``, a local directory that is missing
+            ``reid_config.json``, or a folder saved from a model built from a module without ``architecture``.
     """
+    from reid.architectures import list_architectures
     from reid.catalog import resolve_model_card
 
     resolved = resolve_model_card(source)
     if resolved is not None:
         card, config_preprocessing = resolved
-        arch_overridden = False
-        if architecture is not None and architecture != card.architecture:
-            arch_overridden = True
+        # save records a model built from a module by its class name, which only that module can rebuild
+        if (
+            architecture is None
+            and card.architecture not in list_architectures()
+            and not card.architecture.startswith("timm:")
+        ):
+            raise ValueError(
+                f"The folder {source!r} was saved from a model built from your own module {card.architecture}, so "
+                f"pass that module to load it, as from_pretrained(folder, architecture={card.architecture}(...))."
+            )
+        # Whether the architecture passed replaces the one the folder records
+        if architecture is None:
+            overridden = False
+        elif isinstance(architecture, nn.Module):
+            # save records a model built from a module by its class name
+            overridden = type(architecture).__name__ != card.architecture
+        else:
+            overridden = architecture != card.architecture
+        if overridden:
             warnings.warn(
                 f"Overriding architecture {card.architecture!r} resolved for "
                 f"{source!r} with {architecture!r}. The card's weights and "
@@ -227,10 +245,8 @@ def resolve_load_plan(
                 UserWarning,
                 stacklevel=3,
             )
-            resolved_arch: str | nn.Module = architecture
-        else:
-            resolved_arch = card.architecture
-        required_fraction = _MISMATCH_FRACTION if arch_overridden else 1.0
+        resolved_arch: str | nn.Module = card.architecture if architecture is None else architecture
+        required_fraction = _MISMATCH_FRACTION if overridden else 1.0
         return LoadPlan(
             resolved_arch,
             card.weights,

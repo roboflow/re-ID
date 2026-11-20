@@ -4,7 +4,7 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""ReID appearance encoder: loading, inference, and checkpoint I/O.
+"""ReID appearance encoder: loading, training, inference, and checkpoint I/O.
 
 Array-type boundary: torch tensors stay inside the model; embeddings cross to
 ``numpy`` once, on the way out of :meth:`ReIDModel._embed_batch`, because
@@ -16,8 +16,13 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import tempfile
+import time
 import warnings
 from collections.abc import Sequence
+from functools import cached_property
+from pathlib import Path
 
 import numpy as np
 import supervision as sv
@@ -25,17 +30,25 @@ import torch
 import torch.nn as nn
 from PIL import Image as PILImage
 from safetensors.torch import save_file
-from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import LRScheduler
+from torch.utils.data import DataLoader, StackDataset
+from torchvision.transforms import ColorJitter, RandomErasing, RandomHorizontalFlip
 
 from reid.architectures import build_architecture, default_preprocessing_for_architecture
 from reid.catalog import ModelCard, save_model_config
-from reid.checks import validate_positive_int
+from reid.checks import validate_int_at_least, validate_positive_int
 from reid.crop_dataset import CropDataset
 from reid.data import ReIDSplit
 from reid.eval import EvaluationProtocol, ReIDResult, RetrievalProtocol
 from reid.eval.metrics import _compute_reid_metrics, distance_matrix
 from reid.loaders import load_state_dict, resolve_load_plan, resolve_weights
 from reid.preprocessing import ReIDPreprocessing
+from reid.training.epoch import train_one_epoch
+from reid.training.losses import TripletLoss
+from reid.training.outputs import append_metrics_row, format_epoch_line, write_training_config
+from reid.training.sampling import PKSampler
+from reid.training.schedule import SCHEDULERS_TRAIN_CANNOT_STEP, build_lr_schedule_with_warmup
+from reid.training.transforms import build_train_transform
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +82,11 @@ def _select_device(device: str) -> torch.device:
 
 
 class ReIDModel:
-    """Appearance encoder with loading, preprocessing, and checkpoint I/O.
+    """Appearance encoder with loading, training, preprocessing, and checkpoint I/O.
 
     Provides ``extract_embeddings`` (for video-frame crops) and
     ``extract_embeddings_from_paths`` (for on-disk crops), plus
-    ``from_pretrained`` and ``save``.
+    ``from_pretrained``, ``save`` and ``train``.
 
     Constructing it builds the architecture with randomly initialised weights, without downloading anything. Its
     embeddings carry no identity information until it is trained; to load trained weights, use
@@ -81,7 +94,7 @@ class ReIDModel:
 
     Args:
         architecture: Registered architecture name (see ``list_architectures``), ``timm:<name>``, or a pre-built
-            ``nn.Module`` (``(B, 3, H, W)`` → ``(B, D)`` in eval). ``save`` needs a name.
+            ``nn.Module`` (``(B, 3, H, W)`` → ``(B, D)``, in eval mode and, to train it, in train mode).
         preprocessing: Crop and embedding preprocessing. Defaults to the architecture's own preprocessing.
         device: Compute device (``"auto"`` picks the best available).
     """
@@ -95,8 +108,6 @@ class ReIDModel:
     ) -> None:
         self._architecture = architecture if isinstance(architecture, str) else None
         self._backbone = build_architecture(architecture, pretrained=False)
-        # Encoders are inference-only; force eval() so callers that pass a raw
-        # nn.Module (e.g. still in train mode) get deterministic BN/dropout.
         self._backbone.eval()
         self.to(device)
         if preprocessing is None:
@@ -121,6 +132,20 @@ class ReIDModel:
     def preprocessing(self) -> ReIDPreprocessing:
         """Active preprocessing pipeline."""
         return self._preprocessing
+
+    @cached_property
+    def embedding_dim(self) -> int:
+        """Length of the embeddings this model returns, measured once by embedding a dummy crop."""
+        height, width = self._preprocessing.input_size
+        dummy_crop = torch.zeros(1, 3, height, width, device=self._device)  # only the output's shape matters
+        with torch.inference_mode():
+            dummy_embedding = self._backbone(dummy_crop)
+        return dummy_embedding.shape[1]
+
+    @property
+    def _architecture_name(self) -> str:
+        """The architecture's name, or the module's class name, which ``save`` and ``training_config.json`` record."""
+        return self._architecture if self._architecture is not None else type(self._backbone).__name__
 
     # ------------------------------------------------------------------ #
     # Constructors
@@ -178,36 +203,337 @@ class ReIDModel:
 
         return model
 
-    def save(self, directory: str) -> None:
+    def save(self, directory: str, verbose: bool = True) -> None:
         """Save the model's current weights and its configuration, so ``from_pretrained(directory)`` loads it back.
 
         Writes the weights to ``weights.safetensors`` and the architecture and preprocessing to ``reid_config.json``.
+        A model built from a module records the module's class name, such as ``"MyNet"``, and loads back with
+        ``from_pretrained(directory, architecture=MyNet())``. Each file is written to a temporary folder first and then
+        moved into ``directory``, so a crash during the save leaves each file whole, from this save or the one before.
 
         Args:
             directory: Output directory (created if missing).
-
-        Raises:
-            ValueError: If the architecture name is unknown.
+            verbose: Log the folder the model was saved to, at ``INFO`` level.
         """
-        if self._architecture is None:
-            raise ValueError(
-                "Cannot save a model whose architecture name is unknown. "
-                "Build it from a named architecture (e.g. ReIDModel('osnet_x1_0') or "
-                "ReIDModel('timm:resnet50')) or with from_pretrained(source) to enable ReIDModel.save()."
-            )
-
         os.makedirs(directory, exist_ok=True)
 
-        weights_path = os.path.join(directory, "weights.safetensors")
-        state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
-        save_file(state_dict, weights_path)
+        # Write the files into a temporary folder, then move each one into directory in a single step
+        with tempfile.TemporaryDirectory(dir=directory) as temporary:
+            state_dict = {key: value.detach().cpu() for key, value in self._backbone.state_dict().items()}
+            save_file(state_dict, os.path.join(temporary, "weights.safetensors"))
+            card = ModelCard(
+                architecture=self._architecture_name,
+                weights=None,
+            )
+            save_model_config(card, temporary, preprocessing=self._preprocessing)
+            for name in os.listdir(temporary):
+                os.replace(os.path.join(temporary, name), os.path.join(directory, name))
+        if verbose:
+            logger.info("ReIDModel saved to %s", directory)
 
-        card = ModelCard(
-            architecture=self._architecture,
-            weights=None,
+    # ------------------------------------------------------------------ #
+    # Training
+    # ------------------------------------------------------------------ #
+
+    def train(
+        self,
+        train_data: ReIDSplit,
+        output_dir: str | Path | None = None,
+        epochs: int = 40,
+        steps_per_epoch: int | None = None,
+        identities_per_batch: int = 8,
+        crops_per_identity: int = 4,
+        lr: float = 3e-4,
+        warmup_epochs: int = 5,
+        weight_decay: float = 5e-4,
+        optimizer: type[torch.optim.Optimizer] = torch.optim.Adam,
+        optimizer_kwargs: dict[str, object] | None = None,
+        lr_scheduler: type[LRScheduler] | None = None,
+        lr_scheduler_kwargs: dict[str, object] | None = None,
+        freeze_backbone_epochs: int = 3,
+        classification_loss: nn.Module = nn.CrossEntropyLoss(label_smoothing=0.1),
+        embedding_loss: nn.Module = TripletLoss(margin=0.3),
+        classification_loss_weight: float = 1.0,
+        embedding_loss_weight: float = 1.0,
+        augmentations: Sequence[nn.Module] = (
+            RandomHorizontalFlip(p=0.5),
+            ColorJitter(brightness=0.2, contrast=0.15, saturation=0.15),
+            RandomErasing(p=0.5, value="random"),
+        ),
+        num_workers: int = 0,
+        mixed_precision: bool = True,
+        seed: int = 42,
+        verbose: bool = True,
+    ) -> list[dict[str, float]]:
+        """Fine-tune this model on identity crops, in place on its ``device``, and return each epoch's losses.
+
+        Training adds a classification layer over the training identities and minimises the total loss
+        ``classification_loss_weight * classification_loss + embedding_loss_weight * embedding_loss``, where
+        ``classification_loss`` scores the classification layer's outputs and ``embedding_loss`` the embeddings. The
+        learning rate warms up linearly to ``lr``, then follows the ``lr_scheduler`` passed. Without one, it drops to a
+        tenth after epoch ``epochs * 3 // 4`` and again after epoch ``epochs * 7 // 8``. A drop that falls inside the
+        warmup moves to its end, and the second drop always comes at least one epoch after the first.
+
+        Start from trained weights loaded with ``from_pretrained``. ``ReIDModel(architecture)`` starts from random
+        weights. The model ends in eval mode with the last epoch's weights and every parameter trainable, and
+        ``save`` writes it without the classification head.
+
+        With ``output_dir``, ``train`` writes ``training_config.json`` before the first epoch, then after every epoch
+        saves the model to ``last/``, as ``save`` does, and appends the epoch to ``metrics.csv``.
+
+        Args:
+            train_data: Training crops and their person IDs, for example from ``load_identity_folders``.
+            output_dir: Folder for ``last/``, ``metrics.csv`` and ``training_config.json``. ``None`` writes nothing.
+            epochs: Number of epochs.
+            steps_per_epoch: Batches per epoch. ``None`` makes an epoch as long as one pass over the crops,
+                ``len(train_data) // (identities_per_batch * crops_per_identity)`` batches, and at least 1.
+            identities_per_batch: Identities in a batch, at least 2.
+            crops_per_identity: Crops of each identity in a batch, at least 2.
+            lr: Learning rate after the warmup.
+            warmup_epochs: Epochs of linear warmup, where epoch ``i`` trains at ``lr * i / warmup_epochs``.
+                ``0`` starts at ``lr``.
+            weight_decay: The optimizer's weight decay.
+            optimizer: Optimizer class, built as ``optimizer(parameters, lr=lr, weight_decay=weight_decay,
+                **optimizer_kwargs)``.
+            optimizer_kwargs: Any other arguments the ``optimizer`` class takes, as listed in its ``torch.optim``
+                documentation, such as ``{"momentum": 0.9}`` for ``SGD``.
+            lr_scheduler: Scheduler class that takes over after the warmup, built as
+                ``lr_scheduler(optimizer, **lr_scheduler_kwargs)`` and stepped once per epoch. ``None`` uses the
+                drops above. ``ReduceLROnPlateau``, ``OneCycleLR``, ``CyclicLR``, ``ChainedScheduler`` and
+                ``SequentialLR`` raise, since ``train`` steps the scheduler once per epoch with no score.
+            lr_scheduler_kwargs: The arguments ``lr_scheduler`` takes besides the optimizer, as listed in its
+                ``torch.optim.lr_scheduler`` documentation, such as ``{"T_max": epochs - warmup_epochs}`` for
+                ``CosineAnnealingLR``.
+            freeze_backbone_epochs: Epochs at the start that train only the classification layer and the
+                backbone's modules named in its ``trainable_when_frozen`` (OSNet's ``fc``,
+                FastReID SBS's ``pool`` and ``bottleneck``). A backbone without it trains only the classification
+                layer. The other modules keep their BatchNorm statistics. Warns if this covers every epoch.
+            classification_loss: Loss on the classification layer's scores, called as ``loss(scores, labels)``.
+            embedding_loss: Loss on the embeddings, called as ``loss(embeddings, labels)``, such as
+                ``TripletLoss(margin=0.5)``.
+            classification_loss_weight: Weight of ``classification_loss`` in the total. ``0`` trains without it.
+            embedding_loss_weight: Weight of ``embedding_loss`` in the total. ``0`` trains without it.
+            augmentations: ``torchvision.transforms`` objects, run in order on the resized crop. ``RandomErasing``
+                runs after normalisation, since it works on tensors. ``()`` turns augmentation off.
+            num_workers: Processes that load and augment crops. ``0`` does it in the main process.
+            mixed_precision: Train in mixed precision, running most operations in float16 instead of float32, which
+                is faster and uses less memory. It runs only on CUDA and has no effect on other devices.
+            seed: Seed for Python's ``random``, numpy and torch. On CPU, the same call on the same weights repeats the
+                run.
+            verbose: Show a progress bar with the epoch's mean loss so far, and print one line after each epoch.
+
+        Returns:
+            One dict per epoch with ``epoch``, ``lr`` (the learning rate the epoch trained at), ``train/loss`` (the
+            weighted total), ``train/classification_loss`` and ``train/embedding_loss`` (both unweighted), and
+            ``time`` (seconds). Pass the list to ``pandas.DataFrame`` for a table.
+
+        Raises:
+            TypeError: If ``train_data`` is not a ``ReIDSplit``.
+            ValueError: If ``epochs`` or ``steps_per_epoch`` is below 1, ``warmup_epochs`` or
+                ``freeze_backbone_epochs`` below 0, ``identities_per_batch`` or ``crops_per_identity`` below 2, or
+                ``train_data`` holds fewer identities than ``identities_per_batch``. Also if ``train`` can't step
+                ``lr_scheduler``, ``lr_scheduler_kwargs`` come without ``lr_scheduler``, ``trainable_when_frozen``
+                names a module the backbone doesn't have, the augmentations change the crop's size, or
+                ``output_dir`` holds another run's ``last/`` or ``metrics.csv``.
+        """
+        # Check the arguments and the augmentations' crop size before any work
+        if output_dir is not None:
+            output_dir = Path(output_dir)
+        self._check_train_arguments(
+            train_data,
+            output_dir,
+            epochs,
+            steps_per_epoch,
+            identities_per_batch,
+            crops_per_identity,
+            warmup_epochs,
+            lr_scheduler,
+            lr_scheduler_kwargs,
+            freeze_backbone_epochs,
         )
-        save_model_config(card, directory, preprocessing=self._preprocessing)
-        logger.info("ReIDModel saved to %s", directory)
+        transform = build_train_transform(self._preprocessing, augmentations)
+
+        # Seed torch for the augmentations and the new head, and random and numpy for transforms that use them
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
+        # Batches of identities_per_batch identities with crops_per_identity crops each
+        identities, labels = np.unique(train_data.pids, return_inverse=True)
+        if steps_per_epoch is None:
+            num_batches = max(1, len(train_data) // (identities_per_batch * crops_per_identity))
+        else:
+            num_batches = steps_per_epoch
+        crops = CropDataset(train_data.image_paths, transform)
+        sampler = PKSampler(labels, identities_per_batch, crops_per_identity, num_batches, seed)
+        loader = DataLoader(
+            StackDataset(crops, torch.as_tensor(labels)),
+            batch_sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=self._device.type == "cuda",
+            persistent_workers=num_workers > 0,
+        )
+
+        # The new classification head, the optimizer over it and the backbone, the schedule and mixed precision
+        head = self._classification_head(len(identities))
+        classification_loss.to(self._device)  # a loss may hold tensors, such as class weights
+        embedding_loss.to(self._device)
+        parameters = [*self._backbone.parameters(), *head.parameters()]
+        optimizer_instance = optimizer(parameters, lr=lr, weight_decay=weight_decay, **(optimizer_kwargs or {}))
+        schedule = build_lr_schedule_with_warmup(
+            optimizer_instance, epochs, warmup_epochs, lr_scheduler, lr_scheduler_kwargs
+        )
+        use_mixed_precision = mixed_precision and self._device.type == "cuda"
+        scaler = torch.amp.GradScaler("cuda", enabled=use_mixed_precision)
+
+        # Record the run's settings before the first epoch
+        if output_dir is not None:
+            config = {
+                "architecture": self._architecture_name,
+                "epochs": epochs,
+                "steps_per_epoch": num_batches,
+                "identities_per_batch": identities_per_batch,
+                "crops_per_identity": crops_per_identity,
+                "lr": lr,
+                "warmup_epochs": warmup_epochs,
+                "weight_decay": weight_decay,
+                "optimizer": optimizer.__name__,
+                "optimizer_kwargs": optimizer_kwargs,
+                "lr_scheduler": None if lr_scheduler is None else lr_scheduler.__name__,
+                "lr_scheduler_kwargs": lr_scheduler_kwargs,
+                "freeze_backbone_epochs": freeze_backbone_epochs,
+                "classification_loss": repr(classification_loss),
+                # torch's repr of CrossEntropyLoss leaves out label_smoothing
+                "label_smoothing": getattr(classification_loss, "label_smoothing", None),
+                "embedding_loss": repr(embedding_loss),
+                "classification_loss_weight": classification_loss_weight,
+                "embedding_loss_weight": embedding_loss_weight,
+                "augmentations": [repr(augmentation) for augmentation in augmentations],
+                "num_workers": num_workers,
+                "mixed_precision": use_mixed_precision,
+                "seed": seed,
+                "num_identities": len(identities),
+                "num_crops": len(train_data),
+            }
+            write_training_config(output_dir, config)
+
+        # Train, saving last/ and a metrics.csv row after every epoch
+        history: list[dict[str, float]] = []
+        try:
+            for epoch in range(1, epochs + 1):
+                start = time.perf_counter()
+                lr_this_epoch = optimizer_instance.param_groups[0]["lr"]
+                losses = train_one_epoch(
+                    self._backbone,
+                    head,
+                    loader,
+                    optimizer_instance,
+                    scaler,
+                    device=self._device,
+                    mixed_precision=use_mixed_precision,
+                    classification_loss=classification_loss,
+                    embedding_loss=embedding_loss,
+                    classification_loss_weight=classification_loss_weight,
+                    embedding_loss_weight=embedding_loss_weight,
+                    freeze_backbone=epoch <= freeze_backbone_epochs,
+                    description=f"Epoch {epoch}/{epochs}",
+                    verbose=verbose,
+                )
+                schedule.step()
+                row = {"epoch": epoch, "lr": lr_this_epoch, **losses, "time": time.perf_counter() - start}
+                history.append(row)
+                if output_dir is not None:
+                    self.save(str(output_dir / "last"), verbose=False)
+                    append_metrics_row(output_dir, row)
+                if verbose:
+                    print(format_epoch_line(row, epochs))
+        finally:
+            # cleaning state if there are errors like OOM
+            self._backbone.requires_grad_(True)
+            self._backbone.zero_grad()
+            self._backbone.eval()
+        return history
+
+    def _classification_head(self, num_identities: int) -> nn.Linear:
+        """Return a layer on the model's device that scores each of ``num_identities`` from an embedding.
+
+        Its weights start small and random, and its bias at zero.
+        """
+        head = nn.Linear(self.embedding_dim, num_identities)
+        nn.init.normal_(head.weight, std=0.01)
+        nn.init.zeros_(head.bias)
+        return head.to(self._device)
+
+    def _check_train_arguments(
+        self,
+        train_data: ReIDSplit,
+        output_dir: Path | None,
+        epochs: int,
+        steps_per_epoch: int | None,
+        identities_per_batch: int,
+        crops_per_identity: int,
+        warmup_epochs: int,
+        lr_scheduler: type[LRScheduler] | None,
+        lr_scheduler_kwargs: dict[str, object] | None,
+        freeze_backbone_epochs: int,
+    ) -> None:
+        """Raise if the arguments of ``ReIDModel.train`` can't make a run, and warn about runs that would surprise."""
+        if not isinstance(train_data, ReIDSplit):
+            raise TypeError(
+                f"train_data must be a ReIDSplit, got {type(train_data).__name__}. "
+                "Load a folder of identity folders with load_identity_folders(root)."
+            )
+        if output_dir is not None:
+            existing = [name for name in ("last", "metrics.csv") if (output_dir / name).exists()]
+            if existing:
+                raise ValueError(
+                    f"output_dir {output_dir} already holds {' and '.join(existing)} from another run. "
+                    "Pass a new folder or remove them."
+                )
+        validate_positive_int(epochs, "epochs")
+        if steps_per_epoch is not None:
+            validate_positive_int(steps_per_epoch, "steps_per_epoch")
+        # The embedding loss compares crops of one identity with crops of others, so a batch needs 2 of each.
+        validate_int_at_least(identities_per_batch, "identities_per_batch", 2)
+        validate_int_at_least(crops_per_identity, "crops_per_identity", 2)
+        num_identities = len(np.unique(train_data.pids))
+        if num_identities < identities_per_batch:
+            raise ValueError(
+                f"identities_per_batch={identities_per_batch} needs at least {identities_per_batch} identities in "
+                f"train_data, got {num_identities}."
+            )
+        validate_int_at_least(warmup_epochs, "warmup_epochs", 0)
+        if lr_scheduler is not None and issubclass(lr_scheduler, SCHEDULERS_TRAIN_CANNOT_STEP):
+            raise ValueError(
+                f"lr_scheduler={lr_scheduler.__name__} can't run in train, which steps the scheduler once per epoch "
+                "with no score. ReduceLROnPlateau needs a validation score every epoch, OneCycleLR and CyclicLR step "
+                "every batch and bring their own warmup, and ChainedScheduler and SequentialLR take schedulers already "
+                "built on the optimizer, which train creates itself. Pass a scheduler stepped once per epoch, such as "
+                "StepLR or CosineAnnealingLR."
+            )
+        if lr_scheduler is None and lr_scheduler_kwargs is not None:
+            raise ValueError("lr_scheduler_kwargs needs an lr_scheduler to pass them to.")
+        validate_int_at_least(freeze_backbone_epochs, "freeze_backbone_epochs", 0)
+        child_names = {name for name, _ in self._backbone.named_children()}
+        unknown = set(getattr(self._backbone, "trainable_when_frozen", ())) - child_names
+        if unknown:
+            raise ValueError(
+                f"trainable_when_frozen names {sorted(unknown)}, which aren't direct child modules of the backbone."
+            )
+
+        if warmup_epochs > epochs:
+            warnings.warn(
+                f"warmup_epochs={warmup_epochs} is more than epochs={epochs}, so the learning rate never reaches lr.",
+                UserWarning,
+                stacklevel=3,
+            )
+        if freeze_backbone_epochs >= epochs:
+            warnings.warn(
+                f"freeze_backbone_epochs={freeze_backbone_epochs} is at least epochs={epochs}, so the run trains only "
+                "the classification layer and the backbone's trainable_when_frozen modules.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     # ------------------------------------------------------------------ #
     # Evaluation

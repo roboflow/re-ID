@@ -1,6 +1,6 @@
 <div align="center">
     <h1>reid</h1>
-    <p>Load and evaluate person re-identification models in Python.</p>
+    <p>Load, train, and evaluate person re-identification models in Python.</p>
 
 [![version](https://badge.fury.io/py/reid.svg)](https://badge.fury.io/py/reid) [![downloads](https://img.shields.io/pypi/dm/reid)](https://pypistats.org/packages/reid) [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE) [![python-version](https://img.shields.io/pypi/pyversions/reid)](https://badge.fury.io/py/reid) [![discord](https://img.shields.io/discord/1159501506232451173?logo=discord&label=discord&labelColor=fff&color=5865f2&link=https%3A%2F%2Fdiscord.gg%2FGbfgXGJ8Bk)](https://discord.gg/GbfgXGJ8Bk)
 

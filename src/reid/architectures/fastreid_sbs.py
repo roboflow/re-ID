@@ -80,6 +80,9 @@ class FastReIDSBSResNeSt50(nn.Module):
     ``.pth`` via :func:`remap_fastreid_sbs_state_dict`.
     """
 
+    # GeM and BNNeck keep training while the rest of the backbone is frozen
+    trainable_when_frozen = ("pool", "bottleneck")
+
     @classmethod
     def default_preprocessing(cls) -> ReIDPreprocessing:
         """Default crop/tensor recipe for FastReID SBS (BoT-SORT FastReIDInterface).
