@@ -6,7 +6,7 @@
 
 """Building blocks of ``ReIDModel.train``: losses, PK batches, augmentation, the schedule, one epoch, and its outputs.
 
-Only ``TripletLoss`` is public; the rest is internal.
+Only ``TripletLoss`` is public, and the rest is internal.
 """
 
 from __future__ import annotations

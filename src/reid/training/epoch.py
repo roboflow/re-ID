@@ -82,7 +82,7 @@ def _set_backbone_frozen(backbone: nn.Module, frozen: bool) -> None:
     """Put ``backbone`` in train mode and set which of its modules train.
 
     When ``frozen``, only the direct child modules named in ``trainable_when_frozen`` train. The others get no
-    gradients and go to eval mode, so their BatchNorm statistics don't move either. Otherwise, every module trains.
+    gradients and go to eval mode. Otherwise, every module trains.
     """
     trainable_when_frozen = getattr(backbone, "trainable_when_frozen", ())
     backbone.train()

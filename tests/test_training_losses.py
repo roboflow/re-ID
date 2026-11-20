@@ -21,22 +21,22 @@ def test_loss_uses_the_farthest_positive() -> None:
 
     loss = TripletLoss(margin=0.3)(embeddings, labels)
 
-    # The same for every crop: on its square the opposite corner is 2 away and the neighbours sqrt(2);
-    # the other person's square is at right angles, so all of its crops are sqrt(2) away
+    # For every crop, the opposite corner of its square is 2 away and the neighbours sqrt(2), and the other
+    # person's square is at right angles, so all of its crops are sqrt(2) away
     farthest_positive = 2.0
     nearest_negative = 2**0.5
     assert loss.item() == pytest.approx(0.3 + farthest_positive - nearest_negative)
 
 
 def test_loss_uses_the_nearest_negative() -> None:
-    # On the unit circle: person 0 at 0 and 180 degrees, person 1 at 60 and 240 degrees
+    # Person 0 sits at 0 and 180 degrees on the unit circle, and person 1 at 60 and 240 degrees
     embeddings = torch.tensor([[1.0, 0.0], [-1.0, 0.0], [0.5, 3**0.5 / 2], [-0.5, -(3**0.5) / 2]])
     labels = torch.tensor([0, 0, 1, 1])
 
     loss = TripletLoss(margin=0.3)(embeddings, labels)
 
-    # The same for every crop: its positive is across the circle, 2 away; the other person's crops are
-    # 60 degrees away, 1 (an equilateral triangle with the centre), and 120 degrees away, sqrt(3)
+    # For every crop, its positive is across the circle, 2 away, and the other person's crops are 60 degrees
+    # away at 1 (an equilateral triangle with the centre) and 120 degrees away at sqrt(3)
     farthest_positive = 2.0
     nearest_negative = 1.0
     assert loss.item() == pytest.approx(0.3 + farthest_positive - nearest_negative)
