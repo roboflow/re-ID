@@ -55,7 +55,7 @@ def _build_reassociation_candidates(
 
     records: list[tuple[str, int, Path, tuple[tuple[int, Path], ...]]] = []
     skipped = {"skipped_missing_future": 0, "skipped_absent_positive": 0, "skipped_insufficient_candidates": 0}
-    # filter queries that dont have possible retrievals
+    # filter out queries that don't have a possible match
     for sequence, seq_frames in sorted(query_frames.items()):
         for frame, crops in sorted(seq_frames.items()):
             if frame % query_stride:
@@ -82,7 +82,7 @@ def _build_reassociation_candidates(
     # TODO: Store per-query candidate indices and score only eligible pairs to avoid
     # dense query x gallery masks/distances while preserving metric semantics.
 
-    # mark the galleries that associate to which queries
+    # mark which gallery crops are candidates for each query
     candidate_mask = np.zeros((len(records), len(gallery_records)), dtype=bool)
     for row, (sequence, _, _, candidates) in enumerate(records):
         for identity, path in candidates:

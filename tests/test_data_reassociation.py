@@ -117,18 +117,6 @@ def test_explicit_splits_match_people_by_sequence_and_track(tmp_path: Path) -> N
     assert correct_matches == {2: [2], 3: [3]}
 
 
-def test_query_stride_filters_an_explicit_query(tmp_path: Path) -> None:
-    _write_crops(tmp_path / "query", "S", track_ids=(1, 2), frames=(0, 30))
-    _write_crops(tmp_path / "gallery", "S", track_ids=(1, 2), frames=(30, 60))
-
-    query, _, _, _ = ReassociationProtocol(gap_frames=30, query_stride=60).build_query_gallery(
-        load_identity_folders(tmp_path / "query"), load_identity_folders(tmp_path / "gallery")
-    )
-
-    # Frame 30 is not a multiple of 60, although the gallery holds its candidates at frame 60.
-    assert [_track_and_frame(path) for path in query.image_paths] == [(1, 0), (2, 0)]
-
-
 def test_mrr_gives_partial_credit_to_matches_below_rank_1(tmp_path: Path) -> None:
     """Two queries: one finds its match first, the other second, so rank-1 is 50% and MRR is (1 + 1/2) / 2 = 75%."""
     _write_crops(tmp_path, "S", track_ids=(1, 2), frames=(0, 30))

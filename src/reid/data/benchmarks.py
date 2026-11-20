@@ -86,7 +86,7 @@ def load_msmt17_train(root: str | Path) -> ReIDSplit:
 
     Expects ``train/`` and ``list_train.txt``, whose lines read ``path pid``.
     The camera ID comes from the image file name. The images in
-    ``list_val.txt`` are left out, as torchreid and fast-reid do: load them
+    ``list_val.txt`` are left out, as torchreid and fast-reid do. Load them
     with ``load_msmt17_val``.
 
     Args:
@@ -127,12 +127,19 @@ def load_msmt17_val(root: str | Path) -> ReIDSplit:
     return _load_msmt17_list(root, "list_val.txt", "train")
 
 
-@deprecated(target=load_msmt17_test, deprecated_in="0.2.0", remove_in="0.4.0")
+@deprecated(
+    target=load_msmt17_test,
+    deprecated_in="0.2.0",
+    remove_in="0.4.0",
+    template_mgs="`reid.%(source_name)s` was deprecated in v%(deprecated_in)s in favor of `reid.%(target_name)s`. "
+    "It will be removed in v%(remove_in)s.",
+)
 def load_msmt17(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     """Load the MSMT17 test query and gallery from ``root``.
 
-    Deprecated since 0.2.0 and removed in 0.4.0: use ``load_msmt17_test``,
-    which takes the same ``root`` and returns the same query and gallery.
+    Deprecated since 0.2.0 and will be removed in 0.4.0. Use
+    ``load_msmt17_test``, which takes the same ``root`` and returns the same
+    query and gallery.
 
     Args:
         root: Path to the MSMT17 directory.
@@ -231,12 +238,19 @@ def load_market1501_train(root: str | Path) -> ReIDSplit:
     return _load_market1501_dir(root, "bounding_box_train")
 
 
-@deprecated(target=load_market1501_test, deprecated_in="0.2.0", remove_in="0.4.0")
+@deprecated(
+    target=load_market1501_test,
+    deprecated_in="0.2.0",
+    remove_in="0.4.0",
+    template_mgs="`reid.%(source_name)s` was deprecated in v%(deprecated_in)s in favor of `reid.%(target_name)s`. "
+    "It will be removed in v%(remove_in)s.",
+)
 def load_market1501(root: str | Path) -> tuple[ReIDSplit, ReIDSplit]:
     """Load the Market-1501 test query and gallery from ``root``.
 
-    Deprecated since 0.2.0 and removed in 0.4.0: use ``load_market1501_test``,
-    which takes the same ``root`` and returns the same query and gallery.
+    Deprecated since 0.2.0 and will be removed in 0.4.0. Use
+    ``load_market1501_test``, which takes the same ``root`` and returns the
+    same query and gallery.
 
     Args:
         root: Path to the Market-1501 directory.

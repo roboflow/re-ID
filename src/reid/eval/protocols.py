@@ -196,12 +196,16 @@ class ReassociationProtocol(EvaluationProtocol):
         data: ReIDSplit,
         gallery: ReIDSplit | None = None,
     ) -> tuple[ReIDSplit, ReIDSplit, np.ndarray | None, dict]:
-        for split in (data,) if gallery is None else (data, gallery):
-            if not isinstance(split, ReIDSplit):
-                raise TypeError(
-                    f"Re-association needs a ReIDSplit of MOT crops, got {type(split).__name__}; "
-                    "load the crops with reid.load_identity_folders."
-                )
+        if not isinstance(data, ReIDSplit):
+            raise TypeError(
+                f"Re-association needs a ReIDSplit of MOT crops, got {type(data).__name__}. "
+                "Load the crops with reid.load_identity_folders."
+            )
+        if gallery is not None and not isinstance(gallery, ReIDSplit):
+            raise TypeError(
+                f"Re-association needs a ReIDSplit of MOT crops as the gallery, got {type(gallery).__name__}. "
+                "Load the crops with reid.load_identity_folders."
+            )
         query, gallery_split, mask, counts = _build_reassociation_candidates(
             data, gallery, gap_frames=self.gap_frames, query_stride=self.query_stride
         )
