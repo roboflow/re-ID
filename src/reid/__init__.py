@@ -17,7 +17,17 @@ from __future__ import annotations
 
 from reid.architectures import list_architectures
 from reid.catalog import FASTREID_MOT17_SBS50, list_aliases
-from reid.data import ReIDSplit, load_identity_folders, load_market1501, load_msmt17
+from reid.data import (
+    ReIDSplit,
+    load_identity_folders,
+    load_market1501,
+    load_market1501_test,
+    load_market1501_train,
+    load_msmt17,
+    load_msmt17_test,
+    load_msmt17_train,
+    load_msmt17_val,
+)
 from reid.eval import (
     ReassociationProtocol,
     ReIDResult,
@@ -41,5 +51,10 @@ __all__ = [
     "list_architectures",
     "load_identity_folders",
     "load_market1501",
+    "load_market1501_test",
+    "load_market1501_train",
     "load_msmt17",
+    "load_msmt17_test",
+    "load_msmt17_train",
+    "load_msmt17_val",
 ]
