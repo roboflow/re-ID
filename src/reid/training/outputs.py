@@ -25,17 +25,19 @@ def write_training_config(output_dir: Path, config: dict[str, object]) -> None:
     (output_dir / "training_config.json").write_text(json.dumps(config, indent=2, default=str) + "\n")
 
 
-def append_metrics_row(output_dir: Path, row: dict[str, float]) -> None:
-    """Append ``row`` to ``metrics.csv`` in ``output_dir``, writing the header first when the file is new.
+def append_metrics_row(output_dir: Path, row: dict[str, float], columns: list[str]) -> None:
+    """Append ``row`` to ``metrics.csv`` in ``output_dir``, writing ``columns`` as the header first if the file is new.
 
     Args:
         output_dir: The run's output folder.
-        row: The epoch's history row; its keys are the columns of ``metrics.csv``.
+        row: One epoch of the history. A column it doesn't hold, such as the losses in the row before training, is
+            left blank.
+        columns: Every column of the run, in order.
     """
     metrics = output_dir / "metrics.csv"
     is_new = not metrics.exists()
     with metrics.open("a", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=list(row.keys()))
+        writer = csv.DictWriter(file, fieldnames=columns)
         if is_new:
             writer.writeheader()
         writer.writerow(row)
@@ -49,7 +51,13 @@ def format_epoch_line(row: dict[str, float], epochs: int) -> str:
         epochs: Number of epochs in the run.
 
     Returns:
-        For example ``epoch 6/40  lr 3.0e-04  train/loss 1.90  train/classification_loss 1.52 ...``.
+        For example ``epoch 6/40  lr 3.0e-04  train/loss 1.90  train/classification_loss 1.52 ...``. The scores
+        before training, recorded with ``epoch`` 0, read ``before training  val/map 41.20 ...``.
     """
-    values = [f"{name} {value:.2f}" for name, value in row.items() if name not in ("epoch", "lr", "time")]
-    return "  ".join([f"epoch {row['epoch']}/{epochs}", f"lr {row['lr']:.1e}", *values])
+    # The scores before training have no epoch trained, learning rate or losses
+    if row["epoch"] == 0:
+        parts = ["before training"]
+    else:
+        parts = [f"epoch {row['epoch']}/{epochs}", f"lr {row['lr']:.1e}"]
+    parts += [f"{name} {value:.2f}" for name, value in row.items() if name not in ("epoch", "lr", "time")]
+    return "  ".join(parts)

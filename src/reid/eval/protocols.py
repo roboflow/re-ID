@@ -124,6 +124,12 @@ class RetrievalProtocol(EvaluationProtocol):
         self.distance = distance
         _check_query_params(queries_per_id=self.queries_per_id, min_crops=self.min_crops)
 
+    def __repr__(self) -> str:
+        return (
+            f"RetrievalProtocol(queries_per_id={self.queries_per_id}, min_crops={self.min_crops}, seed={self.seed}, "
+            f"distance={self.distance!r})"
+        )
+
     def _build_query_gallery(
         self,
         data: ReIDSplit,
@@ -186,6 +192,12 @@ class ReassociationProtocol(EvaluationProtocol):
         self.gap_frames = gap_frames
         self.query_stride = query_stride
         self.distance = distance
+
+    def __repr__(self) -> str:
+        return (
+            f"ReassociationProtocol(gap_frames={self.gap_frames}, query_stride={self.query_stride}, "
+            f"distance={self.distance!r})"
+        )
 
     def _build_query_gallery(
         self,

@@ -13,6 +13,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+LOSS_NAMES = ("train/loss", "train/classification_loss", "train/embedding_loss")
+
 
 def train_one_epoch(
     backbone: nn.Module,
@@ -54,7 +56,7 @@ def train_one_epoch(
         ``train/embedding_loss`` (both unweighted).
     """
     _set_backbone_frozen(backbone, freeze_backbone)
-    totals = {"train/loss": 0.0, "train/classification_loss": 0.0, "train/embedding_loss": 0.0}
+    totals = {name: 0.0 for name in LOSS_NAMES}
 
     progress = tqdm(loader, desc=description, disable=not verbose)
     for step, (images, labels) in enumerate(progress, start=1):
