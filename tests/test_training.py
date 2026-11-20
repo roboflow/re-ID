@@ -25,7 +25,7 @@ from reid import ReIDModel, ReIDPreprocessing, ReIDSplit, load_identity_folders
 from reid.architectures import build_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 
-from .crop_images import write_identity_crops, write_mot_crop
+from .crop_images import write_identity_crops
 
 
 def _osnet() -> ReIDModel:
@@ -180,20 +180,6 @@ class TestTraining:
     def test_warns_when_the_warmup_is_longer_than_the_run(self, crops: ReIDSplit) -> None:
         with pytest.warns(UserWarning, match="the learning rate never reaches lr"):
             _train(_small_module(), crops, epochs=2, warmup_epochs=3)
-
-    def test_leaves_out_a_sequence_with_a_single_identity_with_a_warning(self, tmp_path: Path) -> None:
-        paths = [str(write_mot_crop(tmp_path, "a", track_id, frame)) for track_id in (1, 2) for frame in range(2)]
-        crops = ReIDSplit(
-            image_paths=[*paths, "missing/b_3/b_000000.jpg", "missing/b_3/b_000001.jpg"],  # b's crops aren't on disk
-            pids=np.array([0, 0, 1, 1, 2, 2]),  # identity 2 alone in sequence b
-            camids=np.zeros(6, dtype=int),
-        )
-
-        with pytest.warns(UserWarning, match="Sequences with a single identity will be left out of the batches.*: b."):
-            history = _train(_small_module(), crops, steps_per_epoch=10, sample_per_sequence=True)
-
-        # b's crops don't exist, so any batch that drew sequence b would have raised FileNotFoundError
-        assert len(history) == 1
 
     def test_trains_with_the_optimizer_passed(self, crops: ReIDSplit) -> None:
         built_with = []

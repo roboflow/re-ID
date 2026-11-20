@@ -366,8 +366,7 @@ class ReIDModel:
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-        # Batches of identities_per_batch identities with crops_per_identity crops each, from one sequence each with
-        # sample_per_sequence
+        # Batches of identities_per_batch identities with crops_per_identity crops each
         identities, labels = np.unique(train_data.pids, return_inverse=True)
         groups = build_sequence_groups(train_data.image_paths, labels) if sample_per_sequence else None
         if steps_per_epoch is None:

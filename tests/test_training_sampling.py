@@ -74,15 +74,24 @@ def test_an_identity_of_a_small_group_is_drawn_as_often_as_one_of_a_large_group(
 
     visits = Counter(identity for batch in sampler for identity in {labels[index] for index in batch})
 
-    # the group of 2 is drawn with weight max(2, 4) = 4 and gives both its identities: 4 / 12 x 1 = 1 / 3 per batch;
-    # the group of 8 with weight max(8, 4) = 8 and gives 4 of its 8: 8 / 12 x 4 / 8 = 1 / 3 per batch
+    # the group of 2 is drawn with weight max(2, 4) = 4 and gives both its identities: 4 / 12 x 1 = 1 / 3 per batch,
+    # and the group of 8 with weight max(8, 4) = 8 and gives 4 of its 8: 8 / 12 x 4 / 8 = 1 / 3 per batch
     assert visits[0] == pytest.approx(1000, rel=0.1)  # 3000 batches / 3
     assert visits[2] == pytest.approx(1000, rel=0.1)
 
 
 def test_groups_the_identities_of_each_sequence() -> None:
-    image_paths = ["a_1/a_000000.jpg", "b_2/b_000000.jpg", "a_3/a_000000.jpg", "b_4/b_000000.jpg"]
+    image_paths = ["a_0/a_000000.jpg", "b_1/b_000000.jpg", "a_2/a_000000.jpg", "b_3/b_000000.jpg"]
 
     groups = build_sequence_groups(image_paths, labels=np.array([0, 1, 2, 3]))
 
     assert groups == [[0, 2], [1, 3]]  # identities 0 and 2 are in sequence a, 1 and 3 in b
+
+
+def test_leaves_out_a_sequence_with_a_single_identity_with_a_warning() -> None:
+    image_paths = ["a_0/a_000000.jpg", "a_1/a_000000.jpg", "b_2/b_000000.jpg"]
+
+    with pytest.warns(UserWarning, match="Sequences with a single identity will be left out.*: b."):
+        groups = build_sequence_groups(image_paths, labels=np.array([0, 1, 2]))
+
+    assert groups == [[0, 1]]  # identity 2 is alone in sequence b
