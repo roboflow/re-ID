@@ -286,9 +286,9 @@ class ReIDModel:
 
         With ``val_data``, we score the model with ``evaluate`` before training and after every epoch. With
         ``output_dir`` too, ``best/`` holds the epoch with the highest ``checkpoint_metric``, a tie going to the later
-        epoch. The score before training is never picked. If no epoch beats it, training made the model worse on
-        ``val_data``, and a warning says so. Validation doesn't change training's random draws, so a seed trains the
-        same way with or without it.
+        epoch. The score before training is never picked. If every epoch scores lower than it, training made the model
+        worse on ``val_data``, and a warning says so. Validation doesn't change training's random draws, so a seed
+        trains the same way with or without it.
 
         With ``output_dir``, ``train`` writes ``training_config.json`` before the first epoch, then after every epoch
         saves the model to ``last/``, as ``save`` does, and appends the epoch to ``metrics.csv``. With ``val_data``
@@ -361,8 +361,8 @@ class ReIDModel:
             ``pandas.DataFrame`` for a table.
 
         Raises:
-            TypeError: If ``train_data`` is not a ``ReIDSplit``, or ``val_protocol`` is neither a
-                ``RetrievalProtocol`` nor a ``ReassociationProtocol``.
+            TypeError: If ``train_data``, ``val_data`` or ``val_gallery`` is not a ``ReIDSplit``, or ``val_protocol``
+                is not a ``RetrievalProtocol`` or ``ReassociationProtocol`` instance.
             ValueError: If ``epochs`` or ``steps_per_epoch`` is below 1, ``warmup_epochs`` or
                 ``freeze_backbone_epochs`` below 0, ``identities_per_batch`` or ``crops_per_identity`` below 2, or
                 ``train_data`` holds fewer identities than ``identities_per_batch``. Also if ``train`` can't step
@@ -370,8 +370,9 @@ class ReIDModel:
                 names a module the backbone doesn't have, the augmentations change the crop's size, or
                 ``output_dir`` holds another run's ``last/``, ``best/`` or ``metrics.csv``. With
                 ``sample_per_sequence``, also if a crop's path doesn't name its sequence or no sequence holds 2
-                identities. With ``val_data``, also if ``checkpoint_metric`` isn't a metric of ``val_protocol``, or,
-                before the first epoch, if ``evaluate`` raises on the validation crops.
+                identities. With ``val_data``, also if ``checkpoint_metric`` isn't a metric of ``val_protocol``, or if
+                ``evaluate`` raises at any validation, such as on non-finite embeddings after an epoch diverges, which
+                ends the run.
         """
         # Validate with RetrievalProtocol unless told otherwise
         if val_data is not None and val_protocol is None:
@@ -635,10 +636,20 @@ class ReIDModel:
                 f"trainable_when_frozen names {sorted(unknown)}, which aren't direct child modules of the backbone."
             )
         if val_data is not None:
+            for name, split in (("val_data", val_data), ("val_gallery", val_gallery)):
+                if split is not None and not isinstance(split, ReIDSplit):
+                    raise TypeError(
+                        f"{name} must be a ReIDSplit, got {type(split).__name__}. "
+                        "Load a folder of identity folders with load_identity_folders(root)."
+                    )
+            if isinstance(val_protocol, type):
+                raise TypeError(
+                    f"val_protocol must be an instance, such as {val_protocol.__name__}(), not the class itself."
+                )
             if not isinstance(val_protocol, (RetrievalProtocol, ReassociationProtocol)):
                 raise TypeError(
-                    "val_protocol must be an instance, such as RetrievalProtocol() or ReassociationProtocol(), "
-                    f"got {val_protocol!r}."
+                    "val_protocol must be a RetrievalProtocol or a ReassociationProtocol, the only protocols train "
+                    f"supports, got {type(val_protocol).__name__}."
                 )
             if checkpoint_metric not in (None, "auto", *val_protocol.metric_names):
                 raise ValueError(

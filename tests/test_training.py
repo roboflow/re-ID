@@ -25,7 +25,7 @@ from reid import ReassociationProtocol, ReIDModel, ReIDPreprocessing, ReIDSplit,
 from reid.architectures import build_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 
-from .crop_images import write_identity_crops
+from .crop_images import write_identity_crops, write_mot_crop
 
 
 def _osnet() -> ReIDModel:
@@ -526,8 +526,12 @@ class TestInputGuards:
         with pytest.raises(ValueError, match="augmentations give 32x32 crops, but the model's input size is 64x32"):
             _train(_osnet(), _missing_crops([0, 0, 1, 1]), augmentations=[CenterCrop(32)])
 
-    def test_rejects_a_val_protocol_other_than_retrieval_or_reassociation(self) -> None:
-        with pytest.raises(TypeError, match=r"val_protocol must be an instance, such as RetrievalProtocol\(\)"):
+    def test_rejects_a_val_data_folder_path(self) -> None:
+        with pytest.raises(TypeError, match="val_data must be a ReIDSplit"):
+            _train(_osnet(), _missing_crops([0, 0, 1, 1]), val_data="crops/val")
+
+    def test_rejects_a_val_protocol_passed_as_a_class(self) -> None:
+        with pytest.raises(TypeError, match=r"such as ReassociationProtocol\(\), not the class itself"):
             _train(
                 _osnet(),
                 _missing_crops([0, 0, 1, 1]),
