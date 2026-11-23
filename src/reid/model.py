@@ -290,9 +290,10 @@ class ReIDModel:
         worse on ``val_data``, and a warning says so. Validation doesn't change training's random draws, so a seed
         trains the same way with or without it.
 
-        With ``output_dir``, ``train`` writes ``training_config.json`` before the first epoch, then after every epoch
-        saves the model to ``last/``, as ``save`` does, and appends the epoch to ``metrics.csv``. With ``val_data``
-        and a ``checkpoint_metric``, each epoch that becomes the best is saved to ``best/``.
+        With ``output_dir``, ``train`` writes ``training_config.json`` before the first epoch. After every epoch it
+        saves the model to ``last/`` and adds a row to ``metrics.csv``. With ``val_data``,
+        ``metrics.csv`` starts with a row of the scores before training. With ``val_data`` and a
+        ``checkpoint_metric``, each epoch that becomes the best is saved to ``best/``.
 
         Args:
             train_data: Training crops and their person IDs, for example from ``load_identity_folders``.
@@ -302,11 +303,12 @@ class ReIDModel:
                 ``val_gallery``, the query crops and their person IDs. ``None`` trains without validation.
             val_gallery: Gallery crops and their person IDs, for a validation set that comes with its own query and
                 gallery. ``None`` lets ``val_protocol`` split ``val_data`` into both.
-            val_protocol: How validation is scored, a ``RetrievalProtocol`` or a ``ReassociationProtocol`` as in
-                ``evaluate``. ``None`` means ``RetrievalProtocol()``.
+            val_protocol: How validation is scored, as in ``evaluate``, such as a ``RetrievalProtocol`` or a
+                ``ReassociationProtocol``. ``None`` means ``RetrievalProtocol()``.
             checkpoint_metric: Metric that picks the epoch saved to ``best/``, by the name the protocol reports it
                 under, such as ``"rank1"``. ``"auto"`` means ``"map"`` for ``RetrievalProtocol`` and ``"mrr"`` for
-                ``ReassociationProtocol``. ``None`` scores every epoch and writes no ``best/``.
+                ``ReassociationProtocol``, and another protocol needs its metric named. ``None`` scores every epoch
+                and writes no ``best/``.
             epochs: Number of epochs.
             steps_per_epoch: Batches per epoch. ``None`` makes an epoch as many batches as the crops fill,
                 ``len(train_data) // (identities_per_batch * crops_per_identity)`` and at least 1.
@@ -361,8 +363,8 @@ class ReIDModel:
             ``pandas.DataFrame`` for a table.
 
         Raises:
-            TypeError: If ``train_data``, ``val_data`` or ``val_gallery`` is not a ``ReIDSplit``, or ``val_protocol``
-                is not a ``RetrievalProtocol`` or ``ReassociationProtocol`` instance.
+            TypeError: If ``train_data`` or ``val_data`` is not a ``ReIDSplit``, or, with ``val_data``,
+                ``val_gallery`` is not a ``ReIDSplit`` or ``val_protocol`` is not an ``EvaluationProtocol`` instance.
             ValueError: If ``epochs`` or ``steps_per_epoch`` is below 1, ``warmup_epochs`` or
                 ``freeze_backbone_epochs`` below 0, ``identities_per_batch`` or ``crops_per_identity`` below 2, or
                 ``train_data`` holds fewer identities than ``identities_per_batch``. Also if ``train`` can't step
@@ -370,7 +372,8 @@ class ReIDModel:
                 names a module the backbone doesn't have, the augmentations change the crop's size, or
                 ``output_dir`` holds another run's ``last/``, ``best/`` or ``metrics.csv``. With
                 ``sample_per_sequence``, also if a crop's path doesn't name its sequence or no sequence holds 2
-                identities. With ``val_data``, also if ``checkpoint_metric`` isn't a metric of ``val_protocol``, or if
+                identities. With ``val_data``, also if ``checkpoint_metric`` isn't a metric of ``val_protocol``, or
+                is ``"auto"`` with a protocol other than ``RetrievalProtocol`` or ``ReassociationProtocol``, or if
                 ``evaluate`` raises at any validation, such as on non-finite embeddings after an epoch diverges, which
                 ends the run.
         """
@@ -642,14 +645,20 @@ class ReIDModel:
                         f"{name} must be a ReIDSplit, got {type(split).__name__}. "
                         "Load a folder of identity folders with load_identity_folders(root)."
                     )
-            if isinstance(val_protocol, type):
+            if isinstance(val_protocol, type) and issubclass(val_protocol, EvaluationProtocol):
                 raise TypeError(
                     f"val_protocol must be an instance, such as {val_protocol.__name__}(), not the class itself."
                 )
-            if not isinstance(val_protocol, (RetrievalProtocol, ReassociationProtocol)):
+            if not isinstance(val_protocol, EvaluationProtocol):
                 raise TypeError(
-                    "val_protocol must be a RetrievalProtocol or a ReassociationProtocol, the only protocols train "
-                    f"supports, got {type(val_protocol).__name__}."
+                    "val_protocol must be an EvaluationProtocol, such as RetrievalProtocol() or "
+                    f"ReassociationProtocol(), got {type(val_protocol).__name__}."
+                )
+            if checkpoint_metric == "auto" and not isinstance(val_protocol, (RetrievalProtocol, ReassociationProtocol)):
+                raise ValueError(
+                    f'checkpoint_metric="auto" has no metric for {type(val_protocol).__name__}, only for '
+                    "RetrievalProtocol and ReassociationProtocol. Pass one of its metrics, "
+                    f"{', '.join(val_protocol.metric_names)}, or None."
                 )
             if checkpoint_metric not in (None, "auto", *val_protocol.metric_names):
                 raise ValueError(
