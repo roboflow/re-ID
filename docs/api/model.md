@@ -8,6 +8,8 @@ description: Python API reference for loading and training re-identification mod
 
 ::: reid.TripletLoss
 
+::: reid.plot_training_history
+
 ::: reid.ReIDPreprocessing
 
 ::: reid.Interpolation

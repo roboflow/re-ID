@@ -4,7 +4,8 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""Writing a training run's ``training_config.json`` and ``metrics.csv``, and its line after each epoch."""
+"""Writing a training run's ``training_config.json`` and ``metrics.csv``, reading ``metrics.csv`` back, and the line
+printed after each epoch."""
 
 from __future__ import annotations
 
@@ -41,6 +42,20 @@ def append_metrics_row(output_dir: Path, row: dict[str, float], columns: list[st
         if is_new:
             writer.writeheader()
         writer.writerow(row)
+
+
+def read_metrics_csv(output_dir: Path) -> list[dict[str, float]]:
+    """Read ``metrics.csv`` in ``output_dir`` back into one dict per epoch, leaving out blank cells.
+
+    Args:
+        output_dir: The run's output folder.
+
+    Returns:
+        One dict per row, with each column that has a value in it as a float.
+    """
+    with (output_dir / "metrics.csv").open(newline="") as file:
+        rows = list(csv.DictReader(file))
+    return [{name: float(value) for name, value in row.items() if value != ""} for row in rows]
 
 
 def format_epoch_line(row: dict[str, float], epochs: int) -> str:

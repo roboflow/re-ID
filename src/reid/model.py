@@ -47,6 +47,7 @@ from reid.preprocessing import ReIDPreprocessing
 from reid.training.epoch import LOSS_NAMES, train_one_epoch
 from reid.training.losses import TripletLoss
 from reid.training.outputs import append_metrics_row, format_epoch_line, write_training_config
+from reid.training.plots import save_embeddings_plot, select_embeddings_plot_crops, show_in_notebook
 from reid.training.sampling import PKSampler, build_sequence_groups
 from reid.training.schedule import SCHEDULERS_TRAIN_CANNOT_STEP, build_lr_schedule_with_warmup
 from reid.training.transforms import build_train_transform
@@ -80,6 +81,35 @@ def _select_device(device: str) -> torch.device:
     if device == "auto":
         return _best_device()
     return torch.device(device)
+
+
+def _record_epoch(
+    row: dict[str, float],
+    plot_embeddings: np.ndarray | None,
+    plot_crops: ReIDSplit | None,
+    val_protocol: EvaluationProtocol | None,
+    output_dir: Path | None,
+    columns: list[str],
+    epochs: int,
+    verbose: bool,
+) -> None:
+    """Save and print an epoch of ``ReIDModel.train``, epoch 0 being the scores before training.
+
+    With ``output_dir``, appends ``row`` to ``metrics.csv`` and saves the embeddings plot when there are
+    ``plot_embeddings``. With ``verbose``, prints the epoch's line and, in a notebook, shows the plot under it.
+    """
+    epoch = row["epoch"]
+    plot_path = None
+    if output_dir is not None:
+        append_metrics_row(output_dir, row, columns)
+        if plot_embeddings is not None:
+            title = "before training" if epoch == 0 else f"epoch {epoch}"
+            plot_path = output_dir / "embeddings" / ("before_training.png" if epoch == 0 else f"epoch_{epoch:02d}.png")
+            save_embeddings_plot(plot_embeddings, plot_crops.pids, val_protocol.distance, title, plot_path)
+    if verbose:
+        print(format_epoch_line(row, epochs))
+        if plot_path is not None:
+            show_in_notebook(plot_path)
 
 
 class ReIDModel:
@@ -244,6 +274,7 @@ class ReIDModel:
         val_gallery: ReIDSplit | None = None,
         val_protocol: EvaluationProtocol | None = None,
         checkpoint_metric: str | None = "auto",
+        plot_identities: int = 10,
         epochs: int = 40,
         steps_per_epoch: int | None = None,
         identities_per_batch: int = 8,
@@ -293,12 +324,15 @@ class ReIDModel:
         With ``output_dir``, ``train`` writes ``training_config.json`` before the first epoch. After every epoch it
         saves the model to ``last/`` and adds a row to ``metrics.csv``. With ``val_data``,
         ``metrics.csv`` starts with a row of the scores before training. With ``val_data`` and a
-        ``checkpoint_metric``, each epoch that becomes the best is saved to ``best/``.
+        ``checkpoint_metric``, each epoch that becomes the best is saved to ``best/``. With ``val_data``,
+        ``embeddings/`` gets a 2-D plot of the embeddings of ``plot_identities`` validation people, saved as
+        ``before_training.png``, then ``epoch_01.png`` and so on. With ``val_protocol``'s cosine distance, the
+        embeddings are scaled to unit length first, since cosine compares only their directions.
 
         Args:
             train_data: Training crops and their person IDs, for example from ``load_identity_folders``.
-            output_dir: Folder for ``last/``, ``best/``, ``metrics.csv`` and ``training_config.json``. ``None`` writes
-                nothing.
+            output_dir: Folder for ``last/``, ``best/``, ``metrics.csv``, ``training_config.json`` and ``embeddings/``.
+                ``None`` writes nothing.
             val_data: Validation crops and their person IDs, scored before training and after every epoch. With
                 ``val_gallery``, the query crops and their person IDs. ``None`` trains without validation.
             val_gallery: Gallery crops and their person IDs, for a validation set that comes with its own query and
@@ -309,6 +343,8 @@ class ReIDModel:
                 under, such as ``"rank1"``. ``"auto"`` means ``"map"`` for ``RetrievalProtocol`` and ``"mrr"`` for
                 ``ReassociationProtocol``, and another protocol needs its metric named. ``None`` scores every epoch
                 and writes no ``best/``.
+            plot_identities: Number of validation people the embeddings plots in ``output_dir/embeddings/`` show,
+                those with the most crops. ``0`` saves no plots.
             epochs: Number of epochs.
             steps_per_epoch: Batches per epoch. ``None`` makes an epoch as many batches as the crops fill,
                 ``len(train_data) // (identities_per_batch * crops_per_identity)`` and at least 1.
@@ -352,30 +388,31 @@ class ReIDModel:
             seed: Seed for Python's ``random``, numpy and torch. On CPU, the same call on the same weights repeats the
                 run.
             verbose: Show a progress bar with the epoch's mean loss so far, and print one line after each epoch. With
-                ``val_data`` and a ``checkpoint_metric``, also print the best epoch and its score at the end.
+                ``val_data`` and a ``checkpoint_metric``, also print the best epoch and its score at the end. In a
+                notebook, also show each embeddings plot under its epoch's line as it's saved.
 
         Returns:
             One dict per epoch with ``epoch``, ``lr`` (the learning rate the epoch trained at), ``train/loss`` (the
             weighted total), ``train/classification_loss`` and ``train/embedding_loss`` (both unweighted), the
             validation metrics with ``val_data``, such as ``val/map`` and ``val/rank1``, and ``time`` (seconds,
-            validation included). With ``val_data``, the list starts with the scores before training, a dict with
-            ``epoch`` 0 that holds only ``epoch``, the validation metrics and ``time``. Pass the list to
-            ``pandas.DataFrame`` for a table.
+            validation included). With ``val_data``, the first dict holds the scores before training with ``epoch``
+            0 and no ``lr`` or losses. Pass the list to ``pandas.DataFrame`` for a table, or to
+            ``plot_training_history`` to visualize it.
 
         Raises:
             TypeError: If ``train_data`` or ``val_data`` is not a ``ReIDSplit``, or, with ``val_data``,
                 ``val_gallery`` is not a ``ReIDSplit`` or ``val_protocol`` is not an ``EvaluationProtocol`` instance.
-            ValueError: If ``epochs`` or ``steps_per_epoch`` is below 1, ``warmup_epochs`` or
-                ``freeze_backbone_epochs`` below 0, ``identities_per_batch`` or ``crops_per_identity`` below 2, or
-                ``train_data`` holds fewer identities than ``identities_per_batch``. Also if ``train`` can't step
-                ``lr_scheduler``, ``lr_scheduler_kwargs`` come without ``lr_scheduler``, ``trainable_when_frozen``
-                names a module the backbone doesn't have, the augmentations change the crop's size, or
-                ``output_dir`` holds another run's ``last/``, ``best/`` or ``metrics.csv``. With
-                ``sample_per_sequence``, also if a crop's path doesn't name its sequence or no sequence holds 2
-                identities. With ``val_data``, also if ``checkpoint_metric`` isn't a metric of ``val_protocol``, or
-                is ``"auto"`` with a protocol other than ``RetrievalProtocol`` or ``ReassociationProtocol``, or if
-                ``evaluate`` raises at any validation, such as on non-finite embeddings after an epoch diverges, which
-                ends the run.
+            ValueError: If ``epochs`` or ``steps_per_epoch`` is below 1, ``warmup_epochs``,
+                ``freeze_backbone_epochs`` or ``plot_identities`` below 0, ``identities_per_batch`` or
+                ``crops_per_identity`` below 2, or ``train_data`` holds fewer identities than
+                ``identities_per_batch``. Also if ``train`` can't step ``lr_scheduler``, ``lr_scheduler_kwargs`` come
+                without ``lr_scheduler``, ``trainable_when_frozen`` names a module the backbone doesn't have, the
+                augmentations change the crop's size, or ``output_dir`` holds another run's ``last/``, ``best/`` or
+                ``metrics.csv``. With ``sample_per_sequence``, also if a crop's path doesn't name its sequence or no
+                sequence holds 2 identities. With ``val_data``, also if ``checkpoint_metric`` isn't a metric of
+                ``val_protocol``, or is ``"auto"`` with a protocol other than ``RetrievalProtocol`` or
+                ``ReassociationProtocol``, or if ``evaluate`` raises at any validation, such as on non-finite
+                embeddings after an epoch diverges, which ends the run.
         """
         # Validate with RetrievalProtocol unless told otherwise
         if val_data is not None and val_protocol is None:
@@ -391,6 +428,7 @@ class ReIDModel:
             val_gallery,
             val_protocol,
             checkpoint_metric,
+            plot_identities,
             epochs,
             steps_per_epoch,
             identities_per_batch,
@@ -440,7 +478,11 @@ class ReIDModel:
         use_mixed_precision = mixed_precision and self._device.type == "cuda"
         scaler = torch.amp.GradScaler("cuda", enabled=use_mixed_precision)
 
-        # Record the run's settings before the first epoch, and the columns of metrics.csv
+        # The columns of metrics.csv, and the run's settings, recorded before the first epoch
+        columns = ["epoch", "lr", *LOSS_NAMES]
+        if val_data is not None:
+            columns += [f"val/{name}" for name in val_protocol.metric_names]
+        columns.append("time")
         if output_dir is not None:
             config = {
                 "architecture": self._architecture_name,
@@ -473,21 +515,19 @@ class ReIDModel:
                 "num_crops": len(train_data),
             }
             write_training_config(output_dir, config)
-            columns = ["epoch", "lr", *LOSS_NAMES]
-            if val_data is not None:
-                columns += [f"val/{name}" for name in val_protocol.metric_names]
-            columns.append("time")
+
+        # The validation crops the embeddings plots show, the same ones at every epoch
+        plot_crops = None
+        if val_data is not None and output_dir is not None and plot_identities > 0:
+            plot_crops = select_embeddings_plot_crops(val_data, plot_identities)
 
         # Score the weights before training, recorded with epoch 0 and never picked as the best epoch
         history: list[dict[str, float]] = []
         if val_data is not None:
             start = time.perf_counter()
-            scores = self._validate(val_data, val_gallery, val_protocol)
+            scores, plot_embeddings = self._validate(val_data, val_gallery, val_protocol, plot_crops)
             history.append({"epoch": 0, **scores, "time": time.perf_counter() - start})
-            if output_dir is not None:
-                append_metrics_row(output_dir, history[0], columns)
-            if verbose:
-                print(format_epoch_line(history[0], epochs))
+            _record_epoch(history[0], plot_embeddings, plot_crops, val_protocol, output_dir, columns, epochs, verbose)
 
         # Train, saving last/ and a metrics.csv row after every epoch, and best/ after each epoch that becomes the best
         best_epoch = None
@@ -520,8 +560,9 @@ class ReIDModel:
 
                 # Score the epoch, and make it the best if no earlier epoch scored higher
                 scores = {}
+                plot_embeddings = None
                 if val_data is not None:
-                    scores = self._validate(val_data, val_gallery, val_protocol)
+                    scores, plot_embeddings = self._validate(val_data, val_gallery, val_protocol, plot_crops)
                     if checkpoint_metric is not None and scores[f"val/{checkpoint_metric}"] >= best_score:
                         best_epoch = epoch
                         best_score = scores[f"val/{checkpoint_metric}"]
@@ -530,10 +571,7 @@ class ReIDModel:
 
                 row = {"epoch": epoch, "lr": lr_this_epoch, **losses, **scores, "time": time.perf_counter() - start}
                 history.append(row)
-                if output_dir is not None:
-                    append_metrics_row(output_dir, row, columns)
-                if verbose:
-                    print(format_epoch_line(row, epochs))
+                _record_epoch(row, plot_embeddings, plot_crops, val_protocol, output_dir, columns, epochs, verbose)
 
             # Name the best epoch, and warn if the starting weights scored higher than every trained epoch
             if val_data is not None and checkpoint_metric is not None:
@@ -557,16 +595,24 @@ class ReIDModel:
         return history
 
     def _validate(
-        self, val_data: ReIDSplit, val_gallery: ReIDSplit | None, val_protocol: EvaluationProtocol
-    ) -> dict[str, float]:
-        """Score the model with ``evaluate`` in eval mode, and return its metrics named as ``val/`` columns.
+        self,
+        val_data: ReIDSplit,
+        val_gallery: ReIDSplit | None,
+        val_protocol: EvaluationProtocol,
+        plot_crops: ReIDSplit | None,
+    ) -> tuple[dict[str, float], np.ndarray | None]:
+        """Score the model with ``evaluate`` in eval mode, and embed ``plot_crops`` for the embeddings plot.
 
-        It doesn't affect the current random state.
+        Returns the metrics named as ``val/`` columns, and the embeddings of ``plot_crops``, ``None`` without them. It
+        doesn't affect the current random state.
         """
         self._backbone.eval()
+        plot_embeddings = None
         with torch.random.fork_rng(devices=[]):  # devices=[] forks only the CPU generator, the one a DataLoader uses
             result = self.evaluate(val_data, val_gallery, protocol=val_protocol, verbose=False)
-        return {f"val/{name}": value for name, value in result.metrics.items()}
+            if plot_crops is not None:
+                plot_embeddings = self.extract_embeddings_from_paths(plot_crops.image_paths)
+        return {f"val/{name}": value for name, value in result.metrics.items()}, plot_embeddings
 
     def _classification_head(self, num_identities: int) -> nn.Linear:
         """Return a layer on the model's device that scores each of ``num_identities`` from an embedding.
@@ -586,6 +632,7 @@ class ReIDModel:
         val_gallery: ReIDSplit | None,
         val_protocol: EvaluationProtocol | None,
         checkpoint_metric: str | None,
+        plot_identities: int,
         epochs: int,
         steps_per_epoch: int | None,
         identities_per_batch: int,
@@ -632,6 +679,7 @@ class ReIDModel:
         if lr_scheduler is None and lr_scheduler_kwargs is not None:
             raise ValueError("lr_scheduler_kwargs needs an lr_scheduler to pass them to.")
         validate_int_at_least(freeze_backbone_epochs, "freeze_backbone_epochs", 0)
+        validate_int_at_least(plot_identities, "plot_identities", 0)
         child_names = {name for name, _ in self._backbone.named_children()}
         unknown = set(getattr(self._backbone, "trainable_when_frozen", ())) - child_names
         if unknown:

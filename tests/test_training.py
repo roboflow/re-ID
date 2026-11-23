@@ -108,10 +108,18 @@ def _set_validation_scores(
     """
     weights_after_epoch: list[dict[str, torch.Tensor]] = []
 
-    def validate(model: ReIDModel, *arguments: object) -> dict[str, float]:
+    def validate(
+        model: ReIDModel,
+        val_data: ReIDSplit,
+        val_gallery: ReIDSplit | None,
+        val_protocol: object,
+        plot_crops: ReIDSplit | None,
+    ) -> tuple[dict[str, float], np.ndarray | None]:
         epoch = len(weights_after_epoch)  # 0 before training, then 1, 2, ...
         weights_after_epoch.append({name: value.clone() for name, value in model._backbone.state_dict().items()})
-        return {f"val/{metric}": scores[epoch]}
+        # any embeddings for the embeddings plot, which these tests don't look at
+        plot_embeddings = None if plot_crops is None else np.random.default_rng(0).normal(size=(len(plot_crops), 8))
+        return {f"val/{metric}": scores[epoch]}, plot_embeddings
 
     monkeypatch.setattr(ReIDModel, "_validate", validate)
     return weights_after_epoch
@@ -352,12 +360,13 @@ class TestValidation:
 
         assert not (tmp_path / "out" / "best").exists()
 
-    def test_validation_leaves_the_training_of_a_seed_unchanged(self, crops: ReIDSplit) -> None:
+    def test_validation_leaves_the_training_of_a_seed_unchanged(self, crops: ReIDSplit, tmp_path: Path) -> None:
         with_validation = _small_module()
         without_validation = copy.deepcopy(with_validation)
 
-        _train(with_validation, crops, epochs=2, val_data=crops)
-        _train(without_validation, crops, epochs=2)
+        # with output_dir, validation runs evaluate and then embeds the embeddings plot's crops, so this checks both
+        _train(with_validation, crops, epochs=2, val_data=crops, output_dir=tmp_path / "with_validation")
+        _train(without_validation, crops, epochs=2, output_dir=tmp_path / "without_validation")
 
         torch.testing.assert_close(
             with_validation._backbone.state_dict(), without_validation._backbone.state_dict(), rtol=0, atol=0
@@ -369,7 +378,7 @@ class TestValidation:
 
 
 class TestOutputDir:
-    """``output_dir`` holds ``last/``, ``metrics.csv`` and ``training_config.json``."""
+    """``output_dir`` holds ``last/``, ``metrics.csv``, ``training_config.json`` and ``embeddings/``."""
 
     def test_last_reloads_as_the_trained_model(self, run: Run) -> None:
         model, _, output_dir = run
@@ -489,6 +498,20 @@ class TestOutputDir:
 
         with pytest.raises(ValueError, match="built from your own module Sequential"):
             ReIDModel.from_pretrained(str(tmp_path / "out" / "last"), device="cpu")
+
+    @pytest.mark.filterwarnings("ignore:The weights before training scored")  # one step on random crops may score lower
+    def test_saves_an_embeddings_plot_before_training_and_after_every_epoch(
+        self, crops: ReIDSplit, tmp_path: Path
+    ) -> None:
+        _train(_small_module(), crops, epochs=2, output_dir=tmp_path / "out", val_data=crops)
+
+        saved = sorted(path.name for path in (tmp_path / "out" / "embeddings").iterdir())
+        assert saved == ["before_training.png", "epoch_01.png", "epoch_02.png"]
+
+    def test_saves_no_embeddings_plot_with_plot_identities_0(self, crops: ReIDSplit, tmp_path: Path) -> None:
+        _train(_small_module(), crops, output_dir=tmp_path / "out", val_data=crops, plot_identities=0)
+
+        assert not (tmp_path / "out" / "embeddings").exists()
 
 
 class TestInputGuards:

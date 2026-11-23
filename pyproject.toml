@@ -20,6 +20,7 @@ classifiers = [
 keywords = ["reid", "re-identification", "tracking", "computer-vision", "deep-learning"]
 
 dependencies = [
+    "matplotlib>=3.6",
     "numpy",
     "opencv-python",
     "supervision>=0.26.1",
