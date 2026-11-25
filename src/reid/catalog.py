@@ -145,13 +145,6 @@ def save_model_config(
     preprocessing: ReIDPreprocessing,
 ) -> None:
     """Write ``reid_config.json`` to ``directory``."""
-    if not isinstance(card.architecture, str):
-        raise ValueError(
-            "Cannot save a ModelCard whose architecture is an nn.Module. "
-            "Use a named architecture string (e.g. 'osnet_x1_0', "
-            "'timm:resnet50') to enable ReIDModel.save()."
-        )
-
     config = {
         "architecture": card.architecture,
         "preprocessing": preprocessing.to_dict(),
