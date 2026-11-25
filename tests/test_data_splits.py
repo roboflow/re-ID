@@ -30,3 +30,19 @@ def test_images_cannot_be_added_after_the_check() -> None:
         split.image_paths.append("extra")  # type: ignore[attr-defined]
 
     assert len(split.image_paths) == len(split.pids) == 1
+
+
+def test_train_val_split_moves_whole_people_to_val() -> None:
+    split = ReIDSplit(
+        image_paths=["a1", "a2", "b1", "b2", "c1", "c2"],
+        pids=np.array([1, 1, 2, 2, 3, 3]),
+        camids=np.array([0, 1, 0, 1, 0, 1]),
+    )
+
+    train, val = split.train_val_split(num_val_identities=1)
+
+    person = int(val.pids[0])
+    assert list(val.pids) == [person, person]  # both images of the drawn person
+    assert list(val.camids) == [0, 1]  # each image keeps its camera
+    assert sorted(set(train.pids.tolist())) == sorted({1, 2, 3} - {person})  # everyone else, no one in both
+    assert len(train) == 4
