@@ -17,11 +17,19 @@ import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+from matplotlib.figure import Figure
 from PIL import Image
 from torch.optim.lr_scheduler import OneCycleLR, StepLR
 from torchvision.transforms import CenterCrop
 
-from reid import ReassociationProtocol, ReIDModel, ReIDPreprocessing, ReIDSplit, load_identity_folders
+from reid import (
+    ReassociationProtocol,
+    ReIDModel,
+    ReIDPreprocessing,
+    ReIDSplit,
+    load_identity_folders,
+    plot_training_history,
+)
 from reid.architectures import build_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 
@@ -512,6 +520,38 @@ class TestOutputDir:
         _train(_small_module(), crops, output_dir=tmp_path / "out", val_data=crops, plot_identities=0)
 
         assert not (tmp_path / "out" / "embeddings").exists()
+
+
+def _marked_epochs(figure: Figure) -> list[set[float]]:
+    """The epochs marked by a dashed vertical line, in each panel of ``figure``."""
+    return [{line.get_xdata()[0] for line in axes.lines if line.get_linestyle() == "--"} for axes in figure.axes]
+
+
+class TestBestEpochMark:
+    """``plot_training_history`` marking the epoch ``train`` saved to ``best/``."""
+
+    def test_marks_the_epoch_train_saved_to_best(
+        self, crops: ReIDSplit, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_validation_scores(monkeypatch, [5.0, 20.0, 20.0, 10.0])  # epochs 1 and 2 tie, so best/ holds epoch 2
+        _train(_small_module(), crops, epochs=3, val_data=crops, output_dir=tmp_path / "out")
+
+        figure = plot_training_history(tmp_path / "out")
+
+        assert _marked_epochs(figure) == [{2}, {2}, set()]  # losses, validation and learning rate
+
+    def test_marks_by_the_metric_the_run_picked_best_with(self, tmp_path: Path) -> None:
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+        # rank1 peaks at epoch 1 and mrr at epoch 2
+        (output_dir / "metrics.csv").write_text(
+            "epoch,lr,train/loss,val/rank1,val/mrr\n0,,,50,60\n1,0.0001,2.0,70,75\n2,0.0001,1.0,65,80\n"
+        )
+        (output_dir / "training_config.json").write_text(json.dumps({"checkpoint_metric": "rank1"}))
+
+        figure = plot_training_history(output_dir)
+
+        assert _marked_epochs(figure) == [{1}, {1}, set()]
 
 
 class TestInputGuards:

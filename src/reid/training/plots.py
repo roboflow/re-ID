@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -22,15 +23,21 @@ from reid.eval.metrics import _l2_normalize
 from reid.training.outputs import read_metrics_csv
 
 
-def plot_training_history(history: list[dict[str, float]] | str | Path) -> Figure:
+def plot_training_history(
+    history: list[dict[str, float]] | str | Path, checkpoint_metric: str | None = "auto"
+) -> Figure:
     """Plot a training run's losses, learning rate and validation scores by epoch, and return the figure.
 
     The figure stacks a panel of the losses, a panel of the validation metrics for a run with validation, starting
-    from the scores before training, and a panel of the learning rate on a log scale, on one epoch axis. In a notebook
-    it shows under the cell.
+    from the scores before training, and a panel of the learning rate on a log scale, on one epoch axis. A dashed line
+    on the losses and validation panels marks the epoch ``train`` saves to ``best/``. In a notebook it shows under the
+    cell.
 
     Args:
         history: The list ``ReIDModel.train`` returns, or the ``output_dir`` of a run, whose ``metrics.csv`` is read.
+        checkpoint_metric: Metric whose best epoch is marked. ``"auto"`` takes the one the run's
+            ``training_config.json`` names when ``history`` is an ``output_dir``, and otherwise ``"mrr"`` or ``"map"``,
+            whichever the history holds, as ``train`` picks for re-association and retrieval. ``None`` marks nothing.
 
     Returns:
         A matplotlib ``Figure``.
@@ -38,7 +45,7 @@ def plot_training_history(history: list[dict[str, float]] | str | Path) -> Figur
     Raises:
         FileNotFoundError: If ``history`` is a folder without ``metrics.csv``.
     """
-    # Read the history from metrics.csv when given the run's output_dir
+    # Read the history, and the metric that picked best/, from the run's output_dir
     if isinstance(history, (str, Path)):
         output_dir = Path(history)
         if not (output_dir / "metrics.csv").exists():
@@ -47,6 +54,17 @@ def plot_training_history(history: list[dict[str, float]] | str | Path) -> Figur
                 "train returns."
             )
         history = read_metrics_csv(output_dir)
+        if checkpoint_metric == "auto":
+            checkpoint_metric = json.loads((output_dir / "training_config.json").read_text())["checkpoint_metric"]
+
+    # re-association reports val/mrr and retrieval reports val/map
+    elif checkpoint_metric == "auto":
+        if "val/mrr" in history[-1]:
+            checkpoint_metric = "mrr"
+        elif "val/map" in history[-1]:
+            checkpoint_metric = "map"
+        else:
+            checkpoint_metric = None
 
     # The columns each panel plots, top to bottom, read from the last row, which holds every column
     columns = list(history[-1])
@@ -54,6 +72,12 @@ def plot_training_history(history: list[dict[str, float]] | str | Path) -> Figur
     if any(name.startswith("val/") for name in columns):
         curves_by_panel["validation"] = [name for name in columns if name.startswith("val/")]
     curves_by_panel["learning rate"] = ["lr"]
+
+    # The epoch train saved to best/, the highest score after training, a tie going to the later epoch
+    best_epoch = None
+    if checkpoint_metric is not None:
+        trained = [row for row in history if row["epoch"] > 0]
+        best_epoch = max(trained, key=lambda row: (row[f"val/{checkpoint_metric}"], row["epoch"]))["epoch"]
 
     # One panel per group, sharing the epoch axis
     figure, panels = plt.subplots(
@@ -63,6 +87,11 @@ def plot_training_history(history: list[dict[str, float]] | str | Path) -> Figur
         for name in names:
             rows = [row for row in history if name in row]
             axes.plot([row["epoch"] for row in rows], [row[name] for row in rows], marker="o", markersize=3, label=name)
+        if best_epoch is not None and title != "learning rate":
+            axes.axvline(best_epoch, color="0.4", linestyle="--", linewidth=1)
+        if best_epoch is not None and title == "validation":
+            # Near the bottom, by the line, since the curves peak at the top there
+            axes.text(best_epoch, 0.03, "best epoch ", transform=axes.get_xaxis_transform(), ha="right", color="0.4")
         axes.set_title(title)
         axes.grid(alpha=0.3)
         if len(names) > 1:
