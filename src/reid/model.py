@@ -285,8 +285,8 @@ class ReIDModel:
             train_data: Training crops and their person IDs, for example from ``load_identity_folders``.
             output_dir: Folder for ``last/``, ``metrics.csv`` and ``training_config.json``. ``None`` writes nothing.
             epochs: Number of epochs.
-            steps_per_epoch: Batches per epoch. ``None`` makes an epoch as long as one pass over the crops,
-                ``len(train_data) // (identities_per_batch * crops_per_identity)`` batches, and at least 1.
+            steps_per_epoch: Batches per epoch. ``None`` makes an epoch as many batches as the crops fill,
+                ``len(train_data) // (identities_per_batch * crops_per_identity)`` and at least 1.
             identities_per_batch: Identities in a batch, at least 2.
             crops_per_identity: Crops of each identity in a batch, at least 2.
             lr: Learning rate after the warmup.
