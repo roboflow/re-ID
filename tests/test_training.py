@@ -17,11 +17,19 @@ import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+from matplotlib.figure import Figure
 from PIL import Image
 from torch.optim.lr_scheduler import OneCycleLR, StepLR
 from torchvision.transforms import CenterCrop
 
-from reid import ReassociationProtocol, ReIDModel, ReIDPreprocessing, ReIDSplit, load_identity_folders
+from reid import (
+    ReassociationProtocol,
+    ReIDModel,
+    ReIDPreprocessing,
+    ReIDSplit,
+    load_identity_folders,
+    plot_training_history,
+)
 from reid.architectures import build_architecture
 from reid.architectures.fastreid_sbs import FASTREID_SBS_ARCHITECTURE
 
@@ -108,10 +116,18 @@ def _set_validation_scores(
     """
     weights_after_epoch: list[dict[str, torch.Tensor]] = []
 
-    def validate(model: ReIDModel, *arguments: object) -> dict[str, float]:
+    def validate(
+        model: ReIDModel,
+        val_data: ReIDSplit,
+        val_gallery: ReIDSplit | None,
+        val_protocol: object,
+        plot_crops: ReIDSplit | None,
+    ) -> tuple[dict[str, float], np.ndarray | None]:
         epoch = len(weights_after_epoch)  # 0 before training, then 1, 2, ...
         weights_after_epoch.append({name: value.clone() for name, value in model._backbone.state_dict().items()})
-        return {f"val/{metric}": scores[epoch]}
+        # any embeddings for the embeddings plot, which these tests don't look at
+        plot_embeddings = None if plot_crops is None else np.random.default_rng(0).normal(size=(len(plot_crops), 8))
+        return {f"val/{metric}": scores[epoch]}, plot_embeddings
 
     monkeypatch.setattr(ReIDModel, "_validate", validate)
     return weights_after_epoch
@@ -352,12 +368,13 @@ class TestValidation:
 
         assert not (tmp_path / "out" / "best").exists()
 
-    def test_validation_leaves_the_training_of_a_seed_unchanged(self, crops: ReIDSplit) -> None:
+    def test_validation_leaves_the_training_of_a_seed_unchanged(self, crops: ReIDSplit, tmp_path: Path) -> None:
         with_validation = _small_module()
         without_validation = copy.deepcopy(with_validation)
 
-        _train(with_validation, crops, epochs=2, val_data=crops)
-        _train(without_validation, crops, epochs=2)
+        # with output_dir, validation runs evaluate and then embeds the embeddings plot's crops, so this checks both
+        _train(with_validation, crops, epochs=2, val_data=crops, output_dir=tmp_path / "with_validation")
+        _train(without_validation, crops, epochs=2, output_dir=tmp_path / "without_validation")
 
         torch.testing.assert_close(
             with_validation._backbone.state_dict(), without_validation._backbone.state_dict(), rtol=0, atol=0
@@ -369,7 +386,7 @@ class TestValidation:
 
 
 class TestOutputDir:
-    """``output_dir`` holds ``last/``, ``metrics.csv`` and ``training_config.json``."""
+    """``output_dir`` holds ``last/``, ``metrics.csv``, ``training_config.json`` and ``embeddings/``."""
 
     def test_last_reloads_as_the_trained_model(self, run: Run) -> None:
         model, _, output_dir = run
@@ -489,6 +506,52 @@ class TestOutputDir:
 
         with pytest.raises(ValueError, match="built from your own module Sequential"):
             ReIDModel.from_pretrained(str(tmp_path / "out" / "last"), device="cpu")
+
+    @pytest.mark.filterwarnings("ignore:The weights before training scored")  # one step on random crops may score lower
+    def test_saves_an_embeddings_plot_before_training_and_after_every_epoch(
+        self, crops: ReIDSplit, tmp_path: Path
+    ) -> None:
+        _train(_small_module(), crops, epochs=2, output_dir=tmp_path / "out", val_data=crops)
+
+        saved = sorted(path.name for path in (tmp_path / "out" / "embeddings").iterdir())
+        assert saved == ["before_training.png", "epoch_01.png", "epoch_02.png"]
+
+    def test_saves_no_embeddings_plot_with_plot_identities_0(self, crops: ReIDSplit, tmp_path: Path) -> None:
+        _train(_small_module(), crops, output_dir=tmp_path / "out", val_data=crops, plot_identities=0)
+
+        assert not (tmp_path / "out" / "embeddings").exists()
+
+
+def _marked_epochs(figure: Figure) -> list[set[float]]:
+    """The epochs marked by a dashed vertical line, in each panel of ``figure``."""
+    return [{line.get_xdata()[0] for line in axes.lines if line.get_linestyle() == "--"} for axes in figure.axes]
+
+
+class TestBestEpochMark:
+    """``plot_training_history`` marking the epoch ``train`` saved to ``best/``."""
+
+    def test_marks_the_epoch_train_saved_to_best(
+        self, crops: ReIDSplit, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _set_validation_scores(monkeypatch, [5.0, 20.0, 20.0, 10.0])  # epochs 1 and 2 tie, so best/ holds epoch 2
+        _train(_small_module(), crops, epochs=3, val_data=crops, output_dir=tmp_path / "out")
+
+        figure = plot_training_history(tmp_path / "out")
+
+        assert _marked_epochs(figure) == [{2}, {2}, set()]  # losses, validation and learning rate
+
+    def test_marks_by_the_metric_the_run_picked_best_with(self, tmp_path: Path) -> None:
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+        # rank1 peaks at epoch 1 and mrr at epoch 2
+        (output_dir / "metrics.csv").write_text(
+            "epoch,lr,train/loss,val/rank1,val/mrr\n0,,,50,60\n1,0.0001,2.0,70,75\n2,0.0001,1.0,65,80\n"
+        )
+        (output_dir / "training_config.json").write_text(json.dumps({"checkpoint_metric": "rank1"}))
+
+        figure = plot_training_history(output_dir)
+
+        assert _marked_epochs(figure) == [{1}, {1}, set()]
 
 
 class TestInputGuards:

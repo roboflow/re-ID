@@ -2272,6 +2272,8 @@ source = { editable = "." }
 dependencies = [
     { name = "gdown" },
     { name = "huggingface-hub" },
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "matplotlib", version = "3.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -2306,6 +2308,7 @@ docs = [
 requires-dist = [
     { name = "gdown", specifier = ">=5" },
     { name = "huggingface-hub", specifier = ">=0.20" },
+    { name = "matplotlib", specifier = ">=3.6" },
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pillow", specifier = ">=10" },

@@ -36,7 +36,7 @@ from reid.eval import (
 )
 from reid.model import ReIDModel
 from reid.preprocessing import Interpolation, ReIDPreprocessing
-from reid.training import TripletLoss
+from reid.training import TripletLoss, plot_training_history
 
 __all__ = [
     "FASTREID_MOT17_SBS50",
@@ -59,4 +59,5 @@ __all__ = [
     "load_msmt17_test",
     "load_msmt17_train",
     "load_msmt17_val",
+    "plot_training_history",
 ]
