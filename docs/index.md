@@ -42,6 +42,8 @@ print(embeddings.shape)  # (1, 512)
 
 - [Load a model](guides/loading.md): use pretrained weights or load a saved model
 - [Evaluate a model](guides/evaluation.md): how a query is ranked against a gallery, and how to measure a model's accuracy
+- [Train a model](guides/training.md): fine-tune a model on crops of your own objects and keep its best epoch
+- [Train a model for tracking](guides/training-for-tracking.md): train on crops cut from tracking video, with batches from one sequence
 - [Re-ID metrics](learn/metrics.md): understand Rank-k, mAP, mINP, and MRR
 
 ## Tutorials

@@ -99,6 +99,8 @@ nav:
   - Guides:
       - Load a model: guides/loading.md
       - Evaluate a model: guides/evaluation.md
+      - Train a model: guides/training.md
+      - Train a model for tracking: guides/training-for-tracking.md
       - Re-ID metrics: learn/metrics.md
   - API Reference:
       - Model: api/model.md
