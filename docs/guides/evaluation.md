@@ -74,10 +74,10 @@ Evaluate a model the way you will use it: the queries and gallery should look li
 Market-1501 and MSMT17 provide their own query and gallery splits; pass these directly to the model.
 
 ```python
-from reid import ReIDModel, load_market1501
+from reid import ReIDModel, load_market1501_test
 
 model = ReIDModel.from_pretrained("osnet_x1_0_msmt17_combineall")
-query, gallery = load_market1501("/path/to/Market-1501")
+query, gallery = load_market1501_test("/path/to/Market-1501")
 result = model.evaluate(query, gallery)
 
 print(result.metrics)
@@ -86,7 +86,7 @@ print(result.num_queries)
 # 3368
 ```
 
-To evaluate your own images, either arrange them like Market-1501 or MSMT17 and load them with `load_market1501` or `load_msmt17`, or put them in identity folders, one per person (`<root>/<identity>/<image>.jpg`), and load them with `load_identity_folders`. `RetrievalProtocol` then splits them: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
+To evaluate your own images, either arrange them like Market-1501 or MSMT17 and load them with `load_market1501_test` or `load_msmt17_test`, or put them in identity folders, one per person (`<root>/<identity>/<image>.jpg`), and load them with `load_identity_folders`. `RetrievalProtocol` then splits them: it picks `queries_per_id` random images of each person as queries, using `seed`, and puts the rest in the gallery, so every query has a correct match to find. People with fewer than `min_crops` images are left out:
 
 ```python
 from reid import load_identity_folders
@@ -132,6 +132,8 @@ This is the MOT17 half split used in the tracking literature, for example by Byt
 Use `"full"` for sequences kept only for evaluation. Use `"train_half"` and `"val_half"` when training and evaluating on the same sequences, so no frame is used for both. Boxes with confidence 0, which MOTChallenge ground truth uses to mark boxes to ignore, are always skipped. Among the boxes with a nonzero confidence, `class_ids` keeps only the listed ground-truth classes.
 
 Re-association reports `rank1`, the percentage of queries whose correct match is the closest of their candidates, and `mrr`, the [mean reciprocal rank](../learn/metrics.md#mrr): each query scores 1/r, where r is the rank of its correct match (1 at rank 1, 1/2 at rank 2), and `mrr` averages these scores. Each query has exactly one correct match, so mean average precision is the mean reciprocal rank.
+
+To evaluate query and gallery crops you cut separately, load each folder with `load_identity_folders` and pass both to `model.evaluate`. Cut both with `generate_mot_patches` from the same ground truth, so a track ID names the same person in both.
 
 Re-association scores rankings of saved crops; it does not run a tracker or decide any match. Set `gap_frames` to the gaps your tracker has to bridge, and measure tracking performance separately with [Roboflow Trackers](https://github.com/roboflow/trackers).
 
