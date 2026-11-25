@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import random
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -60,7 +61,8 @@ class ReIDSplit:
 
         Every image of ``num_val_identities`` people, drawn at random, goes to the validation split, and the rest stay
         in the training split, so no person is in both. Use it to validate on a benchmark that has no validation
-        split, such as Market-1501. Person and camera IDs are kept as they are.
+        split, such as Market-1501. Person and camera IDs are kept as they are. Images of ``gallery_junk_pids``, which
+        a training split shouldn't hold, go to neither split, with a warning.
 
         Args:
             num_val_identities: Number of people in the validation split, at least 1 and fewer than the people in the
@@ -74,18 +76,32 @@ class ReIDSplit:
             ValueError: If ``num_val_identities`` is below 1, or not fewer than the people in the split.
         """
         validate_positive_int(num_val_identities, "num_val_identities")
-        people = np.unique(self.pids).tolist()
+
+        # Skip images of junk IDs, which have no identity to train or validate on
+        junk = np.isin(self.pids, list(self.gallery_junk_pids))
+        if junk.any():
+            junk_ids = ", ".join(str(pid) for pid in np.unique(self.pids[junk]))
+            warnings.warn(
+                f"Skipping {junk.sum()} of the {len(self)} images, whose person IDs {junk_ids} mark junk such as "
+                "Market-1501's bad detections. A training split holds no junk, so check that this isn't a test "
+                "gallery.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        people = np.unique(self.pids[~junk]).tolist()
         if num_val_identities >= len(people):
             raise ValueError(
                 f"num_val_identities must be fewer than the {len(people)} people in the split, "
                 f"got {num_val_identities}."
             )
         drawn = np.isin(self.pids, random.Random(seed).sample(people, num_val_identities))
+        kept = ~drawn & ~junk
         paths = np.asarray(self.image_paths)
         train = ReIDSplit(
-            image_paths=paths[~drawn].tolist(),
-            pids=self.pids[~drawn],
-            camids=self.camids[~drawn],
+            image_paths=paths[kept].tolist(),
+            pids=self.pids[kept],
+            camids=self.camids[kept],
             gallery_junk_pids=self.gallery_junk_pids,
         )
         val = ReIDSplit(

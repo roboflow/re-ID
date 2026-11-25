@@ -46,3 +46,17 @@ def test_train_val_split_moves_whole_people_to_val() -> None:
     assert list(val.camids) == [0, 1]  # each image keeps its camera
     assert sorted(set(train.pids.tolist())) == sorted({1, 2, 3} - {person})  # everyone else, no one in both
     assert len(train) == 4
+
+
+def test_train_val_split_skips_junk_images_with_a_warning() -> None:
+    split = ReIDSplit(
+        image_paths=["bad_detection", "a1", "a2", "b1", "b2"],
+        pids=np.array([-1, 1, 1, 2, 2]),  # -1 marks a bad detection, as in Market-1501
+        camids=np.array([0, 0, 1, 0, 1]),
+    )
+
+    with pytest.warns(UserWarning, match="Skipping 1 of the 5 images, whose person IDs -1 mark junk"):
+        train, val = split.train_val_split(num_val_identities=1)
+
+    assert "bad_detection" not in train.image_paths + val.image_paths
+    assert len(train) + len(val) == 4
