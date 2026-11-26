@@ -5,9 +5,7 @@ description: Fine-tune a Re-ID model on crops cut from tracking video, with batc
 
 # Train a model for tracking
 
-> **Video placeholder.** Header video, no caption: BoT-SORT on a held-out SportsMOT clip, the general model and the fine-tuned model side by side, at the moment the general model swaps two players' IDs and the fine-tuned one keeps them. An mp4 with a poster image, as `reid-gallery-retrieval.mp4`, from the tracking tutorial's run.
-
-A tracker swaps identities when two objects look alike, such as two players of the same team crossing. A Re-ID model fine-tuned on your own footage learns the differences between those objects, so the tracker keeps their identities through crossings and occlusions.
+Trackers can use a Re-ID model to re-identify objects that were occluded or left the frame, so they keep their ID. To do it accurately, the model has to be trained for your domain, on crops from your own footage.
 
 Training a Re-ID model for tracking needs special attention in two places:
 
@@ -70,7 +68,7 @@ generate_mot_patches(mot_root="/path/to/sportsmot/train", output_dir="/path/to/t
 train_crops = load_identity_folders("/path/to/train")
 ```
 
-`split="full"` crops every frame of each sequence.
+To crop every frame of each sequence, pass `split="full"`.
 
 Split the training, validation and test sets by video. Clips of one video show the same people, often under different track IDs, so a model validated on another clip of a training video is scored on people it already learned, and the score would say little about new footage.
 
@@ -102,7 +100,9 @@ The sequence of each crop is read from the paths `generate_mot_patches` writes. 
 
 This guide covers tracking with one camera, where each sequence numbers its own tracks. In multi-camera tracking, one ID follows a person across cameras, and `generate_mot_patches`, which names each identity after its sequence, would split that person into one identity per camera. Training for it needs a dataset built for it, with one identity per person across every camera.
 
-> **Result placeholder.** The study's `per_sequence_batches` against `mixed_batches`: HOTA and IDF1 on SportsMOT val and test, each at the thresholds it picked on val. Write the study's statement in its exact wording, "one seed" included, and nothing it did not measure.
+[Results](#results) shows how a model trained with batches from one sequence tracks, next to one trained with batches from the whole set.
+
+<!-- When the per-sequence study is final, write its statement in its exact wording, "one seed" included, and nothing it did not measure. -->
 
 ## Validate and read the training output
 
@@ -114,7 +114,7 @@ from reid import ReassociationProtocol
 history = model.train(train_crops, val_data=val_crops, val_protocol=ReassociationProtocol())
 ```
 
-`train` prints the scores before training, then one line per epoch with its learning rate, losses and validation scores, and ends with the epoch it saved to `best/`. Fine-tuning `osnet_x1_0_msmt17_combineall` on SportsMOT train with the Quickstart's call prints:
+While it trains, `train` prints the scores before training, then one line per epoch with its learning rate, losses and validation scores, and ends with the epoch it saved to `best/`. Fine-tuning `osnet_x1_0_msmt17_combineall` on SportsMOT train with the Quickstart's call prints:
 
 > **Output placeholder.** The study's `per_sequence_batches` run's lines, verbatim: before training, epochs 1 to 4, the last epochs and the best-epoch line, with `...` between.
 
@@ -140,8 +140,49 @@ On the SportsMOT run, the embeddings plots of the 10 validation players with the
 
 ## Results
 
-We tracked the SportsMOT test split with BoT-SORT without Re-ID and with each fine-tuned model, using the same YOLOX detections and motion parameters. Each model was trained on SportsMOT train, and its epoch was picked by MRR on the val split. BoT-SORT's Re-ID has two thresholds, `appearance_threshold` and `proximity_threshold`. For each model we tracked the val split with the same six combinations of them, built around the values the [trackers Re-ID guide](https://trackers.roboflow.com/develop/guides/reid/#results) tuned for SportsMOT, and kept the one with the highest HOTA, so each model is tested at the thresholds that suit it. Each model was then tracked once on the test split with its thresholds.
+To see what fine-tuning and the batches change when tracking, we tracked the SportsMOT test split with BoT-SORT, with and without Re-ID. For Re-ID we used a pretrained model as published, and the same model fine-tuned on SportsMOT train twice, once with batches from the whole set and once with batches from one sequence, with every other setting the same. For each model we chose the Re-ID thresholds on val, then tracked the test split once.
 
-> **Table placeholder.** The study's Codabench test submissions, in the trackers Re-ID guide format.
+<!-- xx.x marks a number that is not final: the Codabench test submissions of the three models. Name the pretrained model in the paragraph above, the table and the configuration once the per-sequence study picks it, and in the Quickstart and above the training output if it is not osnet_x1_0_msmt17_combineall. The none row is the BoT-SORT SportsMOT test row of the tracker comparison. The training hyperparameters in the configuration are not final either: fill them with the final runs' train arguments. Bold the best value in each column once filled. -->
 
-<!-- TABLE: | Model | Batches | HOTA | IDF1 | MOTA |, rows: no Re-ID (the published geometry row 74.1 / 74.1 / 96.9, confirmed under trackers 2.7.0), osnet_x1_0_msmt17_combineall fine-tuned with batches from the whole set, and with per-sequence batches. Best value in bold. osnet_x1_0_sportsmot (77.8 HOTA, earlier trainer) only as a labelled reference if the study's control 2 reproduces it on this stack. Collapsible "Training and tracking configuration": each model's train() call, best epoch, and val-picked appearance_threshold and proximity_threshold, as the trackers guide's "Tuned ReID configuration" block. Motion parameters cite the trackers tracker comparison. -->
+| Re-ID model                            | HOTA | IDF1 | MOTA |
+| :------------------------------------- | :--: | :--: | :--: |
+| none                                   | 74.1 | 74.1 | 96.9 |
+| Pretrained                             | xx.x | xx.x | xx.x |
+| Fine-tuned, batches from the whole set | xx.x | xx.x | xx.x |
+| Fine-tuned, batches from one sequence  | xx.x | xx.x | xx.x |
+
+<!-- xx.x: one sentence on what the table shows, with HOTA and IDF1, as in the Market-1501 guide. Write only what the filled rows show. -->
+
+??? info "Training and tracking configuration"
+
+    The fine-tuned models were trained with the settings under `Training`, and the other arguments of `train` at their defaults. All runs use the same YOLOX detections and the BoT-SORT motion parameters from the [tracker comparison](https://trackers.roboflow.com/develop/evaluations/results/). For each model, we tracked val with `appearance_threshold` set to 0.25, 0.3425 and 0.45 and `proximity_threshold` set to 0.5 and 0.9953, around the SportsMOT values of the [trackers Re-ID guide](https://trackers.roboflow.com/develop/guides/reid/#results), and kept the pair with the highest HOTA.
+
+    ```yaml
+    Training:
+      train_data: SportsMOT train, generate_mot_patches(split="full")
+      val_data: SportsMOT val, generate_mot_patches(split="full")
+      val_protocol: ReassociationProtocol()
+      epochs: xx
+      steps_per_epoch: xxxx
+      identities_per_batch: x
+      crops_per_identity: x
+      lr: x.xe-x
+      freeze_backbone_epochs: x
+      seed: xx
+
+    Pretrained:
+      reid_config.appearance_threshold: x.xxxx
+      reid_config.proximity_threshold: x.xxxx
+
+    Fine-tuned, batches from the whole set:
+      sample_per_sequence: false
+      best epoch: xx
+      reid_config.appearance_threshold: x.xxxx
+      reid_config.proximity_threshold: x.xxxx
+
+    Fine-tuned, batches from one sequence:
+      sample_per_sequence: true
+      best epoch: xx
+      reid_config.appearance_threshold: x.xxxx
+      reid_config.proximity_threshold: x.xxxx
+    ```
