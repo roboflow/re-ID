@@ -42,6 +42,8 @@ print(embeddings.shape)  # (1, 512)
 
 - [Load a model](guides/loading.md): use pretrained weights or load a saved model
 - [Evaluate a model](guides/evaluation.md): how a query is ranked against a gallery, and how to measure a model's accuracy
+- [Train a model](guides/training.md): fine-tune a model on crops of your own objects and keep its best epoch
+- [Train a model for tracking](guides/training-for-tracking.md): train on crops cut from tracking video, with batches from one sequence
 - [Re-ID metrics](learn/metrics.md): understand Rank-k, mAP, mINP, and MRR
 
 ## Tutorials
@@ -67,5 +69,25 @@ print(embeddings.shape)  # (1, 512)
     Evaluate OSNet x1.0 on Market-1501 and MSMT17 and compare against the torchreid model zoo.
 
     [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb)
+
+- **How to Train a Re-ID Model**
+
+    ---
+
+    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb"><img src="assets/tutorials/train-reid.jpg" alt="Market-1501 crops of five people framed in five colors, next to their embeddings mixed together and then separated by person" width="1280" height="720" loading="lazy" decoding="async"></a>
+
+    Fine-tune a pretrained model on Market-1501, keep the best epoch, score it on the test split, and see how the trained model arranges people in its embedding space.
+
+    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb)
+
+- **How to Train a Re-ID Model for Tracking**
+
+    ---
+
+    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb"><img src="assets/tutorials/train-reid-tracking.jpg" alt="Basketball players tracked in five colors, next to their embeddings mixed together and then separated by player" width="1280" height="720" loading="lazy" decoding="async"></a>
+
+    Turn SportsMOT tracking data into Re-ID crops, fine-tune a model, score it the way a tracker uses it, and track a basketball clip with BoT-SORT.
+
+    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb)
 
 </div>

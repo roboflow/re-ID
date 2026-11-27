@@ -8,6 +8,8 @@ description: Python API reference for re-identification splits and dataset loade
 
 ::: reid.load_identity_folders
 
+::: reid.data.mot.generate_mot_patches
+
 ::: reid.load_market1501_test
 
 ::: reid.load_market1501_train
