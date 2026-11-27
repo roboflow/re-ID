@@ -70,4 +70,24 @@ print(embeddings.shape)  # (1, 512)
 
     [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-benchmark-reid-models.ipynb)
 
+- **How to Train a Re-ID Model**
+
+    ---
+
+    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb"><img src="assets/tutorials/train-reid.jpg" alt="Market-1501 crops of five people framed in five colors, next to their embeddings mixed together and then separated by person" width="1280" height="720" loading="lazy" decoding="async"></a>
+
+    Fine-tune a pretrained model on Market-1501, keep the best epoch, score it on the test split, and see how the trained model arranges people in its embedding space.
+
+    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb)
+
+- **How to Train a Re-ID Model for Tracking**
+
+    ---
+
+    <a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb"><img src="assets/tutorials/train-reid-tracking.jpg" alt="Basketball players tracked in five colors, next to their embeddings mixed together and then separated by player" width="1280" height="720" loading="lazy" decoding="async"></a>
+
+    Turn SportsMOT tracking data into Re-ID crops, fine-tune a model, score it the way a tracker uses it, and track a basketball clip with BoT-SORT.
+
+    [:simple-googlecolab: Run Google Colab](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb)
+
 </div>

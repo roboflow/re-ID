@@ -42,6 +42,8 @@ best_model = ReIDModel.from_pretrained("runs/my_run/best")
 
 The best epoch loads like any [saved model](loading.md), and `extract_embeddings` and `evaluate` work on it the same way.
 
+To run these steps end to end on Market-1501, open the [training tutorial](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb) in Colab.
+
 ## Prepare the crops
 
 Load your crops with `load_identity_folders`, laid out as in [Evaluate a model](evaluation.md#evaluate-on-a-benchmark-or-your-own-images), or a benchmark's training split with its loader, such as `load_market1501_train` or `load_msmt17_train`. Keep apart a training set, a validation set and a test set, with no identity in more than one of them, so the scores measure the model on objects it never learned.

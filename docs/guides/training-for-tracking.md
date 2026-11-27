@@ -56,6 +56,8 @@ history = model.train(
 )
 ```
 
+To run these steps end to end on SportsMOT and track a clip with the trained model, open the [tracking training tutorial](https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb) in Colab.
+
 ## Convert tracking data into a Re-ID dataset
 
 Starting from your object tracking dataset in the [MOT format](https://trackers.roboflow.com/develop/evaluations/download/#output), you can use `generate_mot_patches` to turn it into a Re-ID dataset. It crops every box into one folder per track, named `<sequence>_<track_id>`, with one crop per frame. `load_identity_folders` then reads the folders back with one identity per track.

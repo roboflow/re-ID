@@ -111,13 +111,31 @@ For crops cut from video, `ReassociationProtocol` asks whether the model recogni
 </p>
 <br clear="left"/>
 
+<p align="left">
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb"><img src="docs/assets/tutorials/train-reid.jpg" alt="Market-1501 crops of five people framed in five colors, next to their embeddings mixed together and then separated by person" width="300px" align="left" /></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb"><strong>How to Train a Re-ID Model</strong></a>
+<br/>Fine-tune a pretrained model on Market-1501, keep the best epoch, score it on the test split, and see how the trained model arranges people in its embedding space.
+<br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
+</p>
+<br clear="left"/>
+
+<p align="left">
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb"><img src="docs/assets/tutorials/train-reid-tracking.jpg" alt="Basketball players tracked in five colors, next to their embeddings mixed together and then separated by player" width="300px" align="left" /></a>
+<a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb"><strong>How to Train a Re-ID Model for Tracking</strong></a>
+<br/>Turn SportsMOT tracking data into Re-ID crops, fine-tune a model, score it the way a tracker uses it, and track a basketball clip with BoT-SORT.
+<br/><br/><a href="https://colab.research.google.com/github/roboflow/re-ID/blob/main/docs/cookbooks/how-to-train-reid-model-for-tracking.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
+</p>
+<br clear="left"/>
+
 ## Guides
 
-| Guide                                           | What you will do                                                                                               |
-| :---------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
-| [Load a model](docs/guides/loading.md)          | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
-| [Evaluate a model](docs/guides/evaluation.md)   | Score a model on Market-1501, your own identity folders, or crops cut from video                               |
-| [Understand the metrics](docs/learn/metrics.md) | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association                                     |
+| Guide                                                              | What you will do                                                                                               |
+| :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
+| [Load a model](docs/guides/loading.md)                             | Load pretrained names, saved models, Hugging Face repositories, and weights files, and set image preprocessing |
+| [Evaluate a model](docs/guides/evaluation.md)                      | Score a model on Market-1501, your own identity folders, or crops cut from video                               |
+| [Train a model](docs/guides/training.md)                           | Fine-tune a model on crops of your own objects and keep its best epoch                                         |
+| [Train a model for tracking](docs/guides/training-for-tracking.md) | Train on crops cut from tracking video and validate the way a tracker uses the model                           |
+| [Understand the metrics](docs/learn/metrics.md)                    | Read mAP, rank-k, mINP, and MRR, and see why tracking needs re-association                                     |
 
 ## Citation
 
